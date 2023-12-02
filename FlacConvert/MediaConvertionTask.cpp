@@ -22,9 +22,7 @@ int MediaConvertionTask::ConvertFile()
         try {
             std::wstring sourcePath { _sourcePath };
             std::wcout << L"Processing: " << sourcePath << std::endl;
-            //std::wcout << L"Processing: " << _sourcePath.generic_string() << std::endl;
             _status = _wsystem(commandW.c_str());
-      //      _status = system(command.c_str());
 
         }
         catch (const std::exception& ex) {
@@ -64,11 +62,11 @@ int MediaConvertionTask::RenameAndRemoveTMPFile()
 {
     if (_status != -1) {
         if (!fs::exists(_sourcePath)) {
-            std::wcout << L"***Error rename source does not exist: " << _sourcePath << std::endl;
+            std::wcout << L"***Error rename: source does not exist: " << _sourcePath << std::endl;
             _status = -1;
         }
         else if (!fs::exists(_targetTMPPath)) {
-            std::wcout << L"***Error rename target does not exist: " << _targetPath << std::endl;
+            std::wcout << L"***Error rename: target(tmp) does not exist: " << _targetPath << std::endl;
             _status = -1;
         } 
         else {

@@ -29,9 +29,11 @@
 namespace fs = std::filesystem;
 
 //fs::path sourcePath = fs::path("M:")/"tmp"/"24";
-//fs::path sourcePath = fs::path("M:\\tmp\\24\\MMM");
-fs::path sourcePath = fs::path("M:\\tmp\\24_new_files\\_DSD\\Arabella Steinbacher - Mozart_Violin Concertos 1 & 2 (2021) [DSD256_2.0]");
-fs::path sourceDirectory{ sourcePath };
+//fs::path sourcePath = fs::path("M:\\tmp\\24\\MMM");// \\15 DSD Tracks of J.S.Bach 2018");
+//fs::path sourcePath = fs::path("M:\\tmp\\24_new_files\\_DSD");
+fs::path _SourceDirectory{ "M:\\tmp\\24\\MMM" };
+
+fs::path _TMPDirectory{  };
 
 
 std::string const _SourceFileType1{ ".flac" };
@@ -39,56 +41,123 @@ std::string const _SourceFileType2{ ".dsf" };
 std::string const _SourceFileType3{ ".dff" };
 std::string const _TargetFileType{ ".flac" };
 
-//const std::filesystem::path _TargetExtension{ "flac" };
+
+
+int _nDictionary{ 0 };
+
+
+#include <iostream>
+#include <fcntl.h>
+#include <io.h>
+
+int GetFilesData(std::tuple<int, long, long>& scanInfo, const std::filesystem::path& directory, bool bAsync = false)
+{
+    _nDictionary++;
+    
+    std::wstring entryPath{ directory.wstring() };
+    std::wcout << std::endl << L"Scanning Dictionary (" << _nDictionary << "): " << entryPath << std::endl;
+
+
+    for (const fs::directory_entry& entry : fs::directory_iterator(directory)) {
+        if (entry.is_directory()) {
+            GetFilesData(scanInfo, entry.path());
+        }
+    }
+
+    auto& [retStatus, nFiles, nFilesSize] { scanInfo };
+
+
+    auto nDictionaryFiles{ 0 };
+    long long nDictionartFilesSize{ 0 };
+    for (const fs::directory_entry& entry : fs::directory_iterator(directory)) {
+        auto hasExtension = entry.path().has_extension();
+        auto fileEextension = entry.path().extension();
+
+        if (entry.is_regular_file()) 
+        {
+            std::wstring entryPath{ entry.path().wstring() };
+            if (entry.path().has_extension() &&
+                ((fileEextension == _SourceFileType1) || (fileEextension == _SourceFileType2) || (fileEextension == _SourceFileType3))) {
+
+                nDictionartFilesSize += entry.file_size() ;
+
+//                std::wcout << L"File (" << ++nDictionaryFiles << "):" << entryPath << std::endl;
+            }
+            else
+            {
+//                std::wcout << L"SKIP: " << entryPath << std::endl;
+            }
+        }
+        else if (entry.is_directory()) {
+
+        }
+        else
+        {
+            std::wcout << L"***UUNKNOWN ENTRY: " << entryPath << std::endl;
+        }
+    }
+
+    nDictionartFilesSize /= (1024 * 1024);
+
+    std::wcout << L"----Total dictionaty Size: " << nDictionartFilesSize << L"Mb" << std::endl;
+
+    nFiles += nDictionaryFiles;
+    nFilesSize += nDictionartFilesSize;
+  //  return { retStatus, nFiles + nDictionaryFiles, nFilesSize + nDictionartFilesSize };
+
+    return 0;
+}
 
 int ConverAllDirectories(const std::filesystem::path& directory, bool bAsync = false)
 {
     std::vector<std::shared_ptr<MediaConvertionTask>> tasksVector;
 
     for (const fs::directory_entry& entry : fs::directory_iterator(directory)) {
-//        std::cout << "reg dir: " << entry.is_directory() << std::endl;
-//        std::cout << "reg file: " << entry.is_regular_file() << std::endl;
+        if (entry.is_directory()) {
+            int ret = ConverAllDirectories(entry.path(), bAsync);
+            if (ret == -1) {
+                std::cout << "***ERROR*** returned from ConverAllDirectories" << std::endl;
+                return -1;
+            }
+        }
+    }
 
-//        std::cout << entry.path().generic_wstring().c_str() << std::endl;
 
+    for (const fs::directory_entry& entry : fs::directory_iterator(directory)) {
         auto hasExtension = entry.path().has_extension();
         auto fileEextension = entry.path().extension();
 
-//        if (entry.is_regular_file() && entry.path().has_extension() && (fileEextension == ".flac")) {
-        if (entry.is_regular_file() && entry.path().has_extension() && ((fileEextension == _SourceFileType1) || (fileEextension == _SourceFileType2) || (fileEextension == _SourceFileType3))) {
+        const fs::path sourcePath = entry.path();
 
-            const fs::path sourcePath = entry.path();
+        if (entry.is_regular_file())
+        {
+            if (entry.path().has_extension() &&
+                ((fileEextension == _SourceFileType1) || (fileEextension == _SourceFileType2) || (fileEextension == _SourceFileType3))) {
 
-            fs::path targetPath = entry.path();
-            targetPath.replace_extension(_TargetFileType);
+                fs::path targetPath = entry.path();
+                targetPath.replace_extension(_TargetFileType);
 
-            fs::path targetTMPPath = entry.path();
-            fs::path targetTMPFileName = targetTMPPath.stem() += fs::path{ "_TMP" };
-            targetTMPPath.replace_filename(targetTMPFileName);
-            targetTMPPath += _TargetFileType;
-            //fs::path targetFileName{ sourcePath.stem() += fs::path{"_tmp"} += sourcePath.extension() };
+                fs::path targetTMPPath = entry.path();
+                fs::path targetTMPFileName = targetTMPPath.stem() += fs::path{ "_TMP" };
+                targetTMPPath.replace_filename(targetTMPFileName);
+                targetTMPPath += _TargetFileType;
 
-      //      fs::path targetFileName{ sourcePath.stem() += _TargetFileType };
+           //     fs::path targetTMPPath = _TMPDirectory += entry.path().stem() += fs::path{ "_TMP" } += fs::path{ _TargetFileType };
 
-        //    fs::path targetTMPFileName{ sourcePath.stem() += fs::path{"_tmp"} += _TargetFileType };
-         //   fs::path targetTMPPath{ targetTMPFileName };
-
-
-       //     
-
-            //fs::path targetPath{ sourcePath };
-            //targetPath.replace_filename(targetFileName);
-
-            std::shared_ptr<MediaConvertionTask> pTask = bAsync ? std::make_shared<MediaConvertionAsyncTask>(sourcePath, targetPath, targetTMPPath) : std::make_shared<MediaConvertionTask>(sourcePath, targetPath, targetTMPPath);
-            tasksVector.push_back(pTask);
+                std::shared_ptr<MediaConvertionTask> pTask = bAsync ? std::make_shared<MediaConvertionAsyncTask>(sourcePath, targetPath, targetTMPPath) : std::make_shared<MediaConvertionTask>(sourcePath, targetPath, targetTMPPath);
+                tasksVector.push_back(pTask);
+            }
+            else
+            {
+                std::wcout << L"---Skipping: " << sourcePath << std::endl;
+            }
         }
         else {
             if (entry.is_directory()) {
-                int ret = ConverAllDirectories(entry.path(), bAsync);
-                if (ret == -1) {
-                    std::cout << "***STOP*** ConverAllDirectories" << std::endl;
-                    return -1;
-                }
+            }
+            else
+            {
+                std::wcout << L"***UUNKNOWN ENTRY: " << sourcePath << std::endl;
             }
         }
     }
@@ -96,7 +165,15 @@ int ConverAllDirectories(const std::filesystem::path& directory, bool bAsync = f
     int saa = tasksVector.size();
 
     //process all files in current directory
-    std::for_each(tasksVector.begin(), tasksVector.end(), [](auto& f) { f->Run(); });
+    int processStatus{ 0 };
+    std::for_each(tasksVector.begin(), tasksVector.end(), [](auto& f)
+        {
+            f->Run();
+            if (f->GetStatus() == -1)
+            {
+                
+            }
+        });
     std::for_each(tasksVector.begin(), tasksVector.end(), [](auto& f) { f->PostRun(); });
 
     auto found = std::find_if(tasksVector.begin(), tasksVector.end(), [](auto& f) { return f->GetStatus() == -1; });
@@ -110,30 +187,47 @@ int ConverAllDirectories(const std::filesystem::path& directory, bool bAsync = f
 }
 
 
-
-
 int main()
 {
+ //   _setmode(_fileno(stdout), _O_U16TEXT);
+    auto ret = _setmode(_fileno(stdout), _O_U16TEXT);
 
+    _TMPDirectory = std::filesystem::temp_directory_path();
 
     std::string userSourcePath;
-//    std::wcout << "Enter source directory [" << sourceDirectory << "]: " << std::endl;
- //   std::cin >> userSourcePath;
-    std::wcout << "Using " << sourceDirectory << std::endl;
+    //    std::wcout << "Enter source directory [" << sourceDirectory << "]: " << std::endl;
+     //   std::cin >> userSourcePath;
+    std::wcout << "Using " << _SourceDirectory << std::endl;
 
     auto startTime = std::chrono::steady_clock::now();
 
- // while (true) {
-        int ret = ConverAllDirectories(sourceDirectory, false);
-        if (ret == -1) {
-            std::wcout << "***STOP*** ConverAllDirectories" << std::endl;
-            return -1;
-        }
+    std::tuple<int, long, long> scanInfo {0, 0, 0, };
 
-        std::wcout << "Success!!!" << std::endl;
- // }
+    int retStatus = GetFilesData(scanInfo, _SourceDirectory);
 
-    //log total execution time (millis)
+    //wait
+    std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
+    std::getchar();
+
+    auto& [retStatus2, nFiles, nFilesSize] = scanInfo;
+
+    std::wcout << std::endl << "======================" << std::endl;
+    std::wcout << "Total Files:" << nFiles << std::endl;
+    std::wcout << "Total Size:" << nFilesSize << std::endl;
+
+  //  return 0;
+
+    // while (true) {
+    ret = ConverAllDirectories(_SourceDirectory, false);
+    if (ret == -1) {
+        std::wcout << "***STOP*** ConverAllDirectories" << std::endl;
+        return -1;
+    }
+
+    std::wcout << "Success!!!" << std::endl;
+    // }
+
+       //log total execution time (millis)
     auto endTime = std::chrono::steady_clock::now();
     std::wcout << "-->### Total processing time(milliseconds) : "
         << std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()
@@ -142,3 +236,5 @@ int main()
 
     return 0;
 }
+
+
