@@ -23,6 +23,8 @@
 #include <string>
 #include <any>
 
+#include "FolderCompare.h"
+
 #include "MediaConvertionTask.h"
 #include "MediaConvertionAsyncTask.h"
 
@@ -31,7 +33,7 @@ namespace fs = std::filesystem;
 //fs::path sourcePath = fs::path("M:")/"tmp"/"24";
 //fs::path sourcePath = fs::path("M:\\tmp\\24\\MMM");// \\15 DSD Tracks of J.S.Bach 2018");
 //fs::path sourcePath = fs::path("M:\\tmp\\24_new_files\\_DSD");
-fs::path _SourceDirectory{ "M:\\tmp\\24\\MMM" };
+fs::path _SourceDirectory{ "M:\\tmp\\24" };
 
 fs::path _TMPDirectory{  };
 
@@ -39,6 +41,7 @@ fs::path _TMPDirectory{  };
 std::string const _SourceFileType1{ ".flac" };
 std::string const _SourceFileType2{ ".dsf" };
 std::string const _SourceFileType3{ ".dff" };
+std::string const _SourceFileType4{ ".dsd" };
 std::string const _TargetFileType{ ".flac" };
 
 
@@ -77,7 +80,7 @@ int GetFilesData(std::tuple<int, long, long>& scanInfo, const std::filesystem::p
         {
             std::wstring entryPath{ entry.path().wstring() };
             if (entry.path().has_extension() &&
-                ((fileEextension == _SourceFileType1) || (fileEextension == _SourceFileType2) || (fileEextension == _SourceFileType3))) {
+                ((fileEextension == _SourceFileType1) || (fileEextension == _SourceFileType2) || (fileEextension == _SourceFileType3) || (fileEextension == _SourceFileType4))) {
 
                 nDictionartFilesSize += entry.file_size() ;
 
@@ -132,7 +135,7 @@ int ConverAllDirectories(const std::filesystem::path& directory, bool bAsync = f
         if (entry.is_regular_file())
         {
             if (entry.path().has_extension() &&
-                ((fileEextension == _SourceFileType1) || (fileEextension == _SourceFileType2) || (fileEextension == _SourceFileType3))) {
+                ((fileEextension == _SourceFileType1) || (fileEextension == _SourceFileType2) || (fileEextension == _SourceFileType3) || (fileEextension == _SourceFileType4))) {
 
                 fs::path targetPath = entry.path();
                 targetPath.replace_extension(_TargetFileType);
@@ -189,6 +192,15 @@ int ConverAllDirectories(const std::filesystem::path& directory, bool bAsync = f
 
 int main()
 {
+
+    //fs::path pathA{ "M:\\tmp\\24_new_files" };
+    //fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
+
+    //FolderCompare fc;
+    //auto similarFilesList = fc.Compare(pathA, pathB);
+
+    //return 0;
+
  //   _setmode(_fileno(stdout), _O_U16TEXT);
     auto ret = _setmode(_fileno(stdout), _O_U16TEXT);
 

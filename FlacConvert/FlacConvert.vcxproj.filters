@@ -24,12 +24,18 @@
     <ClCompile Include="MediaConvertionAsyncTask.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="FolderCompare.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="MediaConvertionTask.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="MediaConvertionAsyncTask.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FolderCompare.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

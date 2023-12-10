@@ -144,10 +144,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="FlacConvert.cpp" />
+    <ClCompile Include="FolderCompare.cpp" />
     <ClCompile Include="MediaConvertionAsyncTask.cpp" />
     <ClCompile Include="MediaConvertionTask.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="FolderCompare.h" />
     <ClInclude Include="MediaConvertionAsyncTask.h" />
     <ClInclude Include="MediaConvertionTask.h" />
   </ItemGroup>
