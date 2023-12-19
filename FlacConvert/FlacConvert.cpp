@@ -42,6 +42,10 @@ std::string const _SourceFileType1{ ".flac" };
 std::string const _SourceFileType2{ ".dsf" };
 std::string const _SourceFileType3{ ".dff" };
 std::string const _SourceFileType4{ ".dsd" };
+std::string const _SourceFileType5{ ".wv" };
+std::string const _SourceFileType6{ ".wav" };
+std::string const _SourceFileType7{ ".m2ts" };
+
 std::string const _TargetFileType{ ".flac" };
 
 
@@ -80,7 +84,9 @@ int GetFilesData(std::tuple<int, long, long>& scanInfo, const std::filesystem::p
         {
             std::wstring entryPath{ entry.path().wstring() };
             if (entry.path().has_extension() &&
-                ((fileEextension == _SourceFileType1) || (fileEextension == _SourceFileType2) || (fileEextension == _SourceFileType3) || (fileEextension == _SourceFileType4))) {
+                ((fileEextension == _SourceFileType1) || (fileEextension == _SourceFileType2) || 
+                 (fileEextension == _SourceFileType3) || (fileEextension == _SourceFileType4) ||
+                 (fileEextension == _SourceFileType5) || (fileEextension == _SourceFileType6) || (fileEextension == _SourceFileType7))) {
 
                 nDictionartFilesSize += entry.file_size() ;
 
@@ -135,7 +141,9 @@ int ConverAllDirectories(const std::filesystem::path& directory, bool bAsync = f
         if (entry.is_regular_file())
         {
             if (entry.path().has_extension() &&
-                ((fileEextension == _SourceFileType1) || (fileEextension == _SourceFileType2) || (fileEextension == _SourceFileType3) || (fileEextension == _SourceFileType4))) {
+                ((fileEextension == _SourceFileType1) || (fileEextension == _SourceFileType2) || 
+                    (fileEextension == _SourceFileType3) || (fileEextension == _SourceFileType4) ||
+                    (fileEextension == _SourceFileType5) || (fileEextension == _SourceFileType6) || (fileEextension == _SourceFileType7))) {
 
                 fs::path targetPath = entry.path();
                 targetPath.replace_extension(_TargetFileType);
@@ -193,13 +201,23 @@ int ConverAllDirectories(const std::filesystem::path& directory, bool bAsync = f
 int main()
 {
 
-    //fs::path pathA{ "M:\\tmp\\24_new_files" };
-    //fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
+  //  fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
+  //  fs::path pathA2{ "\\\\?\\M:\\tmp\\24" };
+  //  fs::path pathB{ "\\\\?\\M:\\music\\Classical\\Albums\\ex24bit" };
+  // // fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
 
-    //FolderCompare fc;
-    //auto similarFilesList = fc.Compare(pathA, pathB);
+  //  auto dirNameA = pathA.generic_wstring();
 
-    //return 0;
+  //  FolderCompare fc;
+  //  fc.GetFolderNamesList2(pathA, 9);
+  //  fc.GetFolderNamesList2(pathB, 9);
+  ////  fc.GetFolderNamesList2(pathB, 9);
+  //  fc.sort();
+  //  fc.findDuplicates();
+
+  //  auto retRESULT = fc._fileList;
+
+  //  return 0;
 
  //   _setmode(_fileno(stdout), _O_U16TEXT);
     auto ret = _setmode(_fileno(stdout), _O_U16TEXT);

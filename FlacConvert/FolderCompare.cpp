@@ -4,13 +4,152 @@
 #include <vector>
 #include <algorithm>
 #include <ranges>
-
-namespace fs = std::filesystem;
-
+#include <functional>
 
 
 
-std::vector<std::wstring> FolderCompare::GetFolderNamesList(std::filesystem::path path)
+
+
+void FolderCompare::findDuplicates()
+{
+    if (_fileList.empty())
+    {
+        return;
+    }
+    auto first = _fileList[0];
+
+
+}
+
+void FolderCompare::sort()
+{
+    std::ranges::stable_sort(_fileList,
+        [&](auto& a, auto& b) {
+
+            auto dir1 = std::get<0>(a);
+            auto dir2 = std::get<0>(b);
+            auto list1 = std::get<1>(a);
+            auto list2 = std::get<1>(b);
+
+            if (list1.size() == list2.size())
+            {
+                if (list1.size() == 0)
+                {
+                    return true;
+                }
+
+                if (list2.size() == 0)
+                {
+                    return false;
+                }
+
+                auto it1 = list1.cbegin();
+                auto it2 = list2.cbegin();
+                bool bPotentialIdentical = true;
+
+                uintmax_t n1 = 0;
+                uintmax_t n2 = 0;
+
+                fs::path dn1_;
+                fs::path dn2_;
+
+                try
+                {
+                    while (bPotentialIdentical && it1 != list1.cend())
+                    {
+
+                        auto dirName1 = dir1.path().generic_wstring();
+                        auto dirName2 = dir2.path().generic_wstring();
+
+                        fs::path path1{ dirName1 + L"/" + *it1 };
+                        fs::path path2{ dirName2 + L"/" + *it2 };
+                        //fs::path path1 = fs::path{ dirName1 }  / fs::path{*it1};
+                        //fs::path path2 = fs::path{ dirName2 } / fs::path{ *it2 };
+
+                        dn1_ = path1;
+                        dn2_ = path2;
+
+                        auto path1Fixed = path1.lexically_normal().native();
+                        auto path2Fixed = path2.lexically_normal().native();
+
+
+                        auto fileSize1 = fs::file_size(path1Fixed);
+                        auto fileSize2 = fs::file_size(path2Fixed);
+
+                        n1 = fileSize1;
+                        n2 = fileSize2;
+
+                        if (std::labs(fileSize1 - fileSize2) > 1000)
+                        {
+                            bPotentialIdentical = false;
+                        }
+
+                        it1++;
+                        it2++;
+                    }
+                }
+                catch (std::exception ex)
+                {
+                    int ii = 9;
+                    bPotentialIdentical = false;
+                }
+
+                if (bPotentialIdentical)
+                {
+                    int i = 0;
+                    _SimilarDirs++;
+                }
+
+                return bPotentialIdentical;
+            }
+
+            return list1.size() < list2.size();
+        });
+}
+
+
+std::vector<std::wstring> FolderCompare::GetFolderNamesList2(std::filesystem::path path, int depth)
+{
+    std::vector<std::wstring> folderList;
+
+    if (depth == 0)
+    {
+        return folderList;
+    }
+
+    for (const fs::directory_entry& entry : fs::directory_iterator(path)) {
+        auto folderName = entry.path().filename();
+//        auto path = entry.path();
+        auto name = folderName.generic_wstring();
+        if (entry.is_directory()) {
+            //auto folderName = entry.path().stem();
+            //folderList.push_back(name);
+
+            auto directoryfileList = GetFolderNamesList2(entry.path(), depth - 1);
+            if (directoryfileList.size() > 0)
+            {
+                _fileList.push_back({ entry, directoryfileList });
+            }
+        }
+        else {
+            if (entry.is_regular_file())
+            {
+                auto hasExtension = entry.path().has_extension();
+                auto fileEextension = entry.path().extension();
+                std::wstring entryPath{ entry.path().wstring() };
+                if (entry.path().has_extension() && (fileEextension == ".flac")) {
+                    folderList.push_back(name);
+                }
+            }
+        }
+    }
+
+    return folderList;
+}
+
+//            folderList.push_back({ entry, { }});
+
+std::vector<std::wstring> FolderCompare::GetFolderNamesList(std::filesystem::path path, bool recrusive)
 {
     std::vector<std::wstring> folderList;
     
@@ -41,19 +180,6 @@ std::vector<std::wstring> FolderCompare::Compare(std::filesystem::path pathA, st
     std::ranges::set_difference(folderListA, folderListB, std::back_inserter(nonSimilarFolders));
 
     std::ranges::set_intersection(folderListA, folderListB, std::back_inserter(similarFolders));
-
-
-    // Finding common items using std::ranges::set_intersection
-    //std::ranges::set_intersection( folderListA, folderListB, std::back_inserter(similarFolders), [](const auto& a, const auto& b) {
-    //        // Case-insensitive comparison for wide strings
-    //        std::wstring lowerA = a;
-    //        std::wstring lowerB = b;
-    //        std::transform(lowerA.begin(), lowerA.end(), lowerA.begin(), ::towlower);
-    //        std::transform(lowerB.begin(), lowerB.end(), lowerB.begin(), ::towlower);
-    //        return lowerA == lowerB;
-    //    }
-    //);
-
 
     return folderListB;
 }
