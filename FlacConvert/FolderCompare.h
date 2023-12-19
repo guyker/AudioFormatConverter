@@ -6,8 +6,10 @@
 
 
 namespace fs = std::filesystem;
-using EntryFileTuple = std::tuple <fs::directory_entry, std::vector<std::wstring>>;
-using EntryFileList = std::vector<std::tuple <fs::directory_entry, std::vector<std::wstring>>>;
+//using EntryFileTuple = std::tuple <fs::directory_entry, std::vector<std::wstring>>;
+using DirectoryContentEntryList = std::vector<std::tuple <fs::directory_entry, std::vector<std::wstring>>>;
+
+using SimilarDirectoryEntryList = std::vector<std::tuple <fs::directory_entry, fs::directory_entry>>;
 
 class FolderCompare
 {
@@ -22,7 +24,8 @@ public:
 
 	std::vector<std::wstring> Compare(std::filesystem::path pathA, std::filesystem::path pathB);
 
-	EntryFileList _fileList;
+	DirectoryContentEntryList _fileList;
+	SimilarDirectoryEntryList _SimilarDirectories;
 	int _SimilarDirs{ 0 };
 };
 

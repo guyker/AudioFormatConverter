@@ -1,5 +1,6 @@
 #include "FolderCompare.h"
 
+#include <windows.h> 
 
 #include <vector>
 #include <algorithm>
@@ -10,13 +11,67 @@
 
 
 
+void OpenDirectoryInExplorer(std::wstring dirName)
+{
+        
+        //using namespace std::string_literals;
+        //COMMAND
+
+        //std::wstring cmdExecNameW{ L"ffmpeg" };
+        //std::wstring convertParamsW{ L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats"s };
+        //std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + LR"( ")"s + _targetTMPPath.generic_wstring() + LR"(")"s };
+
+        auto dirNameConv1 = dirName.substr(4, dirName.length() - 4);
+        std::wstring dirNameConv2{};
+        for (auto c : dirNameConv1)
+        {
+            if (c == '/')
+            {
+                dirNameConv2 += '\\';
+            }
+            else
+            {
+                dirNameConv2 += c;
+            }
+        }
+
+        std::wstring cmdExecNameW{ L"explorer.exe /e " };
+        std::wstring commandW{ cmdExecNameW + dirNameConv2};
+
+
+        try {
+         //   _wsystem(commandW.c_str());
+
+            ShellExecute(NULL, NULL, dirNameConv2.c_str(), NULL, NULL, SW_SHOWNORMAL);
+
+        }
+        catch (const std::exception& ex) {
+        }
+
+}
+
+
 void FolderCompare::findDuplicates()
 {
+
     if (_fileList.empty())
     {
         return;
     }
-    auto first = _fileList[0];
+
+    for (auto entry : _SimilarDirectories)
+    {
+        auto [dir1, dir2] = entry;
+        auto dirNamre1 = dir1.path().generic_wstring();
+        auto dirNamre2 = dir2.path().generic_wstring();
+
+        OpenDirectoryInExplorer(dirNamre1);
+        OpenDirectoryInExplorer(dirNamre2);
+
+        int i = 0;
+    }
+
+    
 
 
 }
@@ -80,7 +135,8 @@ void FolderCompare::sort()
                         n2 = fileSize2;
 
 
-                        auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / std::max(fileSize1, fileSize2);
+                        //auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / std::max(fileSize1, fileSize2);
+                        auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / max(fileSize1, fileSize2);
 
                         //if (std::labs(fileSize1 - fileSize2) > 10000000)
                         if (diff > 10)
@@ -102,6 +158,8 @@ void FolderCompare::sort()
                 {
                     int i = 0;
                     _SimilarDirs++;
+
+                    _SimilarDirectories.push_back({ dir1 , dir2 });
                 }
 
                 return bPotentialIdentical;
