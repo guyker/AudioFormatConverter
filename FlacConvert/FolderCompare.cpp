@@ -79,7 +79,11 @@ void FolderCompare::sort()
                         n1 = fileSize1;
                         n2 = fileSize2;
 
-                        if (std::labs(fileSize1 - fileSize2) > 1000)
+
+                        auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / std::max(fileSize1, fileSize2);
+
+                        //if (std::labs(fileSize1 - fileSize2) > 10000000)
+                        if (diff > 10)
                         {
                             bPotentialIdentical = false;
                         }
