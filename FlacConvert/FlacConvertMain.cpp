@@ -201,9 +201,9 @@ int ConverAllDirectories(const std::filesystem::path& directory, bool bAsync = f
 int main()
 {
 
-    //fs::path pathA{ "\\\\?\\R:\\24" };
+    fs::path pathA{ "\\\\?\\R:\\24" };
     //fs::path pathA{ "\\\\?\\M:\\tmp\\24" };
-    fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
+    //fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
     fs::path pathB{ "\\\\?\\M:\\music\\Classical\\Albums\\ex24bit" };
    //fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
 
@@ -212,7 +212,7 @@ int main()
     FolderCompare fc;
 
     fc.GetFolderNamesList2(pathA, 9);
-    fc.GetFolderNamesList2(pathB, 9);
+//    fc.GetFolderNamesList2(pathB, 9);
   //  fc.GetFolderNamesList2(pathB, 9);
     fc.sort();
     fc.findDuplicates();

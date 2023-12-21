@@ -6,8 +6,8 @@
 
 
 namespace fs = std::filesystem;
-//using EntryFileTuple = std::tuple <fs::directory_entry, std::vector<std::wstring>>;
-using DirectoryContentEntryList = std::vector<std::tuple <fs::directory_entry, std::vector<std::wstring>>>;
+using EntryFileTuple = std::tuple <fs::directory_entry, std::vector<std::wstring>>;
+using DirectoryContentEntryList = std::vector<EntryFileTuple>;
 
 //using SimilarDirectoryEntryList = std::vector<std::tuple <fs::directory_entry, fs::directory_entry>>;
 using SimilarDirectoryEntryList = std::vector<std::tuple <std::wstring, std::wstring>>;
@@ -24,6 +24,10 @@ public:
 	void findDuplicates();
 
 	std::vector<std::wstring> Compare(std::filesystem::path pathA, std::filesystem::path pathB);
+	bool Compare(EntryFileTuple& entry1, EntryFileTuple& entry2);
+	
+	void FindDuplicationInGroup(DirectoryContentEntryList::iterator& firstIt, DirectoryContentEntryList::iterator& lastIt);
+	void OpenDirectoryInExplorer(std::wstring dirName);
 
 	DirectoryContentEntryList _fileList;
 	SimilarDirectoryEntryList _SimilarDirectories;
