@@ -63,7 +63,7 @@ bool FolderCompare::Compare(EntryFileTuple entry1, EntryFileTuple entry2)
     auto it2 = list2.cbegin();
     bool bPotentialIdentical = true;
 
-    if (list1.size() == list2.size())
+    if (list1.size() == list2.size() && list1.size() > 1)
     {
 
         try
@@ -99,7 +99,7 @@ bool FolderCompare::Compare(EntryFileTuple entry1, EntryFileTuple entry2)
                 long long result = (long)100 * diff / maxSize;
 
                 //if (std::labs(fileSize1 - fileSize2) > 10000000)
-                if (result > 10)
+                if (result > 5)
                 {
                     bPotentialIdentical = false;
                 }
@@ -132,9 +132,9 @@ void FolderCompare::FindDuplicationInGroup(DirectoryContentEntryList::iterator f
         auto currentIt = firstIt;
         while (currentIt != lastIt)
         {
+            auto currentIt2 = currentIt;
             while (firstIt != lastIt)
             {
-                auto currentIt2 = currentIt;
                 currentIt2++;
 
                 auto dir1 = std::get<0>(*currentIt);
@@ -172,15 +172,15 @@ void FolderCompare::findDuplicates()
     }
 
 
-    for (auto& item : _fileList)
-    {
-        auto dir = std::get<0>(item);
-        auto fileList = std::get<1>(item);
-        
-        auto dirName = dir.path().generic_string();
+    //for (auto& item : _fileList)
+    //{
+    //    auto dir = std::get<0>(item);
+    //    auto fileList = std::get<1>(item);
+    //    
+    //    auto dirName = dir.path().generic_string();
 
-        int i = 0;
-    }
+    //    int i = 0;
+    //}
 
     auto firstIt = _fileList.begin();
     auto secondIt = firstIt;
