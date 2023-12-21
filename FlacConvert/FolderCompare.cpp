@@ -8,7 +8,9 @@
 #include <functional>
 
 
-
+#include <forward_list>
+#include <iterator>
+#include <vector>
 
 
 void OpenDirectoryInExplorer(std::wstring dirName)
@@ -51,22 +53,72 @@ void OpenDirectoryInExplorer(std::wstring dirName)
 }
 
 
+void FindDuplicationInGroup(DirectoryContentEntryList::iterator& firstIt, DirectoryContentEntryList::iterator& lastIt)
+{
+    auto currentIt1 = firstIt;
+    while (currentIt1 != lastIt)
+    {
+        auto currentIt2 = firstIt++;
+        while (currentIt2 != )
+
+
+    }
+}
+
+
 void FolderCompare::findDuplicates()
 {
+    //fs::directory_entry, std::vector<std::wstring>
 
     if (_fileList.empty())
     {
         return;
     }
 
+    auto firstIt = _fileList.begin();
+    auto endGroupIt = _fileList.begin();
+
+
+    while (firstIt != _fileList.end() && endGroupIt != _fileList.end())
+    {
+        auto dirEntry1 = std::get<0>(*firstIt);
+        auto fileList1 = std::get<1>(*firstIt);
+
+        auto dirEntry2 = std::get<0>(*endGroupIt);
+        auto fileList2 = std::get<1>(*endGroupIt);
+
+        auto pushedEndGroupIt = endGroupIt;
+        while (endGroupIt != _fileList.end() && fileList1.size() == fileList2.size())
+        {
+            dirEntry2 = std::get<0>(*endGroupIt);
+            fileList2 = std::get<1>(*endGroupIt);
+
+            pushedEndGroupIt = endGroupIt;
+            endGroupIt++;
+        }
+        
+        auto firstIndex = std::ranges::distance(_fileList.cbegin(), firstIt);
+        auto lastIndex = std::ranges::distance(_fileList.cbegin(), endGroupIt);
+
+        if (firstIndex != lastIndex)
+        {
+            FindDuplicationInGroup(firstIt, endGroupIt);
+        }
+
+        firstIndex = lastIndex++;
+
+        endGroupIt++;
+        firstIt = endGroupIt;;
+    }
+
+
+
     for (auto entry : _SimilarDirectories)
     {
         auto [dir1, dir2] = entry;
-        auto dirNamre1 = dir1.path().generic_wstring();
-        auto dirNamre2 = dir2.path().generic_wstring();
 
-        OpenDirectoryInExplorer(dirNamre1);
-        OpenDirectoryInExplorer(dirNamre2);
+        OpenDirectoryInExplorer(dir1);
+        OpenDirectoryInExplorer(dir2);
 
         int i = 0;
     }
@@ -92,22 +144,16 @@ void FolderCompare::sort()
                 {
                     return true;
                 }
-
-                if (list2.size() == 0)
-                {
-                    return false;
+                else {
+                    if (list2.size() == 0)
+                    {
+                        return false;
+                    }
                 }
 
                 auto it1 = list1.cbegin();
                 auto it2 = list2.cbegin();
                 bool bPotentialIdentical = true;
-
-                uintmax_t n1 = 0;
-                uintmax_t n2 = 0;
-
-                fs::path dn1_;
-                fs::path dn2_;
-
                 try
                 {
                     while (bPotentialIdentical && it1 != list1.cend())
@@ -118,11 +164,7 @@ void FolderCompare::sort()
 
                         fs::path path1{ dirName1 + L"/" + *it1 };
                         fs::path path2{ dirName2 + L"/" + *it2 };
-                        //fs::path path1 = fs::path{ dirName1 }  / fs::path{*it1};
-                        //fs::path path2 = fs::path{ dirName2 } / fs::path{ *it2 };
 
-                        dn1_ = path1;
-                        dn2_ = path2;
 
                         auto path1Fixed = path1.lexically_normal().native();
                         auto path2Fixed = path2.lexically_normal().native();
@@ -130,9 +172,6 @@ void FolderCompare::sort()
 
                         auto fileSize1 = fs::file_size(path1Fixed);
                         auto fileSize2 = fs::file_size(path2Fixed);
-
-                        n1 = fileSize1;
-                        n2 = fileSize2;
 
 
                         //auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / std::max(fileSize1, fileSize2);
@@ -159,11 +198,12 @@ void FolderCompare::sort()
                     int i = 0;
                     _SimilarDirs++;
 
-                    _SimilarDirectories.push_back({ dir1 , dir2 });
+                    _SimilarDirectories.push_back({ dir1.path().generic_wstring(), dir2.path().generic_wstring() });
                 }
 
                 return bPotentialIdentical;
             }
+            
 
             return list1.size() < list2.size();
         });

@@ -143,7 +143,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="FlacConvert.cpp" />
+    <ClCompile Include="FlacConvertMain.cpp" />
     <ClCompile Include="FolderCompare.cpp" />
     <ClCompile Include="MediaConvertionAsyncTask.cpp" />
     <ClCompile Include="MediaConvertionTask.cpp" />

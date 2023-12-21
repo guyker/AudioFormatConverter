@@ -201,24 +201,25 @@ int ConverAllDirectories(const std::filesystem::path& directory, bool bAsync = f
 int main()
 {
 
-  //  fs::path pathA{ "\\\\?\\R:\\24" };
-  //  //fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
-  //  fs::path pathA2{ "\\\\?\\M:\\tmp\\24" };
-  //  fs::path pathB{ "\\\\?\\M:\\music\\Classical\\Albums\\ex24bit" };
-  // // fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
+    //fs::path pathA{ "\\\\?\\R:\\24" };
+    //fs::path pathA{ "\\\\?\\M:\\tmp\\24" };
+    fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
+    fs::path pathB{ "\\\\?\\M:\\music\\Classical\\Albums\\ex24bit" };
+   //fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
 
-  //  auto dirNameA = pathA.generic_wstring();
+    auto dirNameA = pathA.generic_wstring();
 
-  //  FolderCompare fc;
-  //  fc.GetFolderNamesList2(pathA, 9);
-  //  //fc.GetFolderNamesList2(pathB, 9);
-  ////  fc.GetFolderNamesList2(pathB, 9);
-  //  fc.sort();
-  //  fc.findDuplicates();
+    FolderCompare fc;
 
-  //  auto retRESULT = fc._fileList;
+    fc.GetFolderNamesList2(pathA, 9);
+    fc.GetFolderNamesList2(pathB, 9);
+  //  fc.GetFolderNamesList2(pathB, 9);
+    fc.sort();
+    fc.findDuplicates();
 
-  //  return 0;
+    auto retRESULT = fc._fileList;
+
+    return 0;
 
  //   _setmode(_fileno(stdout), _O_U16TEXT);
     auto ret = _setmode(_fileno(stdout), _O_U16TEXT);
