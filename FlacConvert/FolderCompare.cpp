@@ -62,52 +62,55 @@ bool FolderCompare::Compare(EntryFileTuple& entry1, EntryFileTuple& entry2)
     auto it1 = list1.cbegin();
     auto it2 = list2.cbegin();
     bool bPotentialIdentical = true;
-    try
+
+    if (list1.size() == list2.size())
     {
-        while (bPotentialIdentical && it1 != list1.cend())
+
+        try
         {
 
-            auto dirName1 = dir1.path().generic_wstring();
-            auto dirName2 = dir2.path().generic_wstring();
-
-            fs::path path1{ dirName1 + L"/" + *it1 };
-            fs::path path2{ dirName2 + L"/" + *it2 };
-
-
-            auto path1Fixed = path1.lexically_normal().native();
-            auto path2Fixed = path2.lexically_normal().native();
-
-
-            auto fileSize1 = fs::file_size(path1Fixed);
-            auto fileSize2 = fs::file_size(path2Fixed);
-
-
-            //auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / std::max(fileSize1, fileSize2);
-            auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / max(fileSize1, fileSize2);
-
-            //if (std::labs(fileSize1 - fileSize2) > 10000000)
-            if (diff > 10)
+            while (bPotentialIdentical && it1 != list1.cend())
             {
-                bPotentialIdentical = false;
-            }
 
-            it1++;
-            it2++;
+                auto dirName1 = dir1.path().generic_wstring();
+                auto dirName2 = dir2.path().generic_wstring();
+
+                fs::path path1{ dirName1 + L"/" + *it1 };
+                fs::path path2{ dirName2 + L"/" + *it2 };
+
+
+                auto path1Fixed = path1.lexically_normal().native();
+                auto path2Fixed = path2.lexically_normal().native();
+
+
+                auto fileSize1 = fs::file_size(path1Fixed);
+                auto fileSize2 = fs::file_size(path2Fixed);
+
+
+                //auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / std::max(fileSize1, fileSize2);
+                auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / max(fileSize1, fileSize2);
+
+                //if (std::labs(fileSize1 - fileSize2) > 10000000)
+                if (diff > 10)
+                {
+                    bPotentialIdentical = false;
+                }
+
+                it1++;
+                it2++;
+            }
+        }
+        catch (std::exception ex)
+        {
+            int ii = 9;
+            bPotentialIdentical = false;
         }
     }
-    catch (std::exception ex)
+    else
     {
-        int ii = 9;
         bPotentialIdentical = false;
     }
 
-    if (bPotentialIdentical)
-    {
-        int i = 0;
-        //     _SimilarDirs++;
-
-         //    _SimilarDirectories.push_back({ dir1.path().generic_wstring(), dir2.path().generic_wstring() });
-    }
 
     return bPotentialIdentical;
 
@@ -123,7 +126,18 @@ void FolderCompare::FindDuplicationInGroup(DirectoryContentEntryList::iterator& 
         while (currentIt2 != lastIt)
         {
             //chake//
-            Compare(*currentIt1, *currentIt2);
+            auto bPotentialSimilar = Compare(*currentIt1, *currentIt2);
+            if (bPotentialSimilar)
+            {
+                auto dir1 = std::get<0>(*currentIt1);
+                auto dir2 = std::get<0>(*currentIt2);
+
+                auto nameXX1 = dir1.path().generic_wstring();
+                auto nameXX2 = dir2.path().generic_wstring();
+
+                _SimilarDirs++;
+                _SimilarDirectories.push_back({ dir1.path().generic_wstring(), dir2.path().generic_wstring() });
+            }
 
             currentIt2++;
         }
@@ -135,6 +149,8 @@ void FolderCompare::FindDuplicationInGroup(DirectoryContentEntryList::iterator& 
 void FolderCompare::findDuplicates()
 {
     //fs::directory_entry, std::vector<std::wstring>
+    
+    //find ranges in _fileList
 
     if (_fileList.empty())
     {
@@ -153,41 +169,39 @@ void FolderCompare::findDuplicates()
     }
 
     auto firstIt = _fileList.begin();
-    auto endGroupIt = _fileList.begin();
+    auto secondIt = _fileList.begin();
 
 
-    while (firstIt != _fileList.end() && endGroupIt != _fileList.end())
+    while (firstIt != _fileList.end() && secondIt != _fileList.end())
     {
         auto dirEntry1 = std::get<0>(*firstIt);
+        auto dirEntry2 = std::get<0>(*secondIt);
+
         auto fileList1 = std::get<1>(*firstIt);
+        auto fileList2 = std::get<1>(*secondIt);
 
-        auto dirEntry2 = std::get<0>(*endGroupIt);
-        auto fileList2 = std::get<1>(*endGroupIt);
-
-        auto pushedEndGroupIt = endGroupIt;
-        while (endGroupIt != _fileList.end() && fileList1.size() == fileList2.size())
+        auto pushedEndGroupIt = secondIt;
+        while (secondIt != _fileList.end() && fileList1.size() == fileList2.size())
         {
-            dirEntry2 = std::get<0>(*endGroupIt);
-            fileList2 = std::get<1>(*endGroupIt);
-
-            pushedEndGroupIt = endGroupIt;
-            endGroupIt++;
+            pushedEndGroupIt = secondIt;
+            secondIt++;
         }
         
+        secondIt = pushedEndGroupIt;
+
         auto firstIndex = std::ranges::distance(_fileList.cbegin(), firstIt);
-        auto lastIndex = std::ranges::distance(_fileList.cbegin(), endGroupIt);
+        auto lastIndex = std::ranges::distance(_fileList.cbegin(), secondIt);
 
         if (firstIndex != lastIndex)
         {
-            FindDuplicationInGroup(firstIt, endGroupIt);
+            FindDuplicationInGroup(firstIt, secondIt);
         }
 
         firstIndex = lastIndex++;
 
-        endGroupIt++;
-        firstIt = endGroupIt;;
+        secondIt++;
+        firstIt = secondIt;;
     }
-
 
 
     for (auto entry : _SimilarDirectories)
@@ -199,10 +213,6 @@ void FolderCompare::findDuplicates()
 
         int i = 0;
     }
-
-    
-
-
 }
 
 void FolderCompare::sort()
