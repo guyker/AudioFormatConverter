@@ -83,15 +83,23 @@ bool FolderCompare::Compare(EntryFileTuple& entry1, EntryFileTuple& entry2)
                 auto path2Fixed = path2.lexically_normal().native();
 
 
-                auto fileSize1 = fs::file_size(path1Fixed);
-                auto fileSize2 = fs::file_size(path2Fixed);
+                long long fileSize1 = fs::file_size(path1Fixed);
+                long long fileSize2 = fs::file_size(path2Fixed);
 
 
                 //auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / std::max(fileSize1, fileSize2);
-                auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / max(fileSize1, fileSize2);
+
+                long long minSize = min(fileSize1, fileSize2);
+                long long maxSize = max(fileSize1, fileSize2);
+                long long diff = maxSize - minSize;
+                long long muil10 = 10 * diff;
+                long long muil100 = 100 * diff;
+                long long result2 = muil100 / maxSize;
+
+                long long result = (long)100 * diff / maxSize;
 
                 //if (std::labs(fileSize1 - fileSize2) > 10000000)
-                if (diff > 10)
+                if (result > 10)
                 {
                     bPotentialIdentical = false;
                 }
@@ -117,23 +125,24 @@ bool FolderCompare::Compare(EntryFileTuple& entry1, EntryFileTuple& entry2)
 }
 
 
-void FolderCompare::FindDuplicationInGroup(DirectoryContentEntryList::iterator& firstIt, DirectoryContentEntryList::iterator& lastIt)
+void FolderCompare::FindDuplicationInGroup(DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt)
 {
     auto currentIt1 = firstIt;
-    while (currentIt1 != lastIt)
+    auto currentIt2 = firstIt++;
+    while (currentIt1 != lastIt && currentIt1 != _fileList.end() && currentIt2 != _fileList.end())
     {
-        auto currentIt2 = currentIt1++;
         while (currentIt2 != lastIt)
         {
+            auto dir1 = std::get<0>(*currentIt1);
+            auto dir2 = std::get<0>(*currentIt2);
+
+            auto nameXX1 = dir1.path().generic_wstring();
+            auto nameXX2 = dir2.path().generic_wstring();
+
             //chake//
             auto bPotentialSimilar = Compare(*currentIt1, *currentIt2);
             if (bPotentialSimilar)
             {
-                auto dir1 = std::get<0>(*currentIt1);
-                auto dir2 = std::get<0>(*currentIt2);
-
-                auto nameXX1 = dir1.path().generic_wstring();
-                auto nameXX2 = dir2.path().generic_wstring();
 
                 _SimilarDirs++;
                 _SimilarDirectories.push_back({ dir1.path().generic_wstring(), dir2.path().generic_wstring() });
