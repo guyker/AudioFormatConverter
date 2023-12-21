@@ -24,9 +24,9 @@ public:
 	void findDuplicates();
 
 	std::vector<std::wstring> Compare(std::filesystem::path pathA, std::filesystem::path pathB);
-	bool Compare(EntryFileTuple& entry1, EntryFileTuple& entry2);
+	bool Compare(EntryFileTuple entry1, EntryFileTuple entry2);
 	
-	void FindDuplicationInGroup(DirectoryContentEntryList::iterator& firstIt, DirectoryContentEntryList::iterator& lastIt);
+	void FindDuplicationInGroup(DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt);
 	void OpenDirectoryInExplorer(std::wstring dirName);
 
 	DirectoryContentEntryList _fileList;
