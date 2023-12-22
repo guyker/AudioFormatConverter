@@ -68,7 +68,7 @@ bool FolderCompare::Compare(EntryFileTuple entry1, EntryFileTuple entry2)
     auto it2 = list2.cbegin();
     bool bPotentialIdentical = true;
 
-    if (list1.size() == list2.size() && list1.size() > 1)
+    if (list1.size() == list2.size() && list1.size() >= MinNumberOfFilesInFolderToCompare )
     {
 
         try
@@ -238,7 +238,7 @@ void FolderCompare::findDuplicates()
         }
     }
 
-
+    int iCount = _SimilarDirectories.size();
     for (auto entry : _SimilarDirectories)
     {
         auto [dir1, dir2] = entry;
@@ -246,7 +246,7 @@ void FolderCompare::findDuplicates()
         OpenDirectoryInExplorer(dir1);
         OpenDirectoryInExplorer(dir2);
 
-        int i = 0;
+        iCount--;
     }
 }
 

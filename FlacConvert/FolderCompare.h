@@ -16,6 +16,7 @@ using SimilarDirectoryEntryList = std::vector<std::tuple <std::wstring, std::wst
 
 
 constexpr int SimilarPercentageTriggerValue { 5 };
+constexpr int MinNumberOfFilesInFolderToCompare { 4 };
 
 
 class FolderCompare
