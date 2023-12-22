@@ -58,6 +58,11 @@ bool FolderCompare::Compare(EntryFileTuple entry1, EntryFileTuple entry2)
     auto list1 = std::get<1>(entry1);
     auto list2 = std::get<1>(entry2);
 
+    //auto list1FileList = std::get<0>(list1);
+    //auto list2FileLiet = std::get<0>(list2);
+    //auto list1FileSize = std::get<1>(list1);
+    //auto list2FileSize = std::get<1>(list2);
+
 
     auto it1 = list1.cbegin();
     auto it2 = list2.cbegin();
@@ -75,17 +80,22 @@ bool FolderCompare::Compare(EntryFileTuple entry1, EntryFileTuple entry2)
                 auto dirName1 = dir1.path().generic_wstring();
                 auto dirName2 = dir2.path().generic_wstring();
 
-                fs::path path1{ dirName1 + L"/" + *it1 };
-                fs::path path2{ dirName2 + L"/" + *it2 };
+                auto [file1Name, fileSize1] = *it1;
+                auto [file2Name, fileSize2] = *it2;
+
+                fs::path path1{ dirName1 + L"/" + file1Name };
+                fs::path path2{ dirName2 + L"/" + file2Name };
 
 
                 auto path1Fixed = path1.lexically_normal().native();
                 auto path2Fixed = path2.lexically_normal().native();
 
 
-                long long fileSize1 = fs::file_size(path1Fixed);
-                long long fileSize2 = fs::file_size(path2Fixed);
+                //long long fileSize1 = fs::file_size(path1Fixed);
+                //long long fileSize2 = fs::file_size(path2Fixed);
 
+                //long long fileSize1 = fs::file_size(path1Fixed);
+                //long long fileSize2 = fs::file_size(path2Fixed);
 
                 //auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / std::max(fileSize1, fileSize2);
 
@@ -99,7 +109,7 @@ bool FolderCompare::Compare(EntryFileTuple entry1, EntryFileTuple entry2)
                 long long result = (long)100 * diff / maxSize;
 
                 //if (std::labs(fileSize1 - fileSize2) > 10000000)
-                if (result > 5)
+                if (result > SimilarPercentageTriggerValue)
                 {
                     bPotentialIdentical = false;
                 }
@@ -133,7 +143,7 @@ void FolderCompare::FindDuplicationInGroup(DirectoryContentEntryList::iterator f
         while (currentIt != lastIt)
         {
             auto currentIt2 = currentIt;
-            while (firstIt != lastIt)
+            while (currentIt2 != lastIt)
             {
                 currentIt2++;
 
@@ -152,7 +162,7 @@ void FolderCompare::FindDuplicationInGroup(DirectoryContentEntryList::iterator f
                     _SimilarDirectories.push_back({ dir1.path().generic_wstring(), dir2.path().generic_wstring() });
                 }
 
-                firstIt++;
+//                firstIt++;
             }
             currentIt++;
         }
@@ -196,6 +206,8 @@ void FolderCompare::findDuplicates()
         auto fileList2 = std::get<1>(*secondIt);
 
         auto pushedEndGroupIt = secondIt;
+        int itemsInGroup{ 0 };
+        auto fileList1Seize{ fileList1.size() };
         while (secondIt != _fileList.end() && fileList1.size() == fileList2.size())
         {
             pushedEndGroupIt = secondIt;
@@ -203,6 +215,7 @@ void FolderCompare::findDuplicates()
             fileList2 = std::get<1>(*secondIt);
             secondIt++;
             bFound = true;
+            itemsInGroup++;
         }
         
         secondIt = pushedEndGroupIt;
@@ -320,9 +333,9 @@ void FolderCompare::sort()
 }
 
 
-std::vector<std::wstring> FolderCompare::GetFolderNamesList2(std::filesystem::path path, int depth)
+FileList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int depth)
 {
-    std::vector<std::wstring> folderList;
+    FileList folderList;
 
     if (depth == 0)
     {
@@ -340,6 +353,7 @@ std::vector<std::wstring> FolderCompare::GetFolderNamesList2(std::filesystem::pa
             auto directoryfileList = GetFolderNamesList2(entry.path(), depth - 1);
             if (directoryfileList.size() > 0)
             {
+                
                 _fileList.push_back({ entry, directoryfileList });
             }
         }
@@ -350,7 +364,19 @@ std::vector<std::wstring> FolderCompare::GetFolderNamesList2(std::filesystem::pa
                 auto fileEextension = entry.path().extension();
                 std::wstring entryPath{ entry.path().wstring() };
                 if (entry.path().has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
-                    folderList.push_back(name);
+
+                    //auto [file1Name, fileSize1] = *it1;
+                    //auto [file2Name, fileSize2] = *it2;
+
+             //       fs::path path1{ dirName1 + L"/" + file1Name };
+
+
+                    //auto path1Fixed = path1.lexically_normal().native();
+                    auto path2Fixed = entry.path().lexically_normal().native();
+                    long long fileSize = fs::file_size(path2Fixed);
+
+
+                    folderList.push_back({ name, fileSize });
                 }
             }
         }
