@@ -253,82 +253,13 @@ void FolderCompare::findDuplicates()
 void FolderCompare::sort()
 {
     std::ranges::stable_sort(_fileList,
-        [&](auto& a, auto& b) {
-
+        [](auto& a, auto& b) {
             auto dir1 = std::get<0>(a);
             auto dir2 = std::get<0>(b);
             auto list1 = std::get<1>(a);
             auto list2 = std::get<1>(b);
-
-            if (list1.size() == list2.size())
-            {
-                if (list1.size() == 0)
-                {
-                    return true;
-                }
-                else {
-                    if (list2.size() == 0)
-                    {
-                        return false;
-                    }
-                }
-                
-                return false;
-                //auto it1 = list1.cbegin();
-                //auto it2 = list2.cbegin();
-                //bool bPotentialIdentical = true;
-                //try
-                //{
-                //    while (bPotentialIdentical && it1 != list1.cend())
-                //    {
-
-                //        auto dirName1 = dir1.path().generic_wstring();
-                //        auto dirName2 = dir2.path().generic_wstring();
-
-                //        fs::path path1{ dirName1 + L"/" + *it1 };
-                //        fs::path path2{ dirName2 + L"/" + *it2 };
-
-
-                //        auto path1Fixed = path1.lexically_normal().native();
-                //        auto path2Fixed = path2.lexically_normal().native();
-
-
-                //        auto fileSize1 = fs::file_size(path1Fixed);
-                //        auto fileSize2 = fs::file_size(path2Fixed);
-
-
-                //        //auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / std::max(fileSize1, fileSize2);
-                //        auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / max(fileSize1, fileSize2);
-
-                //        //if (std::labs(fileSize1 - fileSize2) > 10000000)
-                //        if (diff > 10)
-                //        {
-                //            bPotentialIdentical = false;
-                //        }
-
-                //        it1++;
-                //        it2++;
-                //    }
-                //}
-                //catch (std::exception ex)
-                //{
-                //    int ii = 9;
-                //    bPotentialIdentical = false;
-                //}
-
-                //if (bPotentialIdentical)
-                //{
-                //    int i = 0;
-                //    _SimilarDirs++;
-
-                //    _SimilarDirectories.push_back({ dir1.path().generic_wstring(), dir2.path().generic_wstring() });
-                //}
-
-                //return bPotentialIdentical;
-            }
-            
-
-            return list1.size() < list2.size();
+           
+            return list2.size() > list1.size();
         });
 }
 

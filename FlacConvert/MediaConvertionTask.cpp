@@ -17,6 +17,7 @@ int MediaConvertionTask::ConvertFile()
         std::wstring cmdExecNameW{ L"ffmpeg" };
         std::wstring convertParamsW{ L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats"s };
         std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + LR"( ")"s + _targetTMPPath.generic_wstring() + LR"(")"s };
+        //std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + L"'" + _targetTMPPath.generic_wstring() + L"'" };
 
 
         try {
@@ -61,7 +62,9 @@ int MediaConvertionTask::PostRun() {
 int MediaConvertionTask::RenameAndRemoveTMPFile()
 {
     if (_status != -1) {
-        if (!fs::exists(_sourcePath)) {
+        fs::path sourcePath{ _sourcePath };
+        auto path1Fixed = sourcePath.lexically_normal().native();
+        if (!fs::exists(path1Fixed)) {
             std::wcout << L"***Error rename: source does not exist: " << _sourcePath << std::endl;
             _status = -1;
         }

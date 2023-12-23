@@ -198,29 +198,36 @@ int ConverAllDirectories(const std::filesystem::path& directory, bool bAsync = f
 }
 
 
+bool mainDUPLICATIONS()
+{
+      //fs::path pathA{ "\\\\?\\R:\\24" };
+      //fs::path pathA{ "\\\\?\\M:\\tmp\\24" };
+      fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
+      //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums" };
+      //fs::path pathA{ "\\\\?\\M:\\music\\Jazz" };
+      //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Sets" };
+      fs::path pathB{ "\\\\?\\M:\\music\\Classical\\Albums\\ex24bit" };
+     //fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
+
+      auto dirNameA = pathA.generic_wstring();
+
+      FolderCompare fc;
+
+      fc.GetFolderNamesList2(pathA, 9);
+      fc.GetFolderNamesList2(pathB, 9);
+    //  fc.GetFolderNamesList2(pathB, 9);
+      fc.sort();
+      fc.findDuplicates();
+
+      auto retRESULT = fc._fileList;
+
+      return true;
+}
+
 int main()
 {
-
-    //fs::path pathA{ "\\\\?\\R:\\24" };
-    //fs::path pathA{ "\\\\?\\M:\\tmp\\24" };
-    //fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
-    fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums" };
-    //fs::path pathB{ "\\\\?\\M:\\music\\Classical\\Albums\\ex24bit" };
-   //fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
-
-    auto dirNameA = pathA.generic_wstring();
-
-    FolderCompare fc;
-
-    fc.GetFolderNamesList2(pathA, 9);
-    //fc.GetFolderNamesList2(pathB, 9);
-  //  fc.GetFolderNamesList2(pathB, 9);
-    fc.sort();
-    fc.findDuplicates();
-
-    auto retRESULT = fc._fileList;
-
-    return 0;
+    //mainDUPLICATIONS();
+    //return 0;
 
  //   _setmode(_fileno(stdout), _O_U16TEXT);
     auto ret = _setmode(_fileno(stdout), _O_U16TEXT);
