@@ -4,10 +4,15 @@
 #include <filesystem>
 #include <vector>
 
+#include "MediaInformation.h"
+
+#include "rapidjson/rapidjson.h" 
+#include "rapidjson/document.h" 
+
 
 namespace fs = std::filesystem;
 
-using FileList = std::vector<std::tuple<std::wstring, long long>>;
+using FileList = std::vector<std::tuple<std::wstring, long long>>;// , MediaInformation >> ;
 using EntryFileTuple = std::tuple <fs::directory_entry, FileList>;
 using DirectoryContentEntryList = std::vector<EntryFileTuple>;
 
@@ -26,6 +31,9 @@ public:
 
 	FileList GetFolderNamesList2(std::filesystem::path path, int depth = -1);
 	std::vector<std::wstring> GetFolderNamesList(std::filesystem::path path, bool recrusive = false);
+
+	std::filesystem::path GetMediaInfoFile(std::filesystem::path path);
+	rapidjson::Document GetJSONDoc(std::filesystem::path path);
 
 	void sort();
 	void findDuplicates();

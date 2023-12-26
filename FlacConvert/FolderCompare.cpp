@@ -2,16 +2,23 @@
 
 #include <windows.h> 
 
+#include <iostream>
+
 #include <vector>
 #include <algorithm>
 #include <ranges>
 #include <functional>
 
+#include "MediaInformation.h"
 
 #include <forward_list>
 #include <iterator>
 #include <vector>
 
+#include <fstream> 
+#include <iostream> 
+
+namespace fs = std::filesystem;
 
 void FolderCompare::OpenDirectoryInExplorer(std::wstring dirName)
 {
@@ -264,6 +271,92 @@ void FolderCompare::sort()
 }
 
 
+
+rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePath)
+{
+    using namespace std;
+    using namespace rapidjson;
+
+    std::ifstream file(mediaFilePath);
+
+    // Read the entire file into a string 
+    std::string json((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
+
+    rapidjson::Document doc;
+
+    // Parse the JSON data 
+    doc.Parse(json.c_str());
+
+    // Check for parse errors 
+    if (doc.HasParseError()) {
+        cerr << "Error parsing JSON: "
+            << doc.GetParseError() << endl;
+
+        return nullptr;
+    }
+
+    auto formatTag = doc["format"].GetObj();
+
+    auto filename = formatTag["filename"].GetString();
+    auto format_name = formatTag["format_name"].GetString();
+    auto format_long_name = formatTag["format_long_name"].GetString();
+
+
+    return doc;
+}
+
+std::filesystem::path FolderCompare::GetMediaInfoFile(std::filesystem::path mediaFilePath)
+{
+    using namespace std::string_literals;
+
+
+    int status = 0;
+
+    auto tmpPath = fs::temp_directory_path();
+    fs::path tmpFilePath{ tmpPath.generic_wstring() + L"\\media_info.json"s };
+
+
+    std::wstring cmdExecNameW{ L"ffprobe -v quiet -print_format json -show_format "s};
+    //std::wstring commandW{ cmdExecNameW + L"'"s + mediaFilePath.generic_wstring() + L"'"s  + L" > '"s + tmpFilePath.generic_wstring() + L"'"s};
+    std::wstring commandW{ cmdExecNameW + L"\""s + mediaFilePath.generic_wstring() + L"\""s  + L" > \""s + tmpFilePath.generic_wstring() + L"\""s};
+
+    //std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + L"'" + _targetTMPPath.generic_wstring() + L"'" };
+
+    rapidjson::Document jsonDoc = nullptr;
+
+    try {       
+        std::wcout << L"Getting media info:: " << mediaFilePath.generic_wstring() << std::endl;
+
+        if (fs::exists(tmpFilePath)) {
+            std::error_code ec;
+            if (fs::remove(tmpFilePath, ec)) {
+            }
+        }
+    
+        status = _wsystem(commandW.c_str());
+
+        if (status == 0)
+        {
+            //jsonDoc = GetJSONDoc(tmpFilePath);
+
+
+            //if (fs::exists(tmpFilePath)) {
+            //    std::error_code ec;
+            //    if (fs::remove(tmpFilePath, ec)) {
+            //    }
+            //}
+
+            return tmpFilePath;
+        }
+    }
+    catch (const std::exception& ex) {
+        std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << ex.what() << std::endl;
+
+    }
+
+    return std::filesystem::path{};;
+}
+
 FileList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int depth)
 {
     FileList folderList;
@@ -306,6 +399,17 @@ FileList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int dept
                     auto path2Fixed = entry.path().lexically_normal().native();
                     long long fileSize = fs::file_size(path2Fixed);
 
+                    auto mediaInfoFile = GetMediaInfoFile(path2Fixed);
+                    if (!mediaInfoFile.empty())
+                    {
+                        auto jsonDoc = GetJSONDoc(mediaInfoFile);
+                        auto jsonDoc2 = GetJSONDoc(mediaInfoFile);
+
+                    }
+                    //if (jsonDoc != nullptr)
+                    //{
+
+                    //}
 
                     folderList.push_back({ name, fileSize });
                 }

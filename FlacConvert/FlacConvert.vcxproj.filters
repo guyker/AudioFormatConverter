@@ -44,5 +44,8 @@
     <ClInclude Include="FolderConvert.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="MediaInformation.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
