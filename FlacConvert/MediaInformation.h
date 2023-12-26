@@ -2,6 +2,9 @@
 
 
 
+#include "rapidjson/rapidjson.h" 
+#include "rapidjson/document.h" 
+
 
 
 struct MediaInformation
@@ -16,4 +19,7 @@ struct MediaInformation
 	std::wstring size;
 	std::wstring bit_rate;
 	std::wstring probe_score;
+
+
+	rapidjson::Document JSONDoc;
 };

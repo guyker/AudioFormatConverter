@@ -402,8 +402,12 @@ FileList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int dept
                     auto mediaInfoFile = GetMediaInfoFile(path2Fixed);
                     if (!mediaInfoFile.empty())
                     {
-                        auto jsonDoc = GetJSONDoc(mediaInfoFile);
+                        MediaInformation mi;
+                        mi.JSONDoc = GetJSONDoc(mediaInfoFile);
                         auto jsonDoc2 = GetJSONDoc(mediaInfoFile);
+
+
+                        folderList.push_back({ name, fileSize});
 
                     }
                     //if (jsonDoc != nullptr)
@@ -411,7 +415,6 @@ FileList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int dept
 
                     //}
 
-                    folderList.push_back({ name, fileSize });
                 }
             }
         }
