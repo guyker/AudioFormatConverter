@@ -9,6 +9,10 @@
 
 struct MediaInformation
 {
+	std::wstring FilePath;
+	long long FileSize;
+
+
 	std::wstring filename;
 	std::wstring nb_streams;
 	std::wstring nb_programs;

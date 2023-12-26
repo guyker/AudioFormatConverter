@@ -12,6 +12,7 @@
 
 namespace fs = std::filesystem;
 
+using FileList2 = std::vector<MediaInformation>;
 using FileList = std::vector<std::tuple<std::wstring, long long>> ;
 using EntryFileTuple = std::tuple <fs::directory_entry, FileList>;
 using DirectoryContentEntryList = std::vector<EntryFileTuple>;
