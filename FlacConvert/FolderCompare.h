@@ -12,9 +12,10 @@
 
 namespace fs = std::filesystem;
 
-using FileList2 = std::vector<MediaInformation>;
-using FileList = std::vector<std::tuple<std::wstring, long long>> ;
-using EntryFileTuple = std::tuple <fs::directory_entry, FileList>;
+using FileInfoList = std::vector<MediaInformation>;
+//using FileList = std::vector<std::tuple<std::wstring, long long>> ;
+using EntryFileTuple = std::tuple <fs::directory_entry, FileInfoList>;
+
 using DirectoryContentEntryList = std::vector<EntryFileTuple>;
 
 //using SimilarDirectoryEntryList = std::vector<std::tuple <fs::directory_entry, fs::directory_entry>>;
@@ -30,7 +31,7 @@ class FolderCompare
 
 public:
 
-	FileList GetFolderNamesList2(std::filesystem::path path, int depth = -1);
+	FileInfoList GetFolderNamesList2(std::filesystem::path path, int depth = -1);
 	std::vector<std::wstring> GetFolderNamesList(std::filesystem::path path, bool recrusive = false);
 
 	std::filesystem::path GetMediaInfoFile(std::filesystem::path path);

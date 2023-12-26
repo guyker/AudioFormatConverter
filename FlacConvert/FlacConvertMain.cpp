@@ -26,6 +26,8 @@
 #include "FolderCompare.h"
 #include "FolderConvert.h"
 
+#include "MediaInformation.h"
+
 #include "MediaConvertionTask.h"
 #include "MediaConvertionAsyncTask.h"
 
@@ -63,8 +65,6 @@ bool mainDUPLICATIONS()
     //  fc.GetFolderNamesList2(pathB, 9);
       fc.sort();
       fc.findDuplicates();
-
-      auto retRESULT = fc._fileList;
 
       return true;
 }

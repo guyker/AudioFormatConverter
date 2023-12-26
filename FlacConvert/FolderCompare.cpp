@@ -87,11 +87,17 @@ bool FolderCompare::Compare(EntryFileTuple entry1, EntryFileTuple entry2)
                 auto dirName1 = dir1.path().generic_wstring();
                 auto dirName2 = dir2.path().generic_wstring();
 
-                auto [file1Name, fileSize1] = *it1;
-                auto [file2Name, fileSize2] = *it2;
+                auto& fileInfo1 = *it1;
+                auto& fileInfo2 = *it2;
 
-                fs::path path1{ dirName1 + L"/" + file1Name };
-                fs::path path2{ dirName2 + L"/" + file2Name };
+                auto fileSize1 = fileInfo1.FileSize;
+                auto fileSize2 = fileInfo2.FileSize;
+
+                //auto [file1Name, fileSize1] = *it1;
+                //auto [file2Name, fileSize2] = *it2;
+
+                fs::path path1{ dirName1 + L"/" + fileInfo1.FilePath };
+                fs::path path2{ dirName2 + L"/" + fileInfo2.FilePath };
 
 
                 auto path1Fixed = path1.lexically_normal().native();
@@ -357,9 +363,9 @@ std::filesystem::path FolderCompare::GetMediaInfoFile(std::filesystem::path medi
     return std::filesystem::path{};;
 }
 
-FileList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int depth)
+FileInfoList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int depth)
 {
-    FileList folderList;
+    FileInfoList folderList;
 
     if (depth == 0)
     {
