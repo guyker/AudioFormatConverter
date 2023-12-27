@@ -279,6 +279,36 @@ void FolderCompare::sort()
 }
 
 
+auto TryGetObjectMember(auto jsonObject, auto name)
+{
+    if (jsonObject.FindMember(name) != jsonObject.MemberEnd())
+    {
+        return jsonObject[name].GetObj();
+    }
+
+    return  nullptr;
+}
+
+auto TryGetStringMember(auto jsonObject, auto name)
+{
+    if (jsonObject.FindMember(name) != jsonObject.MemberEnd())
+    {
+        return jsonObject[name].GetString();
+    }
+
+    return  "***n/a***";
+}
+
+auto TryGetIntMember(auto jsonObject, auto name)
+{
+    if (jsonObject.FindMember(name) != jsonObject.MemberEnd())
+    {
+        return jsonObject[name].GetInt();
+    }
+
+    return -1;
+}
+
 
 rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePath)
 {
@@ -302,12 +332,63 @@ rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePat
 
         return nullptr;
     }
-
+    
     auto formatTag = doc["format"].GetObj();
 
-    auto filename = formatTag["filename"].GetString();
-    auto format_name = formatTag["format_name"].GetString();
-    auto format_long_name = formatTag["format_long_name"].GetString();
+
+    std::string filename = TryGetStringMember(formatTag, "filename");
+    std::string format_name = TryGetStringMember(formatTag, "format_name");
+    std::string format_long_name = TryGetStringMember(formatTag, "format_long_name");
+    std::string start_time = TryGetStringMember(formatTag, "start_time");
+    std::string duration = TryGetStringMember(formatTag, "duration");
+    std::string size = TryGetStringMember(formatTag, "size");
+    std::string bit_rate = TryGetStringMember(formatTag, "bit_rate");
+    int probe_score = TryGetIntMember(formatTag, "probe_score");
+
+    //auto tags = formatTag["tags"].GetObj();
+
+    if (formatTag.FindMember("tags") != formatTag.MemberEnd())
+    {
+        auto tags = formatTag["tags"].GetObj();
+
+        std::string album = TryGetStringMember(tags, "album");
+        std::string artist = TryGetStringMember(tags, "artist");
+        std::string album_artist = TryGetStringMember(tags, "album_artist");
+        std::string comment = TryGetStringMember(tags, "comment");
+        std::string genre = TryGetStringMember(tags, "genre");
+        std::string publisher = TryGetStringMember(tags, "publisher");
+        std::string title = TryGetStringMember(tags, "title");
+        std::string track = TryGetStringMember(tags, "track");
+        std::string date = TryGetStringMember(tags, "date");
+
+        static int th{ 100000 };
+
+        if (std::stoi(bit_rate) < th)
+        {
+            int i = 0;
+        }
+
+    }
+    //auto filename = formatTag["filename"].GetString();
+    //auto format_name = formatTag["format_name"].GetString();
+    //auto format_long_name = formatTag["format_long_name"].GetString();
+    //auto start_time = formatTag["start_time"].GetString();
+    //auto duration = formatTag["duration"].GetString();
+    //auto size = formatTag["size"].GetString();
+    //auto bit_rate = formatTag["bit_rate"].GetString();
+    //auto probe_score = formatTag["probe_score"].GetInt();
+
+    //auto tags = formatTag["tags"].GetObj();
+
+    //auto album = tags["album"].GetString();
+    //auto artist = tags["artist"].GetString();
+    //auto album_artist = tags["album_artist"].GetString();
+    //auto comment = tags["comment"].GetString();
+    //auto genre = tags["genre"].GetString();
+    //auto publisher = tags["publisher"].GetString();
+    //auto title = tags["title"].GetString();
+    //auto track = tags["track"].GetString();
+    //auto date = tags["date"].GetString();
 
 
     return doc;
@@ -345,7 +426,7 @@ std::filesystem::path FolderCompare::GetMediaInfoFile(std::filesystem::path medi
 
         if (status == 0)
         {
-            //jsonDoc = GetJSONDoc(tmpFilePath);
+            jsonDoc = GetJSONDoc(tmpFilePath);
 
 
             //if (fs::exists(tmpFilePath)) {
