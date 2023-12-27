@@ -269,19 +269,32 @@ void FolderCompare::sort()
 {
     std::ranges::stable_sort(_fileList,
         [](auto& a, auto& b) {
-            auto dir1 = std::get<0>(a);
-            auto dir2 = std::get<0>(b);
-            auto list1 = std::get<1>(a);
-            auto list2 = std::get<1>(b);
+            auto [dir1, list1] = a;
+            auto [dir2, list2] = b;
+
+            //auto dir1 = std::get<0>(a);
+            //auto dir2 = std::get<0>(b);
+            //auto list1 = std::get<1>(a);
+            //auto list2 = std::get<1>(b);
            
             return list2.size() > list1.size();
         });
 }
 
 
-auto TryGetObjectMember(auto jsonObject, auto name)
+bool TryFindMemberTag(auto jsonObject, auto name)
 {
     if (jsonObject.FindMember(name) != jsonObject.MemberEnd())
+    {
+        return true;
+    }
+
+    return false;
+}
+
+auto TryGetObjectMember(auto jsonObject, auto name)
+{
+    if (TryFindMemberTag(jsonObject, name))
     {
         return jsonObject[name].GetObj();
     }
@@ -291,7 +304,7 @@ auto TryGetObjectMember(auto jsonObject, auto name)
 
 auto TryGetStringMember(auto jsonObject, auto name)
 {
-    if (jsonObject.FindMember(name) != jsonObject.MemberEnd())
+    if (TryFindMemberTag(jsonObject, name))
     {
         return jsonObject[name].GetString();
     }
@@ -301,7 +314,7 @@ auto TryGetStringMember(auto jsonObject, auto name)
 
 auto TryGetIntMember(auto jsonObject, auto name)
 {
-    if (jsonObject.FindMember(name) != jsonObject.MemberEnd())
+    if (TryFindMemberTag(jsonObject, name))
     {
         return jsonObject[name].GetInt();
     }
@@ -369,26 +382,7 @@ rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePat
         }
 
     }
-    //auto filename = formatTag["filename"].GetString();
-    //auto format_name = formatTag["format_name"].GetString();
-    //auto format_long_name = formatTag["format_long_name"].GetString();
-    //auto start_time = formatTag["start_time"].GetString();
-    //auto duration = formatTag["duration"].GetString();
-    //auto size = formatTag["size"].GetString();
-    //auto bit_rate = formatTag["bit_rate"].GetString();
-    //auto probe_score = formatTag["probe_score"].GetInt();
 
-    //auto tags = formatTag["tags"].GetObj();
-
-    //auto album = tags["album"].GetString();
-    //auto artist = tags["artist"].GetString();
-    //auto album_artist = tags["album_artist"].GetString();
-    //auto comment = tags["comment"].GetString();
-    //auto genre = tags["genre"].GetString();
-    //auto publisher = tags["publisher"].GetString();
-    //auto title = tags["title"].GetString();
-    //auto track = tags["track"].GetString();
-    //auto date = tags["date"].GetString();
 
 
     return doc;
