@@ -18,6 +18,19 @@
 #include <fstream> 
 #include <iostream> 
 
+
+
+#include "rapidjson/rapidjson.h" 
+#include "rapidjson/document.h"
+#include "rapidjson/istreamwrapper.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/ostreamwrapper.h"
+#include "rapidjson/stringbuffer.h"
+
+//#include <mongoc/client.hpp>
+//#include <mongocxx/uri.hpp>
+
 namespace fs = std::filesystem;
 
 void FolderCompare::OpenDirectoryInExplorer(std::wstring dirName)
@@ -58,6 +71,7 @@ void FolderCompare::OpenDirectoryInExplorer(std::wstring dirName)
         }
 
 }
+
 bool FolderCompare::Compare(EntryFileTuple entry1, EntryFileTuple entry2)
 {
     auto dir1 = std::get<0>(entry1);
@@ -106,20 +120,10 @@ bool FolderCompare::Compare(EntryFileTuple entry1, EntryFileTuple entry2)
                 auto path2Fixed = path2.lexically_normal().native();
 
 
-                //long long fileSize1 = fs::file_size(path1Fixed);
-                //long long fileSize2 = fs::file_size(path2Fixed);
-
-                //long long fileSize1 = fs::file_size(path1Fixed);
-                //long long fileSize2 = fs::file_size(path2Fixed);
-
-                //auto diff = (long)100 * std::labs(fileSize1 - fileSize2) / std::max(fileSize1, fileSize2);
 
                 long long minSize = min(fileSize1, fileSize2);
                 long long maxSize = max(fileSize1, fileSize2);
                 long long diff = maxSize - minSize;
-                long long muil10 = 10 * diff;
-                long long muil100 = 100 * diff;
-                long long result2 = muil100 / maxSize;
 
                 long long result = (long)100 * diff / maxSize;
 
@@ -323,6 +327,16 @@ auto TryGetIntMember(auto jsonObject, auto name)
 }
 
 
+FolderCompare::FolderCompare()
+{
+    _MediaInfoDocument.SetObject();
+}
+
+
+#include "rapidjson/document.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
+
 rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePath)
 {
     using namespace std;
@@ -358,6 +372,20 @@ rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePat
     std::string bit_rate = TryGetStringMember(formatTag, "bit_rate");
     int probe_score = TryGetIntMember(formatTag, "probe_score");
 
+
+    //rapidjson::Document::AllocatorType& allocator = _MediaInfoDocument.GetAllocator();
+    Value valueCopy;  
+    valueCopy.CopyFrom(doc["format"], _MediaInfoDocument.GetAllocator());
+    _MediaInfoDocument.AddMember("format", valueCopy, _MediaInfoDocument.GetAllocator());
+
+    //_MediaInfoDocument.AddMember("filename", "format_name", _MediaInfoDocument.GetAllocator());
+
+    //rapidjson::Document jsonSubDocument(&_MediaInfoDocument.GetAllocator());
+    //formatTag.ToJson(jsonSubDocument);
+
+
+
+
     //auto tags = formatTag["tags"].GetObj();
 
     if (formatTag.FindMember("tags") != formatTag.MemberEnd())
@@ -386,6 +414,88 @@ rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePat
 
 
     return doc;
+}
+
+
+bool FolderCompare::SaveMediaInfoDocument(std::filesystem::path path)
+{
+    using namespace rapidjson;
+
+    Document _MediaInfoDocument2;
+    _MediaInfoDocument2.SetObject();
+
+    // Add some data to the document
+    Value name;
+    name.SetString("John", _MediaInfoDocument2.GetAllocator());
+    _MediaInfoDocument2.AddMember("name", name, _MediaInfoDocument2.GetAllocator());
+
+    Value age;
+    age.SetInt(25);
+    _MediaInfoDocument2.AddMember("age", age, _MediaInfoDocument2.GetAllocator());
+
+
+
+    //StringBuffer buffer;
+    //Writer<StringBuffer> writer(buffer);
+    //_MediaInfoDocument2.Accept(writer);
+    //const char* json = buffer.GetString();
+
+    //// Save the JSON string to a file
+    //std::ofstream file(path);
+    //if (file.is_open()) {
+    //    file << json;
+    //    file.close();
+    //    std::cout << "Document saved to 'output.json'" << std::endl;
+    //}
+    //else {
+    //    std::cerr << "Unable to open file for writing" << std::endl;
+    //    return 1;
+    //}
+
+
+
+    StringBuffer buffer;
+    Writer<StringBuffer> writer(buffer);
+    _MediaInfoDocument.Accept(writer);
+    const char* json = buffer.GetString();
+
+    // Save the JSON string to a file
+    std::ofstream file(path);
+    if (file.is_open()) {
+        file << json;
+        file.close();
+        std::cout << "Document saved to 'output.json'" << std::endl;
+    }
+    else {
+        std::cerr << "Unable to open file for writing" << std::endl;
+        return 1;
+    }
+
+
+
+
+
+
+
+
+    //std::ofstream ofs{ R"(C:\Test\NewTest.json)" };
+    //std::ofstream ofs{ path };
+    //if (!ofs.is_open())
+    //{
+    //    std::cerr << "Could not open file for writing!\n";
+    //    return EXIT_FAILURE;
+    //}
+
+
+    //rapidjson::OStreamWrapper osw{ ofs };
+    //Writer<OStreamWrapper> jsonWriter{ osw };
+    //_MediaInfoDocument.Accept(jsonWriter);
+
+
+
+
+
+    return false;
 }
 
 std::filesystem::path FolderCompare::GetMediaInfoFile(std::filesystem::path mediaFilePath)

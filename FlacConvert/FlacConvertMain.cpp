@@ -35,7 +35,7 @@ namespace fs = std::filesystem;
 
 
 //fs::path _SourceDirectory{ "M:\\tmp\\24" };
-fs::path _SourceDirectory{ "R:\\242" };
+fs::path _SourceDirectory{ "R:\\24" };
 
 fs::path _TMPDirectory{  };
 
@@ -61,6 +61,11 @@ bool mainDUPLICATIONS()
       FolderCompare fc;
 
       fc.GetFolderNamesList2(pathA, 9);
+
+
+      fs::path mediaResultPath{ "R:\\MediaResult.json" };
+      fc.SaveMediaInfoDocument(mediaResultPath);
+
       //fc.GetFolderNamesList2(pathB, 9);
     //  fc.GetFolderNamesList2(pathB, 9);
       fc.sort();

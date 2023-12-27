@@ -35,7 +35,7 @@ class FolderCompare
 {
 
 public:
-
+	FolderCompare();
 	FileInfoList GetFolderNamesList2(std::filesystem::path path, int depth = -1);
 	std::vector<std::wstring> GetFolderNamesList(std::filesystem::path path, bool recrusive = false);
 
@@ -54,6 +54,11 @@ public:
 	DirectoryContentEntryList _fileList;
 	SimilarDirectoryEntryList _SimilarDirectories;
 	int _SimilarDirs{ 0 };
+
+	bool SaveMediaInfoDocument(std::filesystem::path path);
+
+	rapidjson::Document::AllocatorType allocator;
+	rapidjson::Document _MediaInfoDocument;
 
 private:
 };
