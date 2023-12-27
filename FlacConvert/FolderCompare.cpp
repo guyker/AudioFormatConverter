@@ -359,8 +359,46 @@ rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePat
 
         return nullptr;
     }
-    
+  
+
+
+
+    //for (rapidjson::Value::ConstValueIterator itr = doc.Begin(); itr != doc.End(); ++itr) {
+    //    auto item = itr->GetObj();
+    //    for (auto& item : itr->GetObject())
+    //    {
+    //        std::string propertyKey = item.name.GetString();
+    //        auto& propertyValue = item.value;
+
+    //        //rapidjson::Value const valueCopy = itr;
+    ////        valueCopy.CopyFrom(item.GetObj(), _MediaInfoDocument.GetAllocator());
+    //        _MediaInfoDocument.AddMember("item1", item, _MediaInfoDocument.GetAllocator());
+
+    //    }
+    //}
+
+
+//    if (doc.IsObject())
+//    {
+//        for (auto& item : doc.GetObject()) {
+//            std::string propertyKey = item.name.GetString();
+//            auto& propertyValue = item.value;
+//
+//            Value valueCopy;
+//            valueCopy.CopyFrom(propertyValue, _MediaInfoDocument.GetAllocator());
+//            _MediaInfoDocument.AddMember("item1", valueCopy, _MediaInfoDocument.GetAllocator());
+//// 
+//            //Value valueCopy;
+//            //valueCopy.CopyFrom(item, _MediaInfoDocument.GetAllocator());
+//            //_MediaInfoDocument.AddMember("item1", valueCopy, _MediaInfoDocument.GetAllocator());
+//
+//        }
+//    }
+
+/*
     auto formatTag = doc["format"].GetObj();
+
+
 
 
     std::string filename = TryGetStringMember(formatTag, "filename");
@@ -373,20 +411,10 @@ rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePat
     int probe_score = TryGetIntMember(formatTag, "probe_score");
 
 
-    //rapidjson::Document::AllocatorType& allocator = _MediaInfoDocument.GetAllocator();
     Value valueCopy;  
     valueCopy.CopyFrom(doc["format"], _MediaInfoDocument.GetAllocator());
     _MediaInfoDocument.AddMember("format", valueCopy, _MediaInfoDocument.GetAllocator());
 
-    //_MediaInfoDocument.AddMember("filename", "format_name", _MediaInfoDocument.GetAllocator());
-
-    //rapidjson::Document jsonSubDocument(&_MediaInfoDocument.GetAllocator());
-    //formatTag.ToJson(jsonSubDocument);
-
-
-
-
-    //auto tags = formatTag["tags"].GetObj();
 
     if (formatTag.FindMember("tags") != formatTag.MemberEnd())
     {
@@ -410,8 +438,22 @@ rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePat
         }
 
     }
+    */
 
 
+    static int index{ 0 };
+
+
+
+    auto formatInfo = doc.FindMember("format");
+    if (formatInfo != doc.MemberEnd())
+    {
+        Value valueCopy;
+        valueCopy.CopyFrom(doc["format"], _MediaInfoDocument.GetAllocator());
+        std::string key = "format-" + std::to_string(index++);
+        Value keyValue(key.c_str(), _MediaInfoDocument.GetAllocator());
+        _MediaInfoDocument.AddMember(keyValue, valueCopy, _MediaInfoDocument.GetAllocator());
+    }
 
     return doc;
 }

@@ -47,8 +47,9 @@ fs::path _TMPDirectory{  };
 
 bool mainDUPLICATIONS()
 {
-      fs::path pathA{ "\\\\?\\R:\\24" };
+      //fs::path pathA{ "\\\\?\\R:\\24" };
       //fs::path pathA{ "\\\\?\\M:\\tmp\\24" };
+      fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
       //fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
       //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums" };
       //fs::path pathA{ "\\\\?\\M:\\music\\Jazz" };
@@ -63,7 +64,7 @@ bool mainDUPLICATIONS()
       fc.GetFolderNamesList2(pathA, 9);
 
 
-      fs::path mediaResultPath{ "R:\\MediaResult.json" };
+      fs::path mediaResultPath{ "M:\\tmp\\MediaResult.json" };
       fc.SaveMediaInfoDocument(mediaResultPath);
 
       //fc.GetFolderNamesList2(pathB, 9);
