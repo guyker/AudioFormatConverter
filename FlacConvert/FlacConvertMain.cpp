@@ -34,8 +34,8 @@
 namespace fs = std::filesystem;
 
 
-//fs::path _SourceDirectory{ "M:\\tmp\\24" };
-fs::path _SourceDirectory{ "R:\\24" };
+fs::path _SourceDirectory{ "M:\\tmp\\24" };
+//fs::path _SourceDirectory{ "R:\\24" };
 
 fs::path _TMPDirectory{  };
 
@@ -45,12 +45,12 @@ fs::path _TMPDirectory{  };
 #include <io.h>
 
 
-bool mainDUPLICATIONS()
+bool CreateMediaInfoJsonFile()
 {
-      //fs::path pathA{ "\\\\?\\R:\\24" };
-      //fs::path pathA{ "\\\\?\\M:\\tmp\\24" };
-    //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
-    fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]" };
+    //fs::path pathA{ "\\\\?\\R:\\24" };
+    //fs::path pathA{ "\\\\?\\M:\\tmp\\24" };
+  //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
+    fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\Albums" };
     //fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
       //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums" };
       //fs::path pathA{ "\\\\?\\M:\\music\\Jazz" };
@@ -58,30 +58,34 @@ bool mainDUPLICATIONS()
       //fs::path pathB{ "\\\\?\\M:\\music\\Classical\\Albums\\ex24bit" };
      //fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
 
-      auto dirNameA = pathA.generic_wstring();
-
-      FolderCompare fc;
-
-      fc.GetFolderNamesList2(pathA, 9);
+    auto dirNameA = pathA.generic_wstring();
+    FolderCompare fc;
+    fc.GetFolderNamesList2(pathA, 9);
 
 
-      fs::path mediaResultPath{ "M:\\tmp\\MediaResult.json" };
-      fc.SaveMediaInfoDocument(mediaResultPath);
+    fs::path mediaResultPath{ "M:\\tmp\\MediaResult.json" };
+    fc.SaveMediaInfoDocument(mediaResultPath);
 
-      //fc.GetFolderNamesList2(pathB, 9);
-    //  fc.GetFolderNamesList2(pathB, 9);
-      fc.sort();
-      fc.findDuplicates();
+    //fc.GetFolderNamesList2(pathB, 9);
+  //  fc.GetFolderNamesList2(pathB, 9);
+    fc.sort();
+    fc.findDuplicates();
 
-      return true;
+    return true;
 }
 
-int main()
+bool ReadMediaInfoJsonFile()
 {
-    mainDUPLICATIONS();
-    return 0;
+    FolderCompare fc;
+    fs::path mediaResultPath{ "M:\\tmp\\MediaResult.json" };
+    fc.LoadMediaInfoDocument(mediaResultPath);
 
- //   _setmode(_fileno(stdout), _O_U16TEXT);
+    return false;
+}
+
+int ConvertMediaTracksToNotmalFLAC()
+{
+    //   _setmode(_fileno(stdout), _O_U16TEXT);
     auto ret = _setmode(_fileno(stdout), _O_U16TEXT);
 
     _TMPDirectory = std::filesystem::temp_directory_path();
@@ -93,7 +97,7 @@ int main()
 
     auto startTime = std::chrono::steady_clock::now();
 
-    std::tuple<int, long, long> scanInfo {0, 0, 0, };
+    std::tuple<int, long, long> scanInfo{ 0, 0, 0, };
 
     FolderConvert fc;
 
@@ -109,9 +113,9 @@ int main()
     std::wcout << "Total Files:" << nFiles << std::endl;
     std::wcout << "Total Size:" << nFilesSize << std::endl;
 
-  //  return 0;
+    //  return 0;
 
-    // while (true) {
+      // while (true) {
     ret = fc.ConverAllDirectories(_SourceDirectory, false);
     if (ret == -1) {
         std::wcout << "***STOP*** ConverAllDirectories" << std::endl;
@@ -127,6 +131,16 @@ int main()
         << std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()
         << " ms" << std::endl;
 
+
+    return 0;
+}
+
+int main()
+{
+//    CreateMediaInfoJsonFile();
+    ReadMediaInfoJsonFile();
+
+  //  ConvertMediaTracksToNotmalFLAC();
 
     return 0;
 }

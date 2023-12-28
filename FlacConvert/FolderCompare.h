@@ -61,6 +61,7 @@ public:
 	int _SimilarDirs{ 0 };
 
 	bool SaveMediaInfoDocument(std::filesystem::path path);
+	bool LoadMediaInfoDocument(std::filesystem::path path);
 
 	//rapidjson::Document::AllocatorType allocator;
 	rapidjson::Document _MediaInfoDocument;

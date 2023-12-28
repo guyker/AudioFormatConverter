@@ -9,21 +9,33 @@
 
 struct MediaInformation
 {
-	std::wstring FilePath;
-	long long FileSize;
+	std::string FilePathKey;
 
 
-	std::wstring filename;
-	std::wstring nb_streams;
-	std::wstring nb_programs;
-	std::wstring format_name;
-	std::wstring format_long_name;
-	std::wstring start_time;
-	std::wstring duration;
-	std::wstring size;
-	std::wstring bit_rate;
-	std::wstring probe_score;
 
+	std::string filename;
+	std::string nb_streams;
+	std::string nb_programs;
+	std::string format_name;
+	std::string format_long_name;
+	std::string start_time;
+	std::string duration;
+	std::string size;
+	std::string bit_rate;
+	std::string probe_score;
 
-	rapidjson::Document JSONDoc;
+	struct _tags
+	{
+		std::string album;
+		std::string artist;
+		std::string album_artist;
+		std::string comment;
+		std::string genre;
+		std::string publisher;
+		std::string title;
+		std::string track;
+		std::string date;
+
+	} tags;
+	//rapidjson::Document JSONDoc;
 };

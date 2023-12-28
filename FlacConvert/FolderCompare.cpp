@@ -475,40 +475,11 @@ rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePat
 
 bool FolderCompare::SaveMediaInfoDocument(std::filesystem::path path)
 {
-    using namespace rapidjson;
-
-    Document _MediaInfoDocument2;
-    _MediaInfoDocument2.SetObject();
-
-    // Add some data to the document
-    Value name;
-    name.SetString("John", _MediaInfoDocument2.GetAllocator());
-    _MediaInfoDocument2.AddMember("name", name, _MediaInfoDocument2.GetAllocator());
-
-    Value age;
-    age.SetInt(25);
-    _MediaInfoDocument2.AddMember("age", age, _MediaInfoDocument2.GetAllocator());
-
-
-
-    //StringBuffer buffer;
-    //Writer<StringBuffer> writer(buffer);
-    //_MediaInfoDocument2.Accept(writer);
-    //const char* json = buffer.GetString();
-
-    //// Save the JSON string to a file
-    //std::ofstream file(path);
-    //if (file.is_open()) {
-    //    file << json;
-    //    file.close();
-    //    std::cout << "Document saved to 'output.json'" << std::endl;
-    //}
-    //else {
-    //    std::cerr << "Unable to open file for writing" << std::endl;
-    //    return 1;
-    //}
-
-
+    if (fs::exists(path)) {
+        std::error_code ec;
+        if (fs::remove(path, ec)) {
+        }
+    }
 
     StringBuffer buffer;
     Writer<StringBuffer> writer(buffer);
@@ -524,35 +495,132 @@ bool FolderCompare::SaveMediaInfoDocument(std::filesystem::path path)
     }
     else {
         std::cerr << "Unable to open file for writing" << std::endl;
-        return 1;
+        return false;
+    }
+
+    return true;
+}
+
+bool FolderCompare::LoadMediaInfoDocument(std::filesystem::path path)
+{
+    if (!fs::exists(path)) {
+
+        return false;
+    }
+
+    std::ifstream file(path);
+    // Read the entire file into a string 
+    std::string json((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
+
+    rapidjson::Document doc;
+
+    // Parse the JSON data 
+    doc.Parse(json.c_str());
+
+    // Check for parse errors 
+    if (doc.HasParseError()) {
+        cerr << "Error parsing JSON: "
+            << doc.GetParseError() << endl;
+
+        return false;
+    }
+
+    bool isObject = doc.IsObject();
+    
+    auto jsonObject = doc.GetObj();
+
+    for (auto itr = jsonObject.begin(); itr != jsonObject.end(); itr++)
+    {
+//        auto mediaTrackArray = (*itr)->GetArray();
+//        bool isObject2 = itr->IsObject();
+
+        std::string albumName = itr->name.GetString();
+        auto mediaTrackList = itr->value.GetArray();
+        for (int i = 0; i < mediaTrackList.Size(); i++)
+        {
+            auto formatTag = mediaTrackList[i].GetObj();
+
+            MediaInformation mi;
+
+            mi.filename = TryGetStringMember(formatTag, "filename");
+            mi.format_name = TryGetStringMember(formatTag, "format_name");
+            mi.format_long_name = TryGetStringMember(formatTag, "format_long_name");
+            mi.start_time = TryGetStringMember(formatTag, "start_time");
+            mi.duration = TryGetStringMember(formatTag, "duration");
+            mi.size = TryGetStringMember(formatTag, "size");
+            mi.bit_rate = TryGetStringMember(formatTag, "bit_rate");
+            mi.probe_score = TryGetIntMember(formatTag, "probe_score");
+
+            if (formatTag.FindMember("tags") != formatTag.MemberEnd())
+            {
+                auto tags = formatTag["tags"].GetObj();
+
+                mi.tags.album = TryGetStringMember(tags, "album");
+                mi.tags.artist = TryGetStringMember(tags, "artist");
+                mi.tags.album_artist = TryGetStringMember(tags, "album_artist");
+                mi.tags.comment = TryGetStringMember(tags, "comment");
+                mi.tags.genre = TryGetStringMember(tags, "genre");
+                mi.tags.publisher = TryGetStringMember(tags, "publisher");
+                mi.tags.title = TryGetStringMember(tags, "title");
+                mi.tags.track = TryGetStringMember(tags, "track");
+                mi.tags.date = TryGetStringMember(tags, "date");
+
+                static int th{ 100000 };
+
+                if (std::stoi(mi.bit_rate) < th)
+                {
+                    int i = 0;
+                }
+
+            }
+
+
+           // int 
+        }
+            //rapidjson::Value const valueCopy = itr;
+    //        valueCopy.CopyFrom(item.GetObj(), _MediaInfoDocument.GetAllocator());
+//            _MediaInfoDocument.AddMember("item1", item, _MediaInfoDocument.GetAllocator());
+
+
+  //      printf("%d ", itr->GetInt());
+    }
+
+    for (auto& keyValue : doc.GetArray())
+    {
+        auto value = keyValue.GetObj();
+
+        int i = 0;
+    }
+
+
+    for (rapidjson::Value::ConstValueIterator itr = doc.Begin(); itr != doc.End(); ++itr) {
+        auto item = itr->GetObj();
+        auto item2 = itr->GetArray();
+
+        auto track1 = item2[0].GetObj();
+        auto track2 = item2[0].GetObj();
+
+        //for (auto mediaTrack : item2.operator[])
+        //{
+
+        //}
+        //for (auto& item : itr->GetObject())
+        //{
+    //        std::string propertyKey = item.name.GetString();
+    //        auto& propertyValue = item.value;
+
+    //        //rapidjson::Value const valueCopy = itr;
+    ////        valueCopy.CopyFrom(item.GetObj(), _MediaInfoDocument.GetAllocator());
+    //        _MediaInfoDocument.AddMember("item1", item, _MediaInfoDocument.GetAllocator());
+
+//        }
     }
 
 
 
-
-
-
-
-
-    //std::ofstream ofs{ R"(C:\Test\NewTest.json)" };
-    //std::ofstream ofs{ path };
-    //if (!ofs.is_open())
-    //{
-    //    std::cerr << "Could not open file for writing!\n";
-    //    return EXIT_FAILURE;
-    //}
-
-
-    //rapidjson::OStreamWrapper osw{ ofs };
-    //Writer<OStreamWrapper> jsonWriter{ osw };
-    //_MediaInfoDocument.Accept(jsonWriter);
-
-
-
-
-
-    return false;
+    return true;
 }
+
 
 std::filesystem::path FolderCompare::GetMediaInfoFile(std::filesystem::path mediaFilePath)
 {
@@ -686,11 +754,18 @@ FileInfoList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int 
 
     if (trackMediaArray.Size() > 0)
     {
-        //track list exists add album
-        std::string name = path.generic_string();
-        Value key(name.c_str(), _MediaInfoDocument.GetAllocator());
-        _MediaInfoDocument.AddMember(key, trackMediaArray, _MediaInfoDocument.GetAllocator());
-        //_MediaInfoDocument.AddMember(key, "trackMediaArray", _MediaInfoDocument.GetAllocator());
+        try
+        {
+            //track list exists add album
+            std::string name = path.generic_string();
+            Value key(name.c_str(), _MediaInfoDocument.GetAllocator());
+            _MediaInfoDocument.AddMember(key, trackMediaArray, _MediaInfoDocument.GetAllocator());
+            //_MediaInfoDocument.AddMember(key, "trackMediaArray", _MediaInfoDocument.GetAllocator());
+        }
+        catch(...)
+        {
+            int i = 0;
+        }
     }
 
 
