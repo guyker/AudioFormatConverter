@@ -28,10 +28,19 @@
 #include "rapidjson/ostreamwrapper.h"
 #include "rapidjson/stringbuffer.h"
 
+
+#include "rapidjson/document.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
+
+
 //#include <mongoc/client.hpp>
 //#include <mongocxx/uri.hpp>
 
 namespace fs = std::filesystem;
+using namespace std;
+using namespace rapidjson;
+
 
 void FolderCompare::OpenDirectoryInExplorer(std::wstring dirName)
 {
@@ -330,17 +339,22 @@ auto TryGetIntMember(auto jsonObject, auto name)
 FolderCompare::FolderCompare()
 {
     _MediaInfoDocument.SetObject();
+
+
+    //rapidjson::Value myArray(rapidjson::kArrayType);
+    //rapidjson::Document::AllocatorType& allocator = _MediaInfoDocument.GetAllocator();
+
+    //Value valueCopy;
+    ////valueCopy.CopyFrom(doc["format"], _MediaInfoDocument.GetAllocator());
+    //std::string key = "Album-" + std::to_string(index++);
+    //Value keyValue(key.c_str(), _MediaInfoDocument.GetAllocator());
+    //_MediaInfoDocument.AddMember(keyValue, valueCopy, _MediaInfoDocument.GetAllocator());
 }
 
 
-#include "rapidjson/document.h"
-#include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
 
 rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePath)
 {
-    using namespace std;
-    using namespace rapidjson;
 
     std::ifstream file(mediaFilePath);
 
@@ -445,15 +459,15 @@ rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePat
 
 
 
-    auto formatInfo = doc.FindMember("format");
-    if (formatInfo != doc.MemberEnd())
-    {
-        Value valueCopy;
-        valueCopy.CopyFrom(doc["format"], _MediaInfoDocument.GetAllocator());
-        std::string key = "format-" + std::to_string(index++);
-        Value keyValue(key.c_str(), _MediaInfoDocument.GetAllocator());
-        _MediaInfoDocument.AddMember(keyValue, valueCopy, _MediaInfoDocument.GetAllocator());
-    }
+    //auto formatInfo = doc.FindMember("format");
+    //if (formatInfo != doc.MemberEnd())
+    //{
+    //    Value valueCopy;
+    //    valueCopy.CopyFrom(doc["format"], _MediaInfoDocument.GetAllocator());
+    //    std::string key = "format-" + std::to_string(index++);
+    //    Value keyValue(key.c_str(), _MediaInfoDocument.GetAllocator());
+    //    _MediaInfoDocument.AddMember(keyValue, valueCopy, _MediaInfoDocument.GetAllocator());
+    //}
 
     return doc;
 }
@@ -601,13 +615,24 @@ FileInfoList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int 
         return folderList;
     }
 
+
+    rapidjson::Value trackMediaArray(rapidjson::kArrayType);
+
     for (const fs::directory_entry& entry : fs::directory_iterator(path)) {
         auto folderName = entry.path().filename();
-//        auto path = entry.path();
         auto name = folderName.generic_wstring();
+
         if (entry.is_directory()) {
-            //auto folderName = entry.path().stem();
-            //folderList.push_back(name);
+
+            //rapidjson::Value myArray(rapidjson::kArrayType);
+            //rapidjson::Document::AllocatorType& allocator = _MediaInfoDocument.GetAllocator();
+
+            //Value valueCopy;
+            ////valueCopy.CopyFrom(doc["format"], _MediaInfoDocument.GetAllocator());
+            //std::string key = "Album-" + std::to_string(index++);
+            //Value keyValue(key.c_str(), _MediaInfoDocument.GetAllocator());
+            //_MediaInfoDocument.AddMember(keyValue, valueCopy, _MediaInfoDocument.GetAllocator());
+
 
             auto directoryfileList = GetFolderNamesList2(entry.path(), depth - 1);
             if (directoryfileList.size() > 0)
@@ -637,23 +662,37 @@ FileInfoList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int 
                     auto mediaInfoFile = GetMediaInfoFile(path2Fixed);
                     if (!mediaInfoFile.empty())
                     {
-                        MediaInformation mi;
-                        mi.JSONDoc = GetJSONDoc(mediaInfoFile);
-                        auto jsonDoc2 = GetJSONDoc(mediaInfoFile);
+                        folderList.push_back({ name, fileSize });
+
+                        //    MediaInformation mi;
+                     //   mi.JSONDoc = GetJSONDoc(mediaInfoFile);
+                        
+
+                        auto trakMEdiaInfo = GetJSONDoc(mediaInfoFile);
+
+                        Value valueCopy;
+                        valueCopy.CopyFrom(trakMEdiaInfo["format"], _MediaInfoDocument.GetAllocator());
+                        //Value keyValue(key.c_str(), _MediaInfoDocument.GetAllocator());
 
 
-                        folderList.push_back({ name, fileSize});
+                        trackMediaArray.PushBack(valueCopy, _MediaInfoDocument.GetAllocator());
 
                     }
-                    //if (jsonDoc != nullptr)
-                    //{
-
-                    //}
 
                 }
             }
         }
     }
+
+    if (trackMediaArray.Size() > 0)
+    {
+        //track list exists add album
+        std::string name = path.generic_string();
+        Value key(name.c_str(), _MediaInfoDocument.GetAllocator());
+        _MediaInfoDocument.AddMember(key, trackMediaArray, _MediaInfoDocument.GetAllocator());
+        //_MediaInfoDocument.AddMember(key, "trackMediaArray", _MediaInfoDocument.GetAllocator());
+    }
+
 
     return folderList;
 }

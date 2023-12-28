@@ -7,7 +7,12 @@
 #include "MediaInformation.h"
 
 #include "rapidjson/rapidjson.h" 
-#include "rapidjson/document.h" 
+#include "rapidjson/document.h"
+#include "rapidjson/istreamwrapper.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
+#include "rapidjson/ostreamwrapper.h"
+#include "rapidjson/stringbuffer.h"
 
 
 namespace fs = std::filesystem;
@@ -57,8 +62,9 @@ public:
 
 	bool SaveMediaInfoDocument(std::filesystem::path path);
 
-	rapidjson::Document::AllocatorType allocator;
+	//rapidjson::Document::AllocatorType allocator;
 	rapidjson::Document _MediaInfoDocument;
+	//rapidjson::Value _AlbumMediaArray{ rapidjson::kArrayType };
 
 private:
 };
