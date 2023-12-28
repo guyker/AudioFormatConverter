@@ -50,12 +50,12 @@ bool CreateMediaInfoJsonFile()
     //fs::path pathA{ "\\\\?\\R:\\24" };
     //fs::path pathA{ "\\\\?\\M:\\tmp\\24" };
   //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
-    fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\Albums" };
+    //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\Albums" };
     //fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
       //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums" };
       //fs::path pathA{ "\\\\?\\M:\\music\\Jazz" };
       //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Sets" };
-      //fs::path pathB{ "\\\\?\\M:\\music\\Classical\\Albums\\ex24bit" };
+      fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums\\24bit" };
      //fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
 
     auto dirNameA = pathA.generic_wstring();
@@ -69,18 +69,20 @@ bool CreateMediaInfoJsonFile()
     //fc.GetFolderNamesList2(pathB, 9);
   //  fc.GetFolderNamesList2(pathB, 9);
     fc.sort();
-    fc.findDuplicates();
+    fc.findDuplicates_old();
 
     return true;
 }
 
-bool ReadMediaInfoJsonFile()
+AlbumList ReadMediaInfoJsonFile()
 {
     FolderCompare fc;
     fs::path mediaResultPath{ "M:\\tmp\\MediaResult.json" };
-    fc.LoadMediaInfoDocument(mediaResultPath);
+    auto mediaInfoList = fc.LoadMediaInfoDocument(mediaResultPath);
 
-    return false;
+
+
+    return mediaInfoList;
 }
 
 int ConvertMediaTracksToNotmalFLAC()
@@ -138,9 +140,11 @@ int ConvertMediaTracksToNotmalFLAC()
 int main()
 {
 //    CreateMediaInfoJsonFile();
-    ReadMediaInfoJsonFile();
 
-  //  ConvertMediaTracksToNotmalFLAC();
+    auto mediaInfoList = ReadMediaInfoJsonFile();
+    FolderCompare fc;
+    fc.SortByNumberOfTracks(mediaInfoList);
+    AlbumList duplicatedAlbumList = fc.GetDuplicatedAlbums(mediaInfoList);
 
     return 0;
 }

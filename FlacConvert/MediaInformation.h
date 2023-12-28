@@ -19,7 +19,7 @@ struct MediaInformation
 	std::string format_name;
 	std::string format_long_name;
 	std::string start_time;
-	std::string duration;
+	long duration;
 	std::string size;
 	std::string bit_rate;
 	std::string probe_score;

@@ -163,7 +163,7 @@ bool FolderCompare::Compare(EntryFileTuple entry1, EntryFileTuple entry2)
 }
 
 
-void FolderCompare::FindDuplicationInGroup(DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt)
+void FolderCompare::FindDuplicationInGroup_old(DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt)
 {
     if (firstIt != lastIt && firstIt != _fileList.end() && lastIt != _fileList.end())
     {
@@ -198,7 +198,7 @@ void FolderCompare::FindDuplicationInGroup(DirectoryContentEntryList::iterator f
 }
 
 
-void FolderCompare::findDuplicates()
+void FolderCompare::findDuplicates_old()
 {
     //fs::directory_entry, std::vector<std::wstring>
     
@@ -255,7 +255,7 @@ void FolderCompare::findDuplicates()
 
         if (bFound)
         {
-            FindDuplicationInGroup(firstIt, secondIt);
+            FindDuplicationInGroup_old(firstIt, secondIt);
             firstIt = secondIt;;
             secondIt++;
         }
@@ -276,6 +276,147 @@ void FolderCompare::findDuplicates()
 
         iCount--;
     }
+}
+
+void FolderCompare::FindDuplicationInGroup(AlbumList& albumList, AlbumList::iterator firstIt, AlbumList::iterator lastIt)
+{
+    if (firstIt != lastIt && firstIt != albumList.end() && lastIt != albumList.end())
+    {
+        auto currentIt = firstIt;
+        while (currentIt != lastIt)
+        {
+            auto currentIt2 = currentIt;
+            while (currentIt2 != lastIt)
+            {
+                currentIt2++;
+
+                auto [albumName1, trackList1] = *currentIt;
+                auto [albumName2, trackList2] = *currentIt2;
+
+                if (trackList1.size() == trackList2.size())
+                {
+                    bool bPotentialSimilar = true;
+                    for (int i = 0; i < trackList1.size(); i++)
+                    {
+                        auto track1 = trackList1[i];
+                        auto track2 = trackList2[i];
+
+                        auto minSize = min(track1.duration, track2.duration);
+                        auto maxSize = max(track1.duration, track2.duration);
+                        auto diff = maxSize - minSize;
+
+                        long long result = (long)100 * diff / maxSize;
+
+                        //if (std::labs(fileSize1 - fileSize2) > 10000000)
+                        if (result > SimilarPercentageTriggerValue)
+                        {
+                            bPotentialSimilar = false;
+                        }
+                    }
+
+                    if (bPotentialSimilar)
+                    {
+                        int i = 0;
+                        //    _SimilarDirectories.push_back({ dir1.path().generic_wstring(), dir2.path().generic_wstring() });
+                    }
+                }
+
+                //auto dir1 = std::get<0>(*currentIt);
+                //auto dir2 = std::get<0>(*currentIt2);
+
+                //auto nameXX1 = dir1.path().generic_wstring();
+                //auto nameXX2 = dir2.path().generic_wstring();
+
+                ////chake//
+                //auto bPotentialSimilar = Compare(*currentIt, *currentIt2);
+                //if (bPotentialSimilar)
+                //{
+
+                //    _SimilarDirs++;
+                //    _SimilarDirectories.push_back({ dir1.path().generic_wstring(), dir2.path().generic_wstring() });
+                //}
+
+            }
+            currentIt++;
+        }
+    }
+}
+
+
+AlbumList FolderCompare::GetDuplicatedAlbums(AlbumList& albumList)
+{
+    AlbumList dupList;
+    if (albumList.size() < 2)
+    {
+        return dupList;
+    }
+
+    auto firstIt = albumList.begin();
+    auto secondIt = firstIt;
+    secondIt++;
+
+    while (firstIt != albumList.end() && secondIt != albumList.end())
+    {
+        bool bFound = false;
+        auto dirEntry1 = std::get<0>(*firstIt);
+        auto dirEntry2 = std::get<0>(*secondIt);
+
+        auto fileList1 = std::get<1>(*firstIt);
+        auto fileList2 = std::get<1>(*secondIt);
+
+        auto pushedEndGroupIt = secondIt;
+        int itemsInGroup{ 0 };
+        auto fileList1Seize{ fileList1.size() };
+        while (secondIt != albumList.end() && fileList1.size() == fileList2.size())
+        {
+            pushedEndGroupIt = secondIt;
+            dirEntry2 = std::get<0>(*secondIt);
+            fileList2 = std::get<1>(*secondIt);
+            secondIt++;
+            bFound = true;
+            itemsInGroup++;
+        }
+
+        secondIt = pushedEndGroupIt;
+
+        //  secondIt--;
+
+        auto firstIndex = std::ranges::distance(albumList.cbegin(), firstIt);
+        auto lastIndex = std::ranges::distance(albumList.cbegin(), secondIt);
+
+        if (bFound)
+        {
+            FindDuplicationInGroup(albumList, firstIt, secondIt);
+            firstIt = secondIt;;
+            secondIt++;
+        }
+        else
+        {
+            firstIt++;
+            secondIt++;
+        }
+    }
+
+    int iCount = _SimilarDirectories.size();
+    for (auto entry : _SimilarDirectories)
+    {
+        auto [dir1, dir2] = entry;
+
+        OpenDirectoryInExplorer(dir1);
+        OpenDirectoryInExplorer(dir2);
+
+        iCount--;
+    }
+}
+
+void FolderCompare::SortByNumberOfTracks(AlbumList& albumList)
+{
+    std::ranges::stable_sort(albumList, [](auto& album1, auto& album2) {
+            auto [albumName1, trackList1] = album1;
+            auto [albumName2, trackList2] = album2;
+
+            return trackList2.size() > trackList1.size();
+        });
 }
 
 void FolderCompare::sort()
@@ -355,119 +496,17 @@ FolderCompare::FolderCompare()
 
 rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePath)
 {
-
+    rapidjson::Document doc;
     std::ifstream file(mediaFilePath);
-
-    // Read the entire file into a string 
     std::string json((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
 
-    rapidjson::Document doc;
-
-    // Parse the JSON data 
     doc.Parse(json.c_str());
-
-    // Check for parse errors 
     if (doc.HasParseError()) {
         cerr << "Error parsing JSON: "
             << doc.GetParseError() << endl;
 
         return nullptr;
     }
-  
-
-
-
-    //for (rapidjson::Value::ConstValueIterator itr = doc.Begin(); itr != doc.End(); ++itr) {
-    //    auto item = itr->GetObj();
-    //    for (auto& item : itr->GetObject())
-    //    {
-    //        std::string propertyKey = item.name.GetString();
-    //        auto& propertyValue = item.value;
-
-    //        //rapidjson::Value const valueCopy = itr;
-    ////        valueCopy.CopyFrom(item.GetObj(), _MediaInfoDocument.GetAllocator());
-    //        _MediaInfoDocument.AddMember("item1", item, _MediaInfoDocument.GetAllocator());
-
-    //    }
-    //}
-
-
-//    if (doc.IsObject())
-//    {
-//        for (auto& item : doc.GetObject()) {
-//            std::string propertyKey = item.name.GetString();
-//            auto& propertyValue = item.value;
-//
-//            Value valueCopy;
-//            valueCopy.CopyFrom(propertyValue, _MediaInfoDocument.GetAllocator());
-//            _MediaInfoDocument.AddMember("item1", valueCopy, _MediaInfoDocument.GetAllocator());
-//// 
-//            //Value valueCopy;
-//            //valueCopy.CopyFrom(item, _MediaInfoDocument.GetAllocator());
-//            //_MediaInfoDocument.AddMember("item1", valueCopy, _MediaInfoDocument.GetAllocator());
-//
-//        }
-//    }
-
-/*
-    auto formatTag = doc["format"].GetObj();
-
-
-
-
-    std::string filename = TryGetStringMember(formatTag, "filename");
-    std::string format_name = TryGetStringMember(formatTag, "format_name");
-    std::string format_long_name = TryGetStringMember(formatTag, "format_long_name");
-    std::string start_time = TryGetStringMember(formatTag, "start_time");
-    std::string duration = TryGetStringMember(formatTag, "duration");
-    std::string size = TryGetStringMember(formatTag, "size");
-    std::string bit_rate = TryGetStringMember(formatTag, "bit_rate");
-    int probe_score = TryGetIntMember(formatTag, "probe_score");
-
-
-    Value valueCopy;  
-    valueCopy.CopyFrom(doc["format"], _MediaInfoDocument.GetAllocator());
-    _MediaInfoDocument.AddMember("format", valueCopy, _MediaInfoDocument.GetAllocator());
-
-
-    if (formatTag.FindMember("tags") != formatTag.MemberEnd())
-    {
-        auto tags = formatTag["tags"].GetObj();
-
-        std::string album = TryGetStringMember(tags, "album");
-        std::string artist = TryGetStringMember(tags, "artist");
-        std::string album_artist = TryGetStringMember(tags, "album_artist");
-        std::string comment = TryGetStringMember(tags, "comment");
-        std::string genre = TryGetStringMember(tags, "genre");
-        std::string publisher = TryGetStringMember(tags, "publisher");
-        std::string title = TryGetStringMember(tags, "title");
-        std::string track = TryGetStringMember(tags, "track");
-        std::string date = TryGetStringMember(tags, "date");
-
-        static int th{ 100000 };
-
-        if (std::stoi(bit_rate) < th)
-        {
-            int i = 0;
-        }
-
-    }
-    */
-
-
-    static int index{ 0 };
-
-
-
-    //auto formatInfo = doc.FindMember("format");
-    //if (formatInfo != doc.MemberEnd())
-    //{
-    //    Value valueCopy;
-    //    valueCopy.CopyFrom(doc["format"], _MediaInfoDocument.GetAllocator());
-    //    std::string key = "format-" + std::to_string(index++);
-    //    Value keyValue(key.c_str(), _MediaInfoDocument.GetAllocator());
-    //    _MediaInfoDocument.AddMember(keyValue, valueCopy, _MediaInfoDocument.GetAllocator());
-    //}
 
     return doc;
 }
@@ -501,11 +540,15 @@ bool FolderCompare::SaveMediaInfoDocument(std::filesystem::path path)
     return true;
 }
 
-bool FolderCompare::LoadMediaInfoDocument(std::filesystem::path path)
+AlbumList FolderCompare::LoadMediaInfoDocument(std::filesystem::path path)
 {
+    AlbumList albumList;
+
+    
+
     if (!fs::exists(path)) {
 
-        return false;
+        return albumList;
     }
 
     std::ifstream file(path);
@@ -522,18 +565,17 @@ bool FolderCompare::LoadMediaInfoDocument(std::filesystem::path path)
         cerr << "Error parsing JSON: "
             << doc.GetParseError() << endl;
 
-        return false;
+        return albumList;
     }
 
     bool isObject = doc.IsObject();
     
     auto jsonObject = doc.GetObj();
-
+    
+    //Albums
     for (auto itr = jsonObject.begin(); itr != jsonObject.end(); itr++)
     {
-//        auto mediaTrackArray = (*itr)->GetArray();
-//        bool isObject2 = itr->IsObject();
-
+        MediaInfoList mediaInfoList;
         std::string albumName = itr->name.GetString();
         auto mediaTrackList = itr->value.GetArray();
         for (int i = 0; i < mediaTrackList.Size(); i++)
@@ -546,7 +588,7 @@ bool FolderCompare::LoadMediaInfoDocument(std::filesystem::path path)
             mi.format_name = TryGetStringMember(formatTag, "format_name");
             mi.format_long_name = TryGetStringMember(formatTag, "format_long_name");
             mi.start_time = TryGetStringMember(formatTag, "start_time");
-            mi.duration = TryGetStringMember(formatTag, "duration");
+            mi.duration = std::stol(TryGetStringMember(formatTag, "duration"));
             mi.size = TryGetStringMember(formatTag, "size");
             mi.bit_rate = TryGetStringMember(formatTag, "bit_rate");
             mi.probe_score = TryGetIntMember(formatTag, "probe_score");
@@ -574,51 +616,18 @@ bool FolderCompare::LoadMediaInfoDocument(std::filesystem::path path)
 
             }
 
-
-           // int 
+            mediaInfoList.push_back(mi);
         }
-            //rapidjson::Value const valueCopy = itr;
-    //        valueCopy.CopyFrom(item.GetObj(), _MediaInfoDocument.GetAllocator());
+        
+        albumList.push_back(std::make_tuple(albumName, mediaInfoList));    
+    }
+
+
+    //rapidjson::Value const valueCopy = itr;
+//        valueCopy.CopyFrom(item.GetObj(), _MediaInfoDocument.GetAllocator());
 //            _MediaInfoDocument.AddMember("item1", item, _MediaInfoDocument.GetAllocator());
 
-
-  //      printf("%d ", itr->GetInt());
-    }
-
-    for (auto& keyValue : doc.GetArray())
-    {
-        auto value = keyValue.GetObj();
-
-        int i = 0;
-    }
-
-
-    for (rapidjson::Value::ConstValueIterator itr = doc.Begin(); itr != doc.End(); ++itr) {
-        auto item = itr->GetObj();
-        auto item2 = itr->GetArray();
-
-        auto track1 = item2[0].GetObj();
-        auto track2 = item2[0].GetObj();
-
-        //for (auto mediaTrack : item2.operator[])
-        //{
-
-        //}
-        //for (auto& item : itr->GetObject())
-        //{
-    //        std::string propertyKey = item.name.GetString();
-    //        auto& propertyValue = item.value;
-
-    //        //rapidjson::Value const valueCopy = itr;
-    ////        valueCopy.CopyFrom(item.GetObj(), _MediaInfoDocument.GetAllocator());
-    //        _MediaInfoDocument.AddMember("item1", item, _MediaInfoDocument.GetAllocator());
-
-//        }
-    }
-
-
-
-    return true;
+    return albumList;
 }
 
 

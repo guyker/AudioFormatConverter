@@ -17,6 +17,8 @@
 
 namespace fs = std::filesystem;
 
+using MediaInfoList = std::vector<MediaInformation>;
+using AlbumList = std::vector<std::tuple<std::string, MediaInfoList>>;
 
 using FileInfoList = std::vector<std::tuple<std::wstring, long long>> ;
 //using FileList2 = std::vector<MediaInformation>;
@@ -47,13 +49,18 @@ public:
 	std::filesystem::path GetMediaInfoFile(std::filesystem::path path);
 	rapidjson::Document GetJSONDoc(std::filesystem::path path);
 
+	void SortByNumberOfTracks(AlbumList& albumList);
+	AlbumList GetDuplicatedAlbums(AlbumList& albumList);
+	void FindDuplicationInGroup(AlbumList& albumList, AlbumList::iterator firstIt, AlbumList::iterator lastIt);
+
+
 	void sort();
-	void findDuplicates();
+	void findDuplicates_old();
 
 	std::vector<std::wstring> Compare(std::filesystem::path pathA, std::filesystem::path pathB);
 	bool Compare(EntryFileTuple entry1, EntryFileTuple entry2);
 
-	void FindDuplicationInGroup(DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt);
+	void FindDuplicationInGroup_old(DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt);
 	void OpenDirectoryInExplorer(std::wstring dirName);
 
 	DirectoryContentEntryList _fileList;
@@ -61,7 +68,7 @@ public:
 	int _SimilarDirs{ 0 };
 
 	bool SaveMediaInfoDocument(std::filesystem::path path);
-	bool LoadMediaInfoDocument(std::filesystem::path path);
+	AlbumList LoadMediaInfoDocument(std::filesystem::path path);
 
 	//rapidjson::Document::AllocatorType allocator;
 	rapidjson::Document _MediaInfoDocument;
