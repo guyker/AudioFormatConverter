@@ -23,6 +23,7 @@
 #include <string>
 #include <any>
 
+#include "AlbumCollection.h"
 #include "FolderCompare.h"
 #include "FolderConvert.h"
 
@@ -139,7 +140,15 @@ int ConvertMediaTracksToNotmalFLAC()
 
 int main()
 {
-//    CreateMediaInfoJsonFile();
+
+    //ConvertMediaTracksToNotmalFLAC
+
+    
+    //    CreateMediaInfoJsonFile();
+    fs::path path{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
+    fs::path mediaResultPath{ "M:\\tmp\\MediaResult.json" };
+    AlbumCollection ac(path, mediaResultPath);
+
 
     auto mediaInfoList = ReadMediaInfoJsonFile();
     FolderCompare fc;

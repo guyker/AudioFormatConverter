@@ -143,6 +143,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="AlbumCollection.cpp" />
     <ClCompile Include="FlacConvertMain.cpp" />
     <ClCompile Include="FolderCompare.cpp" />
     <ClCompile Include="FolderConvert.cpp" />
@@ -150,6 +151,7 @@
     <ClCompile Include="MediaConvertionTask.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AlbumCollection.h" />
     <ClInclude Include="FolderCompare.h" />
     <ClInclude Include="FolderConvert.h" />
     <ClInclude Include="MediaConvertionAsyncTask.h" />
