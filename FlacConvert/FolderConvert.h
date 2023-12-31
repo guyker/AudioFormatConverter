@@ -12,9 +12,7 @@ public:
     int GetFilesData(std::tuple<int, long, long>& scanInfo, const std::filesystem::path& directory, bool bAsync = false);
 
 
-    bool IsFileConvertable(std::filesystem::path pathName);
-
-    std::vector<std::string> _ConvertableFileTypeList = { ".flac", ".dsf", ".dff", ".dsd", ".wv", ".wav", ".m2ts" };
+    static bool IsFileConvertable(std::filesystem::path pathName);
 
     //std::string const _SourceFileType1{ ".flac" };
     //std::string const _SourceFileType2{ ".dsf" };

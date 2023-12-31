@@ -11,6 +11,8 @@ namespace fs = std::filesystem;
 
 bool FolderConvert::IsFileConvertable(std::filesystem::path pathName)
 {
+    static std::vector<std::string> _ConvertableFileTypeList = { ".FLAC", ".flac", ".ape", ".dsf", ".dff", ".dsd", ".wv", ".wav", ".m2ts" , ".m4a" };
+
     auto it = std::find_if(_ConvertableFileTypeList.begin(), _ConvertableFileTypeList.end(), [&](auto item) {return item == pathName; });
     if (it != _ConvertableFileTypeList.end())
     {

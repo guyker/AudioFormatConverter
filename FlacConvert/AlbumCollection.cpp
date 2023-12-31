@@ -16,15 +16,137 @@
 namespace fs = std::filesystem;
 using namespace rapidjson;
 
-/*lbumCollection&& AlbumCollection::CreateAlbumCollection(std::filesystem::path path)
+
+bool TryFindMemberTag(auto jsonObject, auto name)
 {
+    if (jsonObject.FindMember(name) != jsonObject.MemberEnd())
+    {
+        return true;
+    }
 
-	AlbumCollection ac;
+    return false;
+}
 
-	return std::move(ac);
-}*/
+auto TryGetObjectMember(auto jsonObject, auto name)
+{
+    if (TryFindMemberTag(jsonObject, name))
+    {
+        return jsonObject[name].GetObj();
+    }
+
+    return  nullptr;
+}
+
+auto TryGetStringMember(auto jsonObject, auto name)
+{
+    if (TryFindMemberTag(jsonObject, name))
+    {
+        return jsonObject[name].GetString();
+    }
+
+    return  "***n/a***";
+}
+
+auto TryGetIntMember(auto jsonObject, auto name)
+{
+    if (TryFindMemberTag(jsonObject, name))
+    {
+        return jsonObject[name].GetInt();
+    }
+
+    return -1;
+}
 
 
+AlbumList AlbumCollection::ReadAlbumCollectionFromJSON(std::filesystem::path path)
+{
+    AlbumList albumList;
+
+
+
+    if (!fs::exists(path)) {
+
+        return albumList;
+    }
+
+    std::ifstream file(path);
+    // Read the entire file into a string 
+    std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    rapidjson::Document doc;
+
+    // Parse the JSON data 
+    doc.Parse(json.c_str());
+
+    // Check for parse errors 
+    if (doc.HasParseError()) {
+        std::cerr << "Error parsing JSON: "
+            << doc.GetParseError() << std::endl;
+
+        return albumList;
+    }
+
+    bool isObject = doc.IsObject();
+
+    auto jsonObject = doc.GetObj();
+
+    //Albums
+    for (auto itr = jsonObject.begin(); itr != jsonObject.end(); itr++)
+    {
+        MediaInfoList mediaInfoList;
+        std::string albumName = itr->name.GetString();
+        auto mediaTrackList = itr->value.GetArray();
+        for (int i = 0; i < mediaTrackList.Size(); i++)
+        {
+            auto formatTag = mediaTrackList[i].GetObj();
+
+            MediaInformation mi;
+
+            mi.filename = TryGetStringMember(formatTag, "filename");
+            mi.format_name = TryGetStringMember(formatTag, "format_name");
+            mi.format_long_name = TryGetStringMember(formatTag, "format_long_name");
+            mi.start_time = TryGetStringMember(formatTag, "start_time");
+            mi.duration = std::stol(TryGetStringMember(formatTag, "duration"));
+            mi.size = TryGetStringMember(formatTag, "size");
+            mi.bit_rate = TryGetStringMember(formatTag, "bit_rate");
+            mi.probe_score = TryGetIntMember(formatTag, "probe_score");
+
+            if (formatTag.FindMember("tags") != formatTag.MemberEnd())
+            {
+                auto tags = formatTag["tags"].GetObj();
+
+                mi.tags.album = TryGetStringMember(tags, "album");
+                mi.tags.artist = TryGetStringMember(tags, "artist");
+                mi.tags.album_artist = TryGetStringMember(tags, "album_artist");
+                mi.tags.comment = TryGetStringMember(tags, "comment");
+                mi.tags.genre = TryGetStringMember(tags, "genre");
+                mi.tags.publisher = TryGetStringMember(tags, "publisher");
+                mi.tags.title = TryGetStringMember(tags, "title");
+                mi.tags.track = TryGetStringMember(tags, "track");
+                mi.tags.date = TryGetStringMember(tags, "date");
+
+                static int th{ 100000 };
+
+                if (std::stoi(mi.bit_rate) < th)
+                {
+                    int i = 0;
+                }
+
+            }
+
+            mediaInfoList.push_back(mi);
+        }
+
+        albumList.push_back(std::make_tuple(albumName, mediaInfoList));
+    }
+
+
+    //rapidjson::Value const valueCopy = itr;
+//        valueCopy.CopyFrom(item.GetObj(), _MediaInfoDocument.GetAllocator());
+//            _MediaInfoDocument.AddMember("item1", item, _MediaInfoDocument.GetAllocator());
+
+    return albumList;
+}
 
 
 AlbumCollection::AlbumCollection(std::filesystem::path& path, std::filesystem::path& mediaResultPath)

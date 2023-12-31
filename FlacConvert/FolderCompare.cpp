@@ -32,6 +32,7 @@
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
+#include "FolderConvert.h"
 
 
 //#include <mongoc/client.hpp>
@@ -724,7 +725,9 @@ FileInfoList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int 
                 auto hasExtension = entry.path().has_extension();
                 auto fileEextension = entry.path().extension();
                 std::wstring entryPath{ entry.path().wstring() };
-                if (entry.path().has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
+                auto bPotentialConvertable = FolderConvert::IsFileConvertable(fileEextension);
+                //if (entry.path().has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
+                if (entry.path().has_extension() && bPotentialConvertable) {
 
                     //auto [file1Name, fileSize1] = *it1;
                     //auto [file2Name, fileSize2] = *it2;

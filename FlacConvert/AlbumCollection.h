@@ -52,6 +52,8 @@ public:
 
 	AlbumCollection(std::filesystem::path& path, std::filesystem::path& mediaResultPath);
 
+	static AlbumList ReadAlbumCollectionFromJSON(std::filesystem::path path);
+
 private:
 
 	rapidjson::Document GetJSONDoc(std::filesystem::path path);
