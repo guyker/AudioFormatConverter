@@ -150,11 +150,14 @@ int main()
         //========= SCAN
         //fs::path ourDir{ "M:\\tmp\\MediaResult.json" };
         
-        fs::path outDir{ "R:\\24\\MediaResult.json" };
+        //fs::path outDir{ "R:\\24\\MediaResult.json" };
+        //fs::path pathA{ "\\\\?\\R:\\24" };
 
-        fs::path pathA{ "\\\\?\\R:\\24" };
-        //fs::path pathA{ "\\\\?\\M:\\tmp\\24" };
+        fs::path outDir{ "\\\\?\\M:\\tmp\\MediaResult.json" };
+        fs::path pathA{ "\\\\?\\M:\\tmp\\jazz" };
         //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
+        // 
+      //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
           //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\Albums" };
           //fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
             //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums" };

@@ -26,9 +26,9 @@ bool AlbumCollection::LoadAlbumCollection()
 
 
     //Save Media Information ingo a JSON file
-    fs::path mediaResultPath{ "R:\\24\\MediaResult.json" };
+    //fs::path mediaResultPath{ "R:\\24\\MediaResult.json" };
     //fs::path mediaResultPath{ "M:\\tmp\\MediaResult.json" };
-    SaveAlbumCollectionToJSONFile(mediaResultPath);
+    SaveAlbumCollectionToJSONFile(_OutDirPth);
 
     return _AlbumList.size() > 0;
 }
