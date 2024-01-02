@@ -66,6 +66,8 @@ private:
 
 
 
+
+
 	static AlbumList ReadAlbumCollectionFromJSON(std::filesystem::path& dirPath);
 
 private:
@@ -78,7 +80,7 @@ private:
 	std::filesystem::path GetMediaInfoFile(std::filesystem::path mediaFilePath);
 	TrackInfoList LoadFolderNamesListRecrusive(std::filesystem::path path, int depth);
 
-	rapidjson::Document _MediaInfoDocument;
+//	rapidjson::Document _MediaInfoDocument;
 	DirectoryContentEntryList _AlbumList;
 };
 
