@@ -55,8 +55,14 @@ public:
 
 	bool LoadAlbumCollection();
 	bool RefreshAlbumCollectionMediaInformation();
-	MediaInformation ParseMediaInformationFromJSON(std::string jsonString);
 
+	bool SaveAlbumCollectionToJSONFile(std::filesystem::path& path);
+
+
+
+private:
+
+	MediaInformation ParseMediaInformationFromJSON(std::string jsonString);
 
 
 
@@ -71,9 +77,8 @@ private:
 	rapidjson::Document GetJSONDoc(std::filesystem::path path);
 	std::filesystem::path GetMediaInfoFile(std::filesystem::path mediaFilePath);
 	TrackInfoList LoadFolderNamesListRecrusive(std::filesystem::path path, int depth);
-	bool CreateJSONDocumentFromAlbumList();
 
 	rapidjson::Document _MediaInfoDocument;
-	DirectoryContentEntryList _fileList;
+	DirectoryContentEntryList _AlbumList;
 };
 
