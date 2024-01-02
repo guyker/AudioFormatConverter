@@ -67,6 +67,7 @@ public:
 	SimilarDirectoryEntryList _SimilarDirectories;
 	int _SimilarDirs{ 0 };
 
+	bool SaveMediaInfoDocumentToDB(std::filesystem::path path);
 	bool SaveMediaInfoDocument(std::filesystem::path path);
 	AlbumList LoadMediaInfoDocument(std::filesystem::path path);
 

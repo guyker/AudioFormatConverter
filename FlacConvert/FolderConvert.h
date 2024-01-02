@@ -13,6 +13,7 @@ public:
 
 
     static bool IsFileConvertable(std::filesystem::path pathName);
+    static bool IsFileCollectable(std::filesystem::path pathName);
 
     //std::string const _SourceFileType1{ ".flac" };
     //std::string const _SourceFileType2{ ".dsf" };

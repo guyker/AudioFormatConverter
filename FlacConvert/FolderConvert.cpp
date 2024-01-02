@@ -22,6 +22,18 @@ bool FolderConvert::IsFileConvertable(std::filesystem::path pathName)
     return false;
 }
 
+bool FolderConvert::IsFileCollectable(std::filesystem::path pathName)
+{
+    static std::vector<std::string> _ConvertableFileTypeList = { ".FLAC", ".flac", ".mp3" };
+
+    auto it = std::find_if(_ConvertableFileTypeList.begin(), _ConvertableFileTypeList.end(), [&](auto item) {return item == pathName; });
+    if (it != _ConvertableFileTypeList.end())
+    {
+        return true;
+    }
+
+    return false;
+}
 
 int FolderConvert::GetFilesData(std::tuple<int, long, long>& scanInfo, const std::filesystem::path& directory, bool bAsync)
 {

@@ -513,6 +513,108 @@ rapidjson::Document FolderCompare::GetJSONDoc(std::filesystem::path mediaFilePat
 }
 
 
+#include "SQLite/sqlite-amalgamation/sqlite3.h"
+
+
+bool FolderCompare::SaveMediaInfoDocumentToDB(std::filesystem::path path)
+{
+    const std::string dbPath{ path.generic_string() };
+
+    sqlite3* db;
+    int rc = sqlite3_open(dbPath.c_str(), &db);
+
+    if (rc != SQLITE_OK) {
+        std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
+        return rc;
+    }
+
+    // Execute SQL statements
+    
+    //rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS test (idPath TEXT PRIMARY KEY, name TEXT, age INTEGER);", 0, 0, 0);
+    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS test1 (ID INTEGER PRIMARY KEY, AlbumPath TEXT, name TEXT, age INTEGER);", 0, 0, 0);
+
+    if (rc != SQLITE_OK) {
+        std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_close(db);
+        return rc;
+    }
+
+    for (auto [dirPath, trackList] : _fileList)
+    {
+        auto albumPath = dirPath.path().generic_string();
+        //std::string query = 
+        //    std::string("INSERT INTO test1 VALUES ('") +
+        //    std::string(albumPath) +
+        //    std::string("', 'John', 25); ");
+
+
+        std::string query =  std::string("INSERT INTO test1 VALUES (null, '" + std::string(albumPath) + std::string("', 'John', 25); "));
+//        std::string query =  std::string("INSERT INTO test1 VALUES (2, '" + std::string(albumPath) + std::string("', 'John', 25); "));
+        //std::string query =  ("INSERT INTO test1 VALUES (1, 'd', 'John', 25); ");
+
+
+         rc = sqlite3_exec(db, query.c_str(), 0, 0, 0);
+    }
+
+
+    if (rc != SQLITE_OK) {
+        std::cerr << "Cannot insert data: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_close(db);
+        return rc;
+    }
+
+
+    sqlite3_close(db);
+
+    return 0;
+
+
+    //const std::string dbPath{ path.generic_string() };
+
+    //sqlite3* db;
+    //int rc = sqlite3_open(dbPath.c_str(), &db);
+
+    //if (rc != SQLITE_OK) {
+    //    std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
+    //    return rc;
+    //}
+
+    //// Execute SQL statements
+    //rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT, age INTEGER);", 0, 0, 0);
+
+    //if (rc != SQLITE_OK) {
+    //    std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
+    //    sqlite3_close(db);
+    //    return rc;
+    //}
+
+    //// Insert data
+    //rc = sqlite3_exec(db, "INSERT INTO test VALUES (1, 'John', 25);", 0, 0, 0);
+
+    //if (rc != SQLITE_OK) {
+    //    std::cerr << "Cannot insert data: " << sqlite3_errmsg(db) << std::endl;
+    //    sqlite3_close(db);
+    //    return rc;
+    //}
+
+    //// Query data
+    //sqlite3_stmt* stmt;
+    //rc = sqlite3_prepare_v2(db, "SELECT id, name, age FROM test;", -1, &stmt, 0);
+
+    //while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+    //    int id = sqlite3_column_int(stmt, 0);
+    //    const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    //    int age = sqlite3_column_int(stmt, 2);
+
+    //    std::cout << "ID: " << id << ", Name: " << name << ", Age: " << age << std::endl;
+    //}
+
+    //sqlite3_finalize(stmt);
+    //sqlite3_close(db);
+
+    return false;
+}
+
 bool FolderCompare::SaveMediaInfoDocument(std::filesystem::path path)
 {
     if (fs::exists(path)) {
@@ -725,7 +827,7 @@ FileInfoList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int 
                 auto hasExtension = entry.path().has_extension();
                 auto fileEextension = entry.path().extension();
                 std::wstring entryPath{ entry.path().wstring() };
-                auto bPotentialConvertable = FolderConvert::IsFileConvertable(fileEextension);
+                auto bPotentialConvertable = FolderConvert::IsFileCollectable(fileEextension);
                 //if (entry.path().has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
                 if (entry.path().has_extension() && bPotentialConvertable) {
 

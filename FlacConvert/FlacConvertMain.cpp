@@ -51,6 +51,7 @@ bool CreateMediaInfoJsonFile(fs::path dirPath, fs::path outDir)
     fc.GetFolderNamesList2(dirPath, 9);
 
     fc.SaveMediaInfoDocument(outDir);
+    fc.SaveMediaInfoDocumentToDB("all_albums.db");
 
     fc.sort();
     fc.findDuplicates_old();
@@ -123,64 +124,13 @@ int ConvertMediaTracksToNotmalFLAC(fs::path& dirName)
     return 0;
 }
 
-#include "SQLite/sqlite-amalgamation/sqlite3.h"
-
-int TESTSQL()
-{
-    sqlite3* db;
-    int rc = sqlite3_open("example.db", &db);
-
-    if (rc != SQLITE_OK) {
-        std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
-        return rc;
-    }
-
-    // Execute SQL statements
-    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT, age INTEGER);", 0, 0, 0);
-
-    if (rc != SQLITE_OK) {
-        std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
-        sqlite3_close(db);
-        return rc;
-    }
-
-    // Insert data
-    rc = sqlite3_exec(db, "INSERT INTO test VALUES (1, 'John', 25);", 0, 0, 0);
-
-    if (rc != SQLITE_OK) {
-        std::cerr << "Cannot insert data: " << sqlite3_errmsg(db) << std::endl;
-        sqlite3_close(db);
-        return rc;
-    }
-
-    // Query data
-    sqlite3_stmt* stmt;
-    rc = sqlite3_prepare_v2(db, "SELECT id, name, age FROM test;", -1, &stmt, 0);
-
-    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-        int id = sqlite3_column_int(stmt, 0);
-        const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        int age = sqlite3_column_int(stmt, 2);
-
-        std::cout << "ID: " << id << ", Name: " << name << ", Age: " << age << std::endl;
-    }
-
-    sqlite3_finalize(stmt);
-    sqlite3_close(db);
-
-    return 0;
-}
-
 
 
 int main()
 {
-    TESTSQL();
-    return 0;
-
     enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum };
     
-    Action action = ConverEnum; //STATIC ACTION SELECTOR
+    Action action = CreateJSONEnum; //STATIC ACTION SELECTOR
 
 
     if (action == ConverEnum)
@@ -194,8 +144,8 @@ int main()
         //========= SCAN
         fs::path ourDir{ "M:\\tmp\\MediaResult.json" };
 
-        //fs::path pathA{ "\\\\?\\R:\\24" };
-        fs::path pathA{ "\\\\?\\M:\\tmp\\24" };
+        fs::path pathA{ "\\\\?\\R:\\24" };
+        //fs::path pathA{ "\\\\?\\M:\\tmp\\24" };
         //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
           //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\Albums" };
           //fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
