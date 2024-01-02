@@ -47,27 +47,33 @@ fs::path _TMPDirectory{  };
 bool CreateMediaInfoJsonFile(fs::path dirPath, fs::path outDir)
 {
 
-    FolderCompare fc;
-    fc.GetFolderNamesList2(dirPath, 9);
+    //FolderCompare fc;
+    //fc.GetFolderNamesList2(dirPath, 9);
 
-    fc.SaveMediaInfoDocument(outDir);
-    fc.SaveMediaInfoDocumentToDB("all_albums.db");
+    //fc.SaveMediaInfoDocument(outDir);
+    //fc.SaveMediaInfoDocumentToDB("all_albums.db");
 
-    fc.sort();
-    fc.findDuplicates_old();
+    //fc.sort();
+    //fc.findDuplicates_old();
 
     return true;
 }
 
+
+
+
+
 AlbumList ReadMediaInfoJsonFile()
 {
-    FolderCompare fc;
+    //FolderCompare fc;
     fs::path mediaResultPath{ "M:\\tmp\\MediaResult.json" };
-    auto mediaInfoList = fc.LoadMediaInfoDocument(mediaResultPath);
+//    auto mediaInfoList = fc.LoadMediaInfoDocument(mediaResultPath);
 
 
 
-    return mediaInfoList;
+    //return mediaInfoList;
+
+    return AlbumList{};
 }
 
 
@@ -142,7 +148,9 @@ int main()
     else if (action == CreateJSONEnum)
     {
         //========= SCAN
-        fs::path ourDir{ "M:\\tmp\\MediaResult.json" };
+        //fs::path ourDir{ "M:\\tmp\\MediaResult.json" };
+        
+        fs::path outDir{ "R:\\24\\MediaResult.json" };
 
         fs::path pathA{ "\\\\?\\R:\\24" };
         //fs::path pathA{ "\\\\?\\M:\\tmp\\24" };
@@ -154,9 +162,20 @@ int main()
             //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Sets" };
           //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums\\24bit" };
           //fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
-        CreateMediaInfoJsonFile(pathA, ourDir);
+
+
+        AlbumCollection ac(pathA, outDir);
+        if (ac.LoadAlbumCollection())
+        {
+          //  auto mediaInfoList = AlbumCollection::ReadAlbumCollectionFromJSON(outDir);
+        }
+
+
+        //CreateMediaInfoJsonFile(pathA, ourDir);
+
         //fs::path path{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
         //fs::path mediaResultPath{ "M:\\tmp\\MediaResult.json" };
+        //
         //AlbumCollection ac(path, mediaResultPath);
 
         //auto mediaInfoList = AlbumCollection::ReadAlbumCollectionFromJSON(mediaResultPath);
@@ -165,10 +184,10 @@ int main()
     }
     else if (action == ProcessJSONEnum)
     {
-        auto mediaInfoList = ReadMediaInfoJsonFile();
-        FolderCompare fc;
-        fc.SortByNumberOfTracks(mediaInfoList);
-        AlbumList duplicatedAlbumList = fc.GetDuplicatedAlbums(mediaInfoList);
+        //auto mediaInfoList = ReadMediaInfoJsonFile();
+        //FolderCompare fc;
+        //fc.SortByNumberOfTracks(mediaInfoList);
+        //AlbumList duplicatedAlbumList = fc.GetDuplicatedAlbums(mediaInfoList);
     }
 
 

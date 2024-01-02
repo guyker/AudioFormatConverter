@@ -40,8 +40,8 @@ using AlbumList = std::vector<std::tuple<std::string, MediaInfoList>>;
 
 
 //XXXX
-using FileInfoList = std::vector<std::tuple<std::wstring, long long>>;
-using EntryFileTuple = std::tuple <std::filesystem::directory_entry, FileInfoList>;
+using TrackInfoList = std::vector<std::tuple<std::wstring, long long, MediaInformation, std::string>>;
+using EntryFileTuple = std::tuple <std::filesystem::directory_entry, TrackInfoList>;
 using DirectoryContentEntryList = std::vector<EntryFileTuple>;
 
 
@@ -50,15 +50,28 @@ class AlbumCollection
 	//static AlbumCollection&& CreateAlbumCollection(std::filesystem::path path);
 public:
 
-	AlbumCollection(std::filesystem::path& path, std::filesystem::path& mediaResultPath);
+	AlbumCollection() = delete;
+	AlbumCollection(std::filesystem::path& path, std::filesystem::path& outDirPath);
 
-	static AlbumList ReadAlbumCollectionFromJSON(std::filesystem::path path);
+	bool LoadAlbumCollection();
+	bool RefreshAlbumCollectionMediaInformation();
+	MediaInformation ParseMediaInformationFromJSON(std::string jsonString);
+
+
+
+
+	static AlbumList ReadAlbumCollectionFromJSON(std::filesystem::path& dirPath);
 
 private:
+	std::filesystem::path _AlbumCollectionDirPath;
+	std::filesystem::path _OutDirPth;
+
+
 
 	rapidjson::Document GetJSONDoc(std::filesystem::path path);
 	std::filesystem::path GetMediaInfoFile(std::filesystem::path mediaFilePath);
-	FileInfoList GetFolderNamesList2(std::filesystem::path path, int depth);
+	TrackInfoList LoadFolderNamesListRecrusive(std::filesystem::path path, int depth);
+	bool CreateJSONDocumentFromAlbumList();
 
 	rapidjson::Document _MediaInfoDocument;
 	DirectoryContentEntryList _fileList;

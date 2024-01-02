@@ -1,20 +1,146 @@
 #include "AlbumCollection.h"
 
-//#include <filesystem>
-//#include <vector>
-//
-//#include "MediaInformation.h"
-//
-//#include "rapidjson/rapidjson.h" 
-//#include "rapidjson/document.h"
-//#include "rapidjson/istreamwrapper.h"
-//#include "rapidjson/writer.h"
-//#include "rapidjson/stringbuffer.h"
-//#include "rapidjson/ostreamwrapper.h"
-//#include "rapidjson/stringbuffer.h"
-
 namespace fs = std::filesystem;
 using namespace rapidjson;
+
+
+AlbumCollection::AlbumCollection(std::filesystem::path& dirPath, std::filesystem::path& outDirPath) : _AlbumCollectionDirPath(dirPath), _OutDirPth(outDirPath)
+{
+}
+
+
+
+
+//std::filesystem::path& path, std::filesystem::path& mediaResultPath
+
+//Load all all albumes and tracks into _fileList
+bool AlbumCollection::LoadAlbumCollection()
+{
+    _MediaInfoDocument.SetObject();
+
+
+    LoadFolderNamesListRecrusive(_AlbumCollectionDirPath, 9);
+
+    RefreshAlbumCollectionMediaInformation();
+
+    return _fileList.size() > 0;
+
+
+    CreateJSONDocumentFromAlbumList();
+
+
+
+    if (fs::exists(_OutDirPth)) {
+        std::error_code ec;
+        if (fs::remove(_OutDirPth, ec)) {
+        }
+    }
+
+    StringBuffer buffer;
+    Writer<StringBuffer> writer(buffer);
+    _MediaInfoDocument.Accept(writer);
+    const char* json = buffer.GetString();
+
+    // Save the JSON string to a file
+    std::ofstream file(_OutDirPth);
+    if (file.is_open()) {
+        file << json;
+        file.close();
+        std::cout << "Document saved to 'output.json'" << std::endl;
+    }
+    else {
+        std::cerr << "Unable to open file for writing" << std::endl;
+
+        return false;
+    }
+
+    return true;;
+}
+
+
+
+TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::path path, int depth)
+{
+    //Empty list to store all potential tracks under the current directory (path)
+    TrackInfoList currentDirTrackList;
+
+    if (depth == 0)
+    {
+        return currentDirTrackList;
+    }
+
+    //Album tracks list holder 
+    rapidjson::Value trackMediaArray(rapidjson::kArrayType);
+
+    if (fs::exists(path)) {
+        for (const fs::directory_entry& entry : fs::directory_iterator(path)) {
+            auto folderName = entry.path().filename();
+            auto name = folderName.generic_wstring();
+
+            if (entry.is_directory()) {
+                //Scan directory and return the list of files under the directory entry (one level).
+                auto trackList = LoadFolderNamesListRecrusive(entry.path(), depth - 1);
+                if (trackList.size() > 0)
+                {
+                    //push the track list
+                    _fileList.push_back({ entry, trackList });
+                }
+            }
+            else {
+                if (entry.is_regular_file())
+                {
+                    auto hasExtension = entry.path().has_extension();
+                    auto fileEextension = entry.path().extension();
+                    std::wstring entryPath{ entry.path().wstring() };
+                    if (entry.path().has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
+
+                        auto path2Fixed = entry.path().lexically_normal().native();
+                        long long fileSize = fs::file_size(path2Fixed);
+
+                        auto mediaInfoFile = GetMediaInfoFile(path2Fixed);
+                        if (!mediaInfoFile.empty() && fs::exists(mediaInfoFile))
+                        {
+                            std::ifstream file(mediaInfoFile);
+                            std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+
+                            //Add track to Album List
+                            currentDirTrackList.push_back({ name, fileSize, MediaInformation{}, json });
+
+
+
+                            //Add track to JSON List
+                            auto trakMEdiaInfo = GetJSONDoc(mediaInfoFile);
+                            Value valueCopy;
+                            valueCopy.CopyFrom(trakMEdiaInfo["format"], _MediaInfoDocument.GetAllocator());
+                            trackMediaArray.PushBack(valueCopy, _MediaInfoDocument.GetAllocator());
+                        }
+
+                    }
+                }
+            }
+        }
+
+        if (trackMediaArray.Size() > 0)
+        {
+            try
+            {
+                //track list exists add album
+                std::string name = path.generic_string();
+                Value key(name.c_str(), _MediaInfoDocument.GetAllocator());
+                _MediaInfoDocument.AddMember(key, trackMediaArray, _MediaInfoDocument.GetAllocator());
+                //_MediaInfoDocument.AddMember(key, "trackMediaArray", _MediaInfoDocument.GetAllocator());
+            }
+            catch (...)
+            {
+                int i = 0;
+            }
+        }
+    }
+
+    return currentDirTrackList;
+}
+
 
 
 bool TryFindMemberTag(auto jsonObject, auto name)
@@ -57,8 +183,165 @@ auto TryGetIntMember(auto jsonObject, auto name)
     return -1;
 }
 
+long TryGetLongMember(auto jsonObject, auto name)
+{
+    if (TryFindMemberTag(jsonObject, name))
+    {
+        return std::stol(jsonObject[name].GetString());
+    }
 
-AlbumList AlbumCollection::ReadAlbumCollectionFromJSON(std::filesystem::path path)
+    return -1;
+}
+
+MediaInformation AlbumCollection::ParseMediaInformationFromJSON(std::string jsonString)
+{
+
+    MediaInformation mediaInfo;
+
+    rapidjson::Document doc;
+    doc.Parse(jsonString.c_str());
+
+    if (doc.HasParseError()) {
+        std::cerr << "Error parsing JSON: " << doc.GetParseError() << std::endl;
+
+        return mediaInfo;
+    }
+
+
+    if (doc.IsObject())
+    {
+        auto docObject = doc.GetObj();
+        auto formatTag = docObject["format"].GetObj();
+   //     if (formatTag != nullptr)
+        {
+            mediaInfo.filename = TryGetStringMember(formatTag, "filename");
+            mediaInfo.format_name = TryGetStringMember(formatTag, "format_name");
+            mediaInfo.format_long_name = TryGetStringMember(formatTag, "format_long_name");
+            mediaInfo.start_time = TryGetStringMember(formatTag, "start_time");
+            mediaInfo.duration = TryGetLongMember(formatTag, "duration");
+            mediaInfo.size = TryGetStringMember(formatTag, "size");
+            mediaInfo.bit_rate = TryGetStringMember(formatTag, "bit_rate");
+            mediaInfo.probe_score = TryGetIntMember(formatTag, "probe_score");
+
+            bool bTags = TryFindMemberTag(formatTag, "tags");
+
+            if (formatTag.FindMember("tags") != formatTag.MemberEnd())
+            {
+                auto tags = formatTag["tags"].GetObj();
+
+                mediaInfo.tags.album = TryGetStringMember(tags, "album");
+                mediaInfo.tags.artist = TryGetStringMember(tags, "artist");
+                mediaInfo.tags.album_artist = TryGetStringMember(tags, "album_artist");
+                mediaInfo.tags.comment = TryGetStringMember(tags, "comment");
+                mediaInfo.tags.genre = TryGetStringMember(tags, "genre");
+                mediaInfo.tags.publisher = TryGetStringMember(tags, "publisher");
+                mediaInfo.tags.title = TryGetStringMember(tags, "title");
+                mediaInfo.tags.track = TryGetStringMember(tags, "track");
+                mediaInfo.tags.date = TryGetStringMember(tags, "date");
+
+                //static int th{ 100000 };
+
+                //if (std::stoi(mi.bit_rate) < th)
+                //{
+                //    int i = 0;
+                //}
+            }
+        }
+    }
+
+    return mediaInfo;
+}
+
+
+
+//Load all media media information from the preloaded album list (_fileList)
+bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
+{
+    for (auto& [albumPath, trackList] : _fileList)
+    {
+        //Album tracks list holder 
+        rapidjson::Value trackMediaArray(rapidjson::kArrayType);
+
+        for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
+        {
+            std::filesystem::path trackPath = albumPath.path() / std::filesystem::path(trackName);
+
+            auto hasExtension = trackPath.has_extension();
+            auto fileEextension = trackPath.extension();
+            // std::wstring entryPath{ trackPath.wstring() };
+            if (trackPath.has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
+                auto path2Fixed = trackPath.lexically_normal().native();
+                long long fileSize = fs::file_size(path2Fixed);
+
+                auto mediaInfoFile = GetMediaInfoFile(path2Fixed);
+                if (!mediaInfoFile.empty() && fs::exists(mediaInfoFile))
+                {
+                    std::ifstream file(mediaInfoFile);
+                    std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                    
+                    mediaInfoString = json;
+                    mediaInfo = ParseMediaInformationFromJSON(json);
+
+                    int i = 0;
+                }
+                else
+                {
+                    int i = 0;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool AlbumCollection::CreateJSONDocumentFromAlbumList()
+{
+
+    for (auto [albumPath, trackList] : _fileList)
+    {
+        //Album tracks list holder 
+        rapidjson::Value trackMediaArray(rapidjson::kArrayType);
+
+        for (auto [trackName, size, mediaInfo, mediaInfoString] : trackList)
+        {
+            std::filesystem::path trackPath = albumPath.path() / std::filesystem::path(trackName);
+
+            auto hasExtension = trackPath.has_extension();
+            auto fileEextension = trackPath.extension();
+            // std::wstring entryPath{ trackPath.wstring() };
+            if (trackPath.has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
+            }
+        }
+    }
+
+    return true;
+}
+
+
+
+AlbumList AlbumCollection::ReadAlbumCollectionFromJSON(std::filesystem::path& path)
 {
     AlbumList albumList;
 
@@ -147,38 +430,8 @@ AlbumList AlbumCollection::ReadAlbumCollectionFromJSON(std::filesystem::path pat
 
     return albumList;
 }
+ 
 
-
-AlbumCollection::AlbumCollection(std::filesystem::path& path, std::filesystem::path& mediaResultPath)
-{
-    _MediaInfoDocument.SetObject();
-    auto ret = GetFolderNamesList2(path, 9);
-
-
-    if (fs::exists(mediaResultPath)) {
-        std::error_code ec;
-        if (fs::remove(mediaResultPath, ec)) {
-        }
-    }
-
-    StringBuffer buffer;
-    Writer<StringBuffer> writer(buffer);
-    _MediaInfoDocument.Accept(writer);
-    const char* json = buffer.GetString();
-
-    // Save the JSON string to a file
-    std::ofstream file(mediaResultPath);
-    if (file.is_open()) {
-        file << json;
-        file.close();
-        std::cout << "Document saved to 'output.json'" << std::endl;
-    }
-    else {
-        std::cerr << "Unable to open file for writing" << std::endl;
-    }
-
-    return;
-}
 
 rapidjson::Document AlbumCollection::GetJSONDoc(std::filesystem::path mediaFilePath)
 {
@@ -250,100 +503,4 @@ std::filesystem::path AlbumCollection::GetMediaInfoFile(std::filesystem::path me
     return std::filesystem::path{};;
 }
 
-FileInfoList AlbumCollection::GetFolderNamesList2(std::filesystem::path path, int depth)
-{
-    FileInfoList folderList;
 
-    if (depth == 0)
-    {
-        return folderList;
-    }
-
-
-    rapidjson::Value trackMediaArray(rapidjson::kArrayType);
-
-    for (const fs::directory_entry& entry : fs::directory_iterator(path)) {
-        auto folderName = entry.path().filename();
-        auto name = folderName.generic_wstring();
-
-        if (entry.is_directory()) {
-
-            //rapidjson::Value myArray(rapidjson::kArrayType);
-            //rapidjson::Document::AllocatorType& allocator = _MediaInfoDocument.GetAllocator();
-
-            //Value valueCopy;
-            ////valueCopy.CopyFrom(doc["format"], _MediaInfoDocument.GetAllocator());
-            //std::string key = "Album-" + std::to_string(index++);
-            //Value keyValue(key.c_str(), _MediaInfoDocument.GetAllocator());
-            //_MediaInfoDocument.AddMember(keyValue, valueCopy, _MediaInfoDocument.GetAllocator());
-
-
-            auto directoryfileList = GetFolderNamesList2(entry.path(), depth - 1);
-            if (directoryfileList.size() > 0)
-            {
-
-                _fileList.push_back({ entry, directoryfileList });
-            }
-        }
-        else {
-            if (entry.is_regular_file())
-            {
-                auto hasExtension = entry.path().has_extension();
-                auto fileEextension = entry.path().extension();
-                std::wstring entryPath{ entry.path().wstring() };
-                if (entry.path().has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
-
-                    //auto [file1Name, fileSize1] = *it1;
-                    //auto [file2Name, fileSize2] = *it2;
-
-             //       fs::path path1{ dirName1 + L"/" + file1Name };
-
-
-                    //auto path1Fixed = path1.lexically_normal().native();
-                    auto path2Fixed = entry.path().lexically_normal().native();
-                    long long fileSize = fs::file_size(path2Fixed);
-
-                    auto mediaInfoFile = GetMediaInfoFile(path2Fixed);
-                    if (!mediaInfoFile.empty())
-                    {
-                        folderList.push_back({ name, fileSize });
-
-                        //    MediaInformation mi;
-                     //   mi.JSONDoc = GetJSONDoc(mediaInfoFile);
-
-
-                        auto trakMEdiaInfo = GetJSONDoc(mediaInfoFile);
-
-                        Value valueCopy;
-                        valueCopy.CopyFrom(trakMEdiaInfo["format"], _MediaInfoDocument.GetAllocator());
-                        //Value keyValue(key.c_str(), _MediaInfoDocument.GetAllocator());
-
-
-                        trackMediaArray.PushBack(valueCopy, _MediaInfoDocument.GetAllocator());
-
-                    }
-
-                }
-            }
-        }
-    }
-
-    if (trackMediaArray.Size() > 0)
-    {
-        try
-        {
-            //track list exists add album
-            std::string name = path.generic_string();
-            Value key(name.c_str(), _MediaInfoDocument.GetAllocator());
-            _MediaInfoDocument.AddMember(key, trackMediaArray, _MediaInfoDocument.GetAllocator());
-            //_MediaInfoDocument.AddMember(key, "trackMediaArray", _MediaInfoDocument.GetAllocator());
-        }
-        catch (...)
-        {
-            int i = 0;
-        }
-    }
-
-
-    return folderList;
-}

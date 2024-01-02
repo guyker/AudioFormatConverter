@@ -1,3 +1,5 @@
+#if 0
+
 #include "FolderCompare.h"
 
 #include <windows.h> 
@@ -803,17 +805,6 @@ FileInfoList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int 
         auto name = folderName.generic_wstring();
 
         if (entry.is_directory()) {
-
-            //rapidjson::Value myArray(rapidjson::kArrayType);
-            //rapidjson::Document::AllocatorType& allocator = _MediaInfoDocument.GetAllocator();
-
-            //Value valueCopy;
-            ////valueCopy.CopyFrom(doc["format"], _MediaInfoDocument.GetAllocator());
-            //std::string key = "Album-" + std::to_string(index++);
-            //Value keyValue(key.c_str(), _MediaInfoDocument.GetAllocator());
-            //_MediaInfoDocument.AddMember(keyValue, valueCopy, _MediaInfoDocument.GetAllocator());
-
-
             auto directoryfileList = GetFolderNamesList2(entry.path(), depth - 1);
             if (directoryfileList.size() > 0)
             {
@@ -828,16 +819,7 @@ FileInfoList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int 
                 auto fileEextension = entry.path().extension();
                 std::wstring entryPath{ entry.path().wstring() };
                 auto bPotentialConvertable = FolderConvert::IsFileCollectable(fileEextension);
-                //if (entry.path().has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
                 if (entry.path().has_extension() && bPotentialConvertable) {
-
-                    //auto [file1Name, fileSize1] = *it1;
-                    //auto [file2Name, fileSize2] = *it2;
-
-             //       fs::path path1{ dirName1 + L"/" + file1Name };
-
-
-                    //auto path1Fixed = path1.lexically_normal().native();
                     auto path2Fixed = entry.path().lexically_normal().native();
                     long long fileSize = fs::file_size(path2Fixed);
 
@@ -845,17 +827,12 @@ FileInfoList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int 
                     if (!mediaInfoFile.empty())
                     {
                         folderList.push_back({ name, fileSize });
-
-                        //    MediaInformation mi;
-                     //   mi.JSONDoc = GetJSONDoc(mediaInfoFile);
                         
 
                         auto trakMEdiaInfo = GetJSONDoc(mediaInfoFile);
 
                         Value valueCopy;
                         valueCopy.CopyFrom(trakMEdiaInfo["format"], _MediaInfoDocument.GetAllocator());
-                        //Value keyValue(key.c_str(), _MediaInfoDocument.GetAllocator());
-
 
                         trackMediaArray.PushBack(valueCopy, _MediaInfoDocument.GetAllocator());
 
@@ -874,7 +851,6 @@ FileInfoList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int 
             std::string name = path.generic_string();
             Value key(name.c_str(), _MediaInfoDocument.GetAllocator());
             _MediaInfoDocument.AddMember(key, trackMediaArray, _MediaInfoDocument.GetAllocator());
-            //_MediaInfoDocument.AddMember(key, "trackMediaArray", _MediaInfoDocument.GetAllocator());
         }
         catch(...)
         {
@@ -886,7 +862,7 @@ FileInfoList FolderCompare::GetFolderNamesList2(std::filesystem::path path, int 
     return folderList;
 }
 
-//            folderList.push_back({ entry, { }});
+
 
 std::vector<std::wstring> FolderCompare::GetFolderNamesList(std::filesystem::path path, bool recrusive)
 {
@@ -922,3 +898,6 @@ std::vector<std::wstring> FolderCompare::Compare(std::filesystem::path pathA, st
 
     return folderListB;
 }
+
+
+#endif
