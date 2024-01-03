@@ -181,6 +181,10 @@ MediaInformation AlbumCollection::ParseMediaInformationFromJSON(std::string json
 }
 
 
+#include <algorithm>
+#include <future>
+#include <iostream>
+#include <mutex>
 
 //Load all media media information from the preloaded album list (_AlbumList)
 bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
@@ -189,6 +193,8 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
     {
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
+
+        //std::vector<std::future<std::filesystem::path>> asyncFutureList;
 
         for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
         {
@@ -201,7 +207,12 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
                 auto path2Fixed = trackPath.lexically_normal().native();
                 long long fileSize = fs::file_size(path2Fixed);
 
-                auto mediaInfoFile = AlbumCollection::CreateMediaInfoFile(path2Fixed);
+
+                auto mi = std::async(std::launch::async, AlbumCollection::CreateMediaInfoFile, path2Fixed);
+                //asyncFutureList.push_back(mi);
+                auto mediaInfoFile = mi.get();
+
+                //auto mediaInfoFile = AlbumCollection::CreateMediaInfoFile(path2Fixed);
                 if (!mediaInfoFile.empty() && fs::exists(mediaInfoFile))
                 {
                     std::ifstream file(mediaInfoFile);
