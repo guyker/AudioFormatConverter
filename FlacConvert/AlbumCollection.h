@@ -58,12 +58,13 @@ public:
 
 	//Load album list or ddirectory structure of the albums from the file system
 	bool LoadAlbumCollection();
+	bool LoadAlbumCollectionWithMetadata();
 
 	//Load/Reload album tracks metadata information
 	bool RefreshAlbumCollectionMediaInformation();
 
 	//Save album list and metadata to JSON file1
-	bool SaveAlbumCollectionToJSONFile(std::filesystem::path& path);
+	bool SaveAlbumCollectionToJSONFile(std::filesystem::path path);
 
 
 	static DirectoryContentEntryList LoadAlbumCollectionFromJSON(std::filesystem::path& dirPath);

@@ -170,19 +170,13 @@ int main()
         AlbumCollection ac(pathA, outDir);
         if (ac.LoadAlbumCollection())
         {
-          //  auto mediaInfoList = AlbumCollection::ReadAlbumCollectionFromJSON(outDir);
+            ac.RefreshAlbumCollectionMediaInformation();
+            ac.SaveAlbumCollectionToJSONFile(outDir);
+
+
+            AlbumCollection ac2(AlbumCollection::LoadAlbumCollectionFromJSON(outDir));
+
         }
-
-        AlbumCollection ac2(AlbumCollection::LoadAlbumCollectionFromJSON(outDir));
-
-        //CreateMediaInfoJsonFile(pathA, ourDir);
-
-        //fs::path path{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
-        //fs::path mediaResultPath{ "M:\\tmp\\MediaResult.json" };
-        //
-        //AlbumCollection ac(path, mediaResultPath);
-
-        //auto mediaInfoList = AlbumCollection::ReadAlbumCollectionFromJSON(mediaResultPath);
 
 
     }

@@ -16,17 +16,24 @@ AlbumCollection::AlbumCollection(DirectoryContentEntryList && albumList) : _Albu
 {
 }
 
-//Load all all albumes and tracks into _fileList
+
 bool AlbumCollection::LoadAlbumCollection()
 {
-
     //Scan directory and load all tracks location
     LoadFolderNamesListRecrusive(_AlbumCollectionDirPath, 9);
 
+    return true;
+}
+
+//Load all all albumes and tracks into _fileList
+bool AlbumCollection::LoadAlbumCollectionWithMetadata()
+{
+
+    //Scan directory and load all tracks location
+    LoadAlbumCollection();
 
     //For each loaded Albunm/Track, load/reload all media information 
     RefreshAlbumCollectionMediaInformation();
-
 
     //Save Media Information ingo a JSON file
     SaveAlbumCollectionToJSONFile(_OutDirPth);
@@ -75,16 +82,17 @@ TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::pat
                         auto path2Fixed = entry.path().lexically_normal().native();
                         long long fileSize = fs::file_size(path2Fixed);
 
-                        auto mediaInfoFile = AlbumCollection::CreateMediaInfoFile(path2Fixed);
-                        if (!mediaInfoFile.empty() && fs::exists(mediaInfoFile))
-                        {
-                            std::ifstream file(mediaInfoFile);
-                            std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                        //auto mediaInfoFile = AlbumCollection::CreateMediaInfoFile(path2Fixed);
+                        //if (!mediaInfoFile.empty() && fs::exists(mediaInfoFile))
+                        //{
+                        //    std::ifstream file(mediaInfoFile);
+                        //    std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
-                            //Add track to Album List
-                            currentDirTrackList.push_back({ name, fileSize, MediaInformation{}, json});
-                        }
+                        //    //Add track to Album List
+                        //    currentDirTrackList.push_back({ name, fileSize, MediaInformation{}, json});
+                        //}
 
+                        currentDirTrackList.push_back({ name, fileSize, MediaInformation{}, std::string{} });
                     }
                 }
             }
@@ -217,7 +225,7 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
 
 
 
-bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path& path)
+bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path path)
 {
     rapidjson::Document mediaDoc;
     mediaDoc.SetObject();
