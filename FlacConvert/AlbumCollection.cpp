@@ -154,7 +154,7 @@ long TryGetLongMember(auto jsonObject, auto name)
     return -1;
 }
 
-MediaInformation AlbumCollection::ParseMediaInformationFromJSON(std::string jsonString)
+MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::string jsonString)
 {
 
     MediaInformation mediaInfo;
@@ -194,7 +194,7 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
 
-        //std::vector<std::future<std::filesystem::path>> asyncFutureList;
+        std::vector<MediaLoadingFuture> asyncFutureList;
 
         for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
         {
@@ -207,28 +207,32 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
                 auto path2Fixed = trackPath.lexically_normal().native();
                 long long fileSize = fs::file_size(path2Fixed);
 
+                fs::path outfilePath{ trackName + "_" + std::string("media_info.json")};
+                auto&& miFuture = std::async(std::launch::async, AlbumCollection::GetMediaInfoFromMediaFile, path2Fixed);
 
-                auto mi = std::async(std::launch::async, AlbumCollection::CreateMediaInfoFile, path2Fixed);
-                //asyncFutureList.push_back(mi);
-                auto mediaInfoFile = mi.get();
+                asyncFutureList.push_back(std::move(miFuture));
 
-                //auto mediaInfoFile = AlbumCollection::CreateMediaInfoFile(path2Fixed);
-                if (!mediaInfoFile.empty() && fs::exists(mediaInfoFile))
-                {
-                    std::ifstream file(mediaInfoFile);
-                    std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-                    
-                    mediaInfoString = json;
-                    mediaInfo = ParseMediaInformationFromJSON(json);
+                //auto [mi_ret, jsonString_ret] = miFuture.get();
+                //mediaInfoString = jsonString_ret;
+                //mediaInfo = mi_ret;
 
-                    int i = 0;
-                }
-                else
-                {
-                    int i = 0;
-                }
+
+
+
+//                mediaInfo.MediaLoadingFuture = miFuture;
+
             }
         }
+
+        for (auto& future : asyncFutureList)
+        {
+            auto [mi_ret, jsonString_ret] = future.get();
+            //mediaInfoString = jsonString_ret;
+            //mediaInfo = mi_ret;
+
+            int i = 0;
+        }
+
     }
 
     return true;
@@ -429,7 +433,22 @@ rapidjson::Document AlbumCollection::GetJSONDoc(std::filesystem::path mediaFileP
 }
 
 
-std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path mediaFilePath)
+std::tuple<MediaInformation, std::string> AlbumCollection::GetMediaInfoFromMediaFile(std::filesystem::path mediaFilePath)
+{
+    std::size_t hashNumber = std::hash<std::string>{}(mediaFilePath.generic_string());
+    auto tmpFile = "tmp_json_media_" + std::to_string(hashNumber) + ".json";
+
+    auto outPath = AlbumCollection::CreateMediaInfoFile(mediaFilePath, tmpFile);
+    auto mi = AlbumCollection::ParseMediaInfoFromJsonFile(outPath);
+    
+    std::ifstream file(outPath);
+    std::string jsonString((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    return std::make_tuple(mi, jsonString);
+}
+
+
+std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
 {
     using namespace std::string_literals;
 
@@ -437,7 +456,8 @@ std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path
     int status = 0;
 
     auto tmpPath = fs::temp_directory_path();
-    fs::path tmpFilePath{ tmpPath.generic_wstring() + L"\\media_info.json"s };
+    //fs::path tmpFilePath{ tmpPath.generic_wstring() + L"\\media_info.json"s };
+    fs::path tmpFilePath{ tmpPath / outFile };
 
 
     std::wstring cmdExecNameW{ L"ffprobe -v quiet -print_format json -show_format "s };
@@ -482,3 +502,17 @@ std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path
 }
 
 
+MediaInformation AlbumCollection::ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath)
+{
+    MediaInformation mediaInfo;
+
+    //auto mediaInfoFile = AlbumCollection::CreateMediaInfoFile(path2Fixed);
+    if (!jsonMediaInfoPath.empty() && fs::exists(jsonMediaInfoPath))
+    {
+        std::ifstream file(jsonMediaInfoPath);
+        std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        mediaInfo = ParseMediaInfoFromJsonString(json);
+    }
+
+    return mediaInfo;
+}

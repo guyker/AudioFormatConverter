@@ -1,18 +1,8 @@
 #pragma once
 
 
-
-#include "rapidjson/rapidjson.h" 
-#include "rapidjson/document.h" 
-
-
-
 struct MediaInformation
 {
-	std::string FilePathKey;
-
-
-
 	std::string filename;
 	std::string nb_streams;
 	std::string nb_programs;
@@ -37,5 +27,4 @@ struct MediaInformation
 		std::string date;
 
 	} tags;
-	//rapidjson::Document JSONDoc;
 };

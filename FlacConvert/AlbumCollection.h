@@ -5,6 +5,7 @@
 
 #include <iostream>
 
+#include <future>
 #include <vector>
 #include <algorithm>
 #include <ranges>
@@ -40,6 +41,7 @@
 
 
 //XXXX
+using MediaLoadingFuture = std::future<std::tuple<MediaInformation, std::string>>;
 using TrackInfoList = std::vector<std::tuple<std::string, long long, MediaInformation, std::string>>;
 using EntryFileTuple = std::tuple <std::filesystem::directory_entry, TrackInfoList>;
 using DirectoryContentEntryList = std::vector<EntryFileTuple>;
@@ -73,13 +75,21 @@ private:
 	//static Helpers
 	static MediaInformation ParseMediaInformation(auto formatTag);
 	static rapidjson::Document GetJSONDoc(std::filesystem::path path);
-	static std::filesystem::path CreateMediaInfoFile(std::filesystem::path mediaFilePath);
+
+	//uses: CreateMediaInfoFile - to create json file
+	//      ParseMediaInfoFromJsonFile - to convert json file to info object
+	static std::tuple<MediaInformation, std::string> GetMediaInfoFromMediaFile(std::filesystem::path mediaFilePath);
+
+	static std::filesystem::path CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
+
+	static std::string GetMediaInfoJsonString(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
+	static MediaInformation ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath);
+	static MediaInformation ParseMediaInfoFromJsonString(std::string jsonString);
 
 	//private Helpers
 	TrackInfoList LoadFolderNamesListRecrusive(std::filesystem::path path, int depth);
-	MediaInformation ParseMediaInformationFromJSON(std::string jsonString);
 
-
+	 
 
 	std::filesystem::path _AlbumCollectionDirPath;
 	std::filesystem::path _OutDirPth;
