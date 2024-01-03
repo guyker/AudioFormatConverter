@@ -191,10 +191,12 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
 {
     for (auto& [albumPath, trackList] : _AlbumList)
     {
+        std::wcout << L"Getting media info: " << albumPath.path() << std::endl;
+
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
 
-        std::vector<MediaLoadingFuture> asyncFutureList;
+        std::vector<std::tuple<MediaLoadingFuture, MediaInformation&, std::string&>> asyncFutureList;
 
         for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
         {
@@ -207,30 +209,40 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
                 auto path2Fixed = trackPath.lexically_normal().native();
                 long long fileSize = fs::file_size(path2Fixed);
 
-                fs::path outfilePath{ trackName + "_" + std::string("media_info.json")};
-                auto&& miFuture = std::async(std::launch::async, AlbumCollection::GetMediaInfoFromMediaFile, path2Fixed);
+                bool bAsync = true;
+                if (bAsync)
+                {
+                    fs::path outfilePath{ trackName + "_" + std::string("media_info.json") };
+                    auto&& miFuture = std::async(std::launch::async, AlbumCollection::GetMediaInfoFromMediaFile, path2Fixed);
 
-                asyncFutureList.push_back(std::move(miFuture));
+                    asyncFutureList.push_back({ std::move(miFuture), mediaInfo, mediaInfoString });
 
-                //auto [mi_ret, jsonString_ret] = miFuture.get();
-                //mediaInfoString = jsonString_ret;
-                //mediaInfo = mi_ret;
-
-
-
-
-//                mediaInfo.MediaLoadingFuture = miFuture;
-
+                    //if (asyncFutureList.size() > 4)
+                    //{
+                    //    for (auto& [furure_ret, mediaInfo, mediaInfoString] : asyncFutureList)
+                    //    {
+                    //        auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
+                    //        mediaInfo = mediaInfo_ret;
+                    //        mediaInfoString = mediaInfoString_ret;
+                    //    }
+                    //    asyncFutureList.clear();
+                    //}
+                }
+                else
+                {
+                    fs::path outfilePath{ trackName + "_" + std::string("media_info.json") };
+                    auto [mi_ret, jsonString_ret] = AlbumCollection::GetMediaInfoFromMediaFile(path2Fixed);
+                    mediaInfoString = jsonString_ret;
+                    mediaInfo = mi_ret;
+                }
             }
         }
 
-        for (auto& future : asyncFutureList)
+        for (auto& [furure_ret, mediaInfo, mediaInfoString] : asyncFutureList)
         {
-            auto [mi_ret, jsonString_ret] = future.get();
-            //mediaInfoString = jsonString_ret;
-            //mediaInfo = mi_ret;
-
-            int i = 0;
+            auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
+            mediaInfo = mediaInfo_ret;
+            mediaInfoString = mediaInfoString_ret;
         }
 
     }
@@ -444,6 +456,13 @@ std::tuple<MediaInformation, std::string> AlbumCollection::GetMediaInfoFromMedia
     std::ifstream file(outPath);
     std::string jsonString((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
+    if (fs::exists(outPath)) {
+        std::error_code ec;
+        if (fs::remove(outPath, ec)) {
+        }
+    }
+
+
     return std::make_tuple(mi, jsonString);
 }
 
@@ -469,7 +488,7 @@ std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path
     rapidjson::Document jsonDoc = nullptr;
 
     try {
-        std::wcout << L"Getting media info:: " << mediaFilePath.generic_wstring() << std::endl;
+        //std::wcout << L"Getting media info:: " << mediaFilePath.generic_wstring() << std::endl;
 
         if (fs::exists(tmpFilePath)) {
             std::error_code ec;
