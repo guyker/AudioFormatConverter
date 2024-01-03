@@ -69,18 +69,20 @@ public:
 	static DirectoryContentEntryList LoadAlbumCollectionFromJSON(std::filesystem::path& dirPath);
 
 private:
+	//static Helpers
+	static MediaInformation ParseMediaInformation(auto formatTag);
+	static rapidjson::Document GetJSONDoc(std::filesystem::path path);
+	static std::filesystem::path CreateMediaInfoFile(std::filesystem::path mediaFilePath);
 
+	//private Helpers
+	TrackInfoList LoadFolderNamesListRecrusive(std::filesystem::path path, int depth);
 	MediaInformation ParseMediaInformationFromJSON(std::string jsonString);
+
+
 
 	std::filesystem::path _AlbumCollectionDirPath;
 	std::filesystem::path _OutDirPth;
 
-
-	rapidjson::Document GetJSONDoc(std::filesystem::path path);
-	std::filesystem::path GetMediaInfoFile(std::filesystem::path mediaFilePath);
-	TrackInfoList LoadFolderNamesListRecrusive(std::filesystem::path path, int depth);
-
-//	rapidjson::Document _MediaInfoDocument;
 	DirectoryContentEntryList _AlbumList;
 };
 

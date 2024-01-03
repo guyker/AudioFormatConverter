@@ -75,7 +75,7 @@ TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::pat
                         auto path2Fixed = entry.path().lexically_normal().native();
                         long long fileSize = fs::file_size(path2Fixed);
 
-                        auto mediaInfoFile = GetMediaInfoFile(path2Fixed);
+                        auto mediaInfoFile = AlbumCollection::CreateMediaInfoFile(path2Fixed);
                         if (!mediaInfoFile.empty() && fs::exists(mediaInfoFile))
                         {
                             std::ifstream file(mediaInfoFile);
@@ -165,41 +165,8 @@ MediaInformation AlbumCollection::ParseMediaInformationFromJSON(std::string json
     {
         auto docObject = doc.GetObj();
         auto formatTag = docObject["format"].GetObj();
-   //     if (formatTag != nullptr)
-        {
-            mediaInfo.filename = TryGetStringMember(formatTag, "filename");
-            mediaInfo.format_name = TryGetStringMember(formatTag, "format_name");
-            mediaInfo.format_long_name = TryGetStringMember(formatTag, "format_long_name");
-            mediaInfo.start_time = TryGetStringMember(formatTag, "start_time");
-            mediaInfo.duration = TryGetLongMember(formatTag, "duration");
-            mediaInfo.size = TryGetStringMember(formatTag, "size");
-            mediaInfo.bit_rate = TryGetStringMember(formatTag, "bit_rate");
-            mediaInfo.probe_score = TryGetIntMember(formatTag, "probe_score");
 
-            bool bTags = TryFindMemberTag(formatTag, "tags");
-
-            if (formatTag.FindMember("tags") != formatTag.MemberEnd())
-            {
-                auto tags = formatTag["tags"].GetObj();
-
-                mediaInfo.tags.album = TryGetStringMember(tags, "album");
-                mediaInfo.tags.artist = TryGetStringMember(tags, "artist");
-                mediaInfo.tags.album_artist = TryGetStringMember(tags, "album_artist");
-                mediaInfo.tags.comment = TryGetStringMember(tags, "comment");
-                mediaInfo.tags.genre = TryGetStringMember(tags, "genre");
-                mediaInfo.tags.publisher = TryGetStringMember(tags, "publisher");
-                mediaInfo.tags.title = TryGetStringMember(tags, "title");
-                mediaInfo.tags.track = TryGetStringMember(tags, "track");
-                mediaInfo.tags.date = TryGetStringMember(tags, "date");
-
-                //static int th{ 100000 };
-
-                //if (std::stoi(mi.bit_rate) < th)
-                //{
-                //    int i = 0;
-                //}
-            }
-        }
+        return MediaInformation { AlbumCollection::ParseMediaInformation(formatTag) };        
     }
 
     return mediaInfo;
@@ -226,7 +193,7 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
                 auto path2Fixed = trackPath.lexically_normal().native();
                 long long fileSize = fs::file_size(path2Fixed);
 
-                auto mediaInfoFile = GetMediaInfoFile(path2Fixed);
+                auto mediaInfoFile = AlbumCollection::CreateMediaInfoFile(path2Fixed);
                 if (!mediaInfoFile.empty() && fs::exists(mediaInfoFile))
                 {
                     std::ifstream file(mediaInfoFile);
@@ -327,6 +294,37 @@ bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path& path)
 }
 
 
+//ststic function that parses a json metadata JSON and returns an instance of MediaInformation 
+MediaInformation AlbumCollection::ParseMediaInformation(auto formatTag)
+{
+    MediaInformation mi;
+
+    mi.filename = TryGetStringMember(formatTag, "filename");
+    mi.format_name = TryGetStringMember(formatTag, "format_name");
+    mi.format_long_name = TryGetStringMember(formatTag, "format_long_name");
+    mi.start_time = TryGetStringMember(formatTag, "start_time");
+    mi.duration = std::stol(TryGetStringMember(formatTag, "duration"));
+    mi.size = TryGetStringMember(formatTag, "size");
+    mi.bit_rate = TryGetStringMember(formatTag, "bit_rate");
+    mi.probe_score = TryGetIntMember(formatTag, "probe_score");
+
+    if (formatTag.FindMember("tags") != formatTag.MemberEnd())
+    {
+        auto tags = formatTag["tags"].GetObj();
+
+        mi.tags.album = TryGetStringMember(tags, "album");
+        mi.tags.artist = TryGetStringMember(tags, "artist");
+        mi.tags.album_artist = TryGetStringMember(tags, "album_artist");
+        mi.tags.comment = TryGetStringMember(tags, "comment");
+        mi.tags.genre = TryGetStringMember(tags, "genre");
+        mi.tags.publisher = TryGetStringMember(tags, "publisher");
+        mi.tags.title = TryGetStringMember(tags, "title");
+        mi.tags.track = TryGetStringMember(tags, "track");
+        mi.tags.date = TryGetStringMember(tags, "date");
+    }
+
+    return mi;
+}
 
 //ststic function that loads album list from a Json file and returns a DirectoryContentEntryList object
 DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::filesystem::path& path)
@@ -356,7 +354,6 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
     }
 
     bool isObject = doc.IsObject();
-
     auto jsonObject = doc.GetObj();
 
 
@@ -374,45 +371,11 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
         auto mediaTrackList = itr->value.GetArray();
         for (int i = 0; i < mediaTrackList.Size(); i++)
         {
-            auto formatTag = mediaTrackList[i].GetObj();
-
-            MediaInformation mi;
-
-            mi.filename = TryGetStringMember(formatTag, "filename");
-            mi.format_name = TryGetStringMember(formatTag, "format_name");
-            mi.format_long_name = TryGetStringMember(formatTag, "format_long_name");
-            mi.start_time = TryGetStringMember(formatTag, "start_time");
-            mi.duration = std::stol(TryGetStringMember(formatTag, "duration"));
-            mi.size = TryGetStringMember(formatTag, "size");
-            mi.bit_rate = TryGetStringMember(formatTag, "bit_rate");
-            mi.probe_score = TryGetIntMember(formatTag, "probe_score");
-
-            if (formatTag.FindMember("tags") != formatTag.MemberEnd())
+            if (mediaTrackList[i].IsObject())
             {
-                auto tags = formatTag["tags"].GetObj();
-
-                mi.tags.album = TryGetStringMember(tags, "album");
-                mi.tags.artist = TryGetStringMember(tags, "artist");
-                mi.tags.album_artist = TryGetStringMember(tags, "album_artist");
-                mi.tags.comment = TryGetStringMember(tags, "comment");
-                mi.tags.genre = TryGetStringMember(tags, "genre");
-                mi.tags.publisher = TryGetStringMember(tags, "publisher");
-                mi.tags.title = TryGetStringMember(tags, "title");
-                mi.tags.track = TryGetStringMember(tags, "track");
-                mi.tags.date = TryGetStringMember(tags, "date");
-
-                static int th{ 100000 };
-
-                if (std::stoi(mi.bit_rate) < th)
-                {
-                    int i = 0;
-                }
-
+                MediaInformation mi{ AlbumCollection::ParseMediaInformation(mediaTrackList[i].GetObj()) };
+                trackList.push_back({ mi.filename, std::stol(mi.size), mi, json });
             }
-            //std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-            //std::wstring utf16String = converter.from_bytes(mi.filename);
-
-            trackList.push_back({ mi.filename, std::stol(mi.size), mi, json });
         }
 
         if (trackList.size() > 0)
@@ -427,18 +390,6 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
     return albumList;
 }
 
-
-
-
-
-// LEFT OVERS
-// LEFT OVERS
-// LEFT OVERS
-// LEFT OVERS
-
-
-
- 
 
 
 rapidjson::Document AlbumCollection::GetJSONDoc(std::filesystem::path mediaFilePath)
@@ -459,7 +410,7 @@ rapidjson::Document AlbumCollection::GetJSONDoc(std::filesystem::path mediaFileP
 }
 
 
-std::filesystem::path AlbumCollection::GetMediaInfoFile(std::filesystem::path mediaFilePath)
+std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path mediaFilePath)
 {
     using namespace std::string_literals;
 
@@ -491,7 +442,7 @@ std::filesystem::path AlbumCollection::GetMediaInfoFile(std::filesystem::path me
 
         if (status == 0)
         {
-            jsonDoc = GetJSONDoc(tmpFilePath);
+            jsonDoc = AlbumCollection::GetJSONDoc(tmpFilePath);
 
 
             //if (fs::exists(tmpFilePath)) {
