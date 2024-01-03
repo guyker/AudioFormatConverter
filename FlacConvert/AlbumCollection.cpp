@@ -262,14 +262,14 @@ bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path path)
                 rapidjson::Document trackDoc;
                 trackDoc.Parse(mediaInfoString.c_str());
                 if (trackDoc.HasParseError()) {
-                    std::cerr << "Error parsing JSON: " << trackDoc.GetParseError() << std::endl;
-
-                    return false;
+                    std::cerr << "Error parsing JSON: " << trackDoc.GetParseError() << std::endl;                    
                 }
-
-                Value valueCopy;
-                valueCopy.CopyFrom(trackDoc["format"], mediaDoc.GetAllocator());
-                trackMediaArray.PushBack(valueCopy, mediaDoc.GetAllocator());
+                else
+                {
+                    Value valueCopy;
+                    valueCopy.CopyFrom(trackDoc["format"], mediaDoc.GetAllocator());
+                    trackMediaArray.PushBack(valueCopy, mediaDoc.GetAllocator());
+                }
             }
         }
 
