@@ -61,20 +61,20 @@ bool CreateMediaInfoJsonFile(fs::path dirPath, fs::path outDir)
 
 
 
-
-
-AlbumList ReadMediaInfoJsonFile()
-{
-    //FolderCompare fc;
-    fs::path mediaResultPath{ "M:\\tmp\\MediaResult.json" };
-//    auto mediaInfoList = fc.LoadMediaInfoDocument(mediaResultPath);
-
-
-
-    //return mediaInfoList;
-
-    return AlbumList{};
-}
+//
+//
+//AlbumList ReadMediaInfoJsonFile()
+//{
+//    //FolderCompare fc;
+//    fs::path mediaResultPath{ "M:\\tmp\\MediaResult.json" };
+////    auto mediaInfoList = fc.LoadMediaInfoDocument(mediaResultPath);
+//
+//
+//
+//    //return mediaInfoList;
+//
+//    return AlbumList{};
+//}
 
 
 
@@ -150,11 +150,11 @@ int main()
         //========= SCAN
         //fs::path ourDir{ "M:\\tmp\\MediaResult.json" };
         
-        //fs::path outDir{ "R:\\24\\MediaResult.json" };
-        //fs::path pathA{ "\\\\?\\R:\\24" };
+        fs::path outDir{ "R:\\24\\MediaResult.json" };
+        fs::path pathA{ "\\\\?\\R:\\24" };
 
-        fs::path outDir{ "\\\\?\\M:\\tmp\\MediaResult.json" };
-        fs::path pathA{ "\\\\?\\M:\\tmp\\jazz" };
+        //fs::path outDir{ "\\\\?\\M:\\tmp\\MediaResult.json" };
+        //fs::path pathA{ "\\\\?\\M:\\tmp\\jazz" };
         //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
         // 
       //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
@@ -173,6 +173,7 @@ int main()
           //  auto mediaInfoList = AlbumCollection::ReadAlbumCollectionFromJSON(outDir);
         }
 
+        AlbumCollection ac2(AlbumCollection::LoadAlbumCollectionFromJSON(outDir));
 
         //CreateMediaInfoJsonFile(pathA, ourDir);
 
