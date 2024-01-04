@@ -25,6 +25,8 @@ void AlbumCollection::Clear()
 
 bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath)
 {
+    std::wcout << L"Processing new collection: " << albumCollectionDirPath.generic_wstring() << std::endl;
+
     //Scan directory and load all tracks location
     LoadFolderNamesListRecrusive(albumCollectionDirPath, 9);
 
