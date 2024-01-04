@@ -693,7 +693,7 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
     // Execute SQL statements
 
 
-    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS test5 (ID INTEGER PRIMARY KEY, album_name TEXT, filename TEXT, format_name TEXT, format_long_name TEXT, start_time TEXT, duration INTEGER, size TEXT, bit_rate TEXT, probe_score INTEGER, album TEXT, artist TEXT, album_artist TEXT, comment TEXT, genre TEXT, publisher TEXT, title TEXT, track TEXT, date TEXT);", 0, 0, 0);
+    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS AlbumListA (ID INTEGER PRIMARY KEY, album_name TEXT, filename TEXT, format_name TEXT, format_long_name TEXT, start_time TEXT, duration INTEGER, size TEXT, bit_rate TEXT, probe_score INTEGER, album TEXT, artist TEXT, album_artist TEXT, comment TEXT, genre TEXT, publisher TEXT, title TEXT, track TEXT, date TEXT);", 0, 0, 0);
 
     if (rc != SQLITE_OK) {
         std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
@@ -712,7 +712,7 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
         for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
         {
             //auto queryString = "INSERT INTO test1 VALUES (null, '" + std::string(albumPath) + std::string("', 'John', 25); ");
-            auto queryString = std::format("INSERT INTO test5 VALUES (null, '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');", 
+            auto queryString = std::format("INSERT INTO AlbumListA VALUES (null, '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');", 
                 albumPath, trackName,
                 mediaInfo.format_name, mediaInfo.format_long_name,
                 mediaInfo.start_time, mediaInfo.duration, mediaInfo.size, mediaInfo.bit_rate, mediaInfo.probe_score,
@@ -721,11 +721,6 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
                 mediaInfo.tags.title, mediaInfo.tags.track, mediaInfo.tags.date);
             
             std::string query = queryString;
-
-
-            //        std::string query =  std::string("INSERT INTO test1 VALUES (2, '" + std::string(albumPath) + std::string("', 'John', 25); "));
-                    //std::string query =  ("INSERT INTO test1 VALUES (1, 'd', 'John', 25); ");
-
 
             rc = sqlite3_exec(db, query.c_str(), 0, 0, 0);
 
