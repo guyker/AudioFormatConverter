@@ -82,11 +82,12 @@ public:
 
 
 	//compare
-
 	void SortByNumberOfTracks();
 	SimilarDirectoryEntryList& CreateDuplicatedAlbums();
 	SimilarDirectoryEntryList& GetDuplicatedAlbums();
 
+	//DB
+	bool SaveMediaInfoDocumentToDB(std::filesystem::path path);
 	
 private:
 	//static Helpers

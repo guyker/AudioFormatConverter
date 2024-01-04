@@ -12,7 +12,7 @@ struct MediaInformation
 	long duration;
 	std::string size;
 	std::string bit_rate;
-	std::string probe_score;
+	int probe_score;
 
 	struct _tags
 	{

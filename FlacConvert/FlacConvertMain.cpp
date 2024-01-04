@@ -135,9 +135,9 @@ int ConvertMediaTracksToNotmalFLAC(fs::path& dirName)
 
 int main()
 {
-    enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum };
+    enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum, TestDBEnum };
     
-    Action action = ProcessJSONEnum; //STATIC ACTION SELECTOR
+    Action action = TestDBEnum; //STATIC ACTION SELECTOR
 
 
     if (action == ConverEnum)
@@ -193,17 +193,14 @@ int main()
             WindowsHelpers::OpenDirectoryInExplorer(dir1);
             WindowsHelpers::OpenDirectoryInExplorer(dir2);
         }
-
-
-        //AlbumList duplicatedAlbumList = fc.GetDuplicatedAlbums(mediaInfoList);
-        // 
-        //auto mediaInfoList = ReadMediaInfoJsonFile();
-        //FolderCompare fc;
-        //fc.SortByNumberOfTracks(mediaInfoList);
-        //AlbumList duplicatedAlbumList = fc.GetDuplicatedAlbums(mediaInfoList);
     }
+    else if (action == TestDBEnum)
+    {
+        fs::path jsonMediaFile{ "R:\\24\\MediaResult.json" };
+        AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonMediaFile));
 
-
+        ac.SaveMediaInfoDocumentToDB("R:\\24\\all_albums.db");
+    }
     return 0;
 }
 
