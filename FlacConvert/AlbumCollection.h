@@ -40,11 +40,19 @@
 //using AlbumList = std::vector<std::tuple<std::string, MediaInfoList>>;
 
 
-//XXXX
+//XXX
+
+using SimilarDirectoryEntryList = std::vector<std::tuple <std::wstring, std::wstring>>;
+
+
 using MediaLoadingFuture = std::future<std::tuple<MediaInformation, std::string>>;
 using TrackInfoList = std::vector<std::tuple<std::string, long long, MediaInformation, std::string>>;
 using EntryFileTuple = std::tuple <std::filesystem::directory_entry, TrackInfoList>;
 using DirectoryContentEntryList = std::vector<EntryFileTuple>;
+
+
+constexpr int SimilarPercentageTriggerValue{ 5 };
+constexpr int MinNumberOfFilesInFolderToCompare{ 4 };
 
 
 class AlbumCollection
@@ -72,6 +80,13 @@ public:
 
 	static DirectoryContentEntryList LoadAlbumCollectionFromJSON(std::filesystem::path& dirPath);
 
+
+	//compare
+
+	void SortByNumberOfTracks();
+	DirectoryContentEntryList GetDuplicatedAlbums();
+	
+
 private:
 	//static Helpers
 	static MediaInformation ParseMediaInformation(auto formatTag);
@@ -87,6 +102,12 @@ private:
 	static MediaInformation ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath);
 	static MediaInformation ParseMediaInfoFromJsonString(std::string jsonString);
 
+
+	//sort and find duplications
+	void FindDuplicationInGroup(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt);
+	//void OpenDirectoryInExplorer(std::wstring dirName);
+
+
 	//private Helpers
 	TrackInfoList LoadFolderNamesListRecrusive(std::filesystem::path path, int depth);
 
@@ -96,5 +117,6 @@ private:
 //	std::filesystem::path _OutDirPth;
 
 	DirectoryContentEntryList _AlbumList;
+	SimilarDirectoryEntryList _DuplicatedAlbumList;
 };
 

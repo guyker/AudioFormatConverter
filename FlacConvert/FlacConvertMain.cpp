@@ -136,7 +136,7 @@ int main()
 {
     enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum };
     
-    Action action = CreateJSONEnum; //STATIC ACTION SELECTOR
+    Action action = ProcessJSONEnum; //STATIC ACTION SELECTOR
 
 
     if (action == ConverEnum)
@@ -169,16 +169,22 @@ int main()
 
         AlbumCollection ac;
         ac.LoadAlbumCollection(pathA); //load albume list
-        ac.LoadAlbumCollection(pathA); //load albume list
-        ac.LoadAlbumCollection(pathA); //load albume list
+        ac.SortByNumberOfTracks();
         ac.RefreshAlbumCollectionMediaInformation(); //load metadate
         ac.SaveAlbumCollectionToJSONFile(outDir); // save to json
 
-        AlbumCollection ac2(AlbumCollection::LoadAlbumCollectionFromJSON(outDir));
+
         int i = 0;
     }
     else if (action == ProcessJSONEnum)
     {
+        fs::path jsonMediaFile{ "R:\\24\\MediaResult.json" };
+        AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonMediaFile));
+        ac.SortByNumberOfTracks();
+        ac.GetDuplicatedAlbums();
+
+        //AlbumList duplicatedAlbumList = fc.GetDuplicatedAlbums(mediaInfoList);
+        // 
         //auto mediaInfoList = ReadMediaInfoJsonFile();
         //FolderCompare fc;
         //fc.SortByNumberOfTracks(mediaInfoList);

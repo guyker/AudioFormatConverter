@@ -539,3 +539,150 @@ MediaInformation AlbumCollection::ParseMediaInfoFromJsonFile(std::filesystem::pa
 
     return mediaInfo;
 }
+
+
+//-------------COMPARE
+
+
+void AlbumCollection::SortByNumberOfTracks()
+{
+    std::ranges::stable_sort(_AlbumList, [](auto& album1, auto& album2) {
+        auto [albumName1, trackList1] = album1;
+        auto [albumName2, trackList2] = album2;
+
+        return trackList2.size() > trackList1.size();
+        });
+}
+
+#include "WindowsHelpers.h"
+
+DirectoryContentEntryList AlbumCollection::GetDuplicatedAlbums()
+{
+    auto& albumList = _AlbumList;
+    DirectoryContentEntryList dupList;
+
+    if (albumList.size() < 2)
+    {
+        return dupList;
+    }
+
+    auto firstIt = albumList.begin();
+    auto secondIt = firstIt;
+    secondIt++;
+
+    while (firstIt != albumList.end() && secondIt != albumList.end())
+    {
+        bool bFound = false;
+        auto& [dirEntry1, fileList1] = *firstIt;
+        auto& [dirEntry2, fileList2] = *secondIt;
+
+        //auto dirEntry1 = std::get<0>(*firstIt);
+        //auto dirEntry2 = std::get<0>(*secondIt);
+
+        //auto fileList1 = std::get<1>(*firstIt);
+        //auto fileList2 = std::get<1>(*secondIt);
+
+        auto pushedEndGroupIt = secondIt;
+        int itemsInGroup{ 0 };
+        auto fileList1Seize{ fileList1.size() };
+        while (secondIt != albumList.end() && fileList1.size() == fileList2.size())
+        {
+            pushedEndGroupIt = secondIt;
+            auto& [dirEntry2, fileList2] = *secondIt;
+
+//            auto& [trackName, size, mediaInfo, mediaInfoString] = *secondIt;
+
+            //dirEntry2 = std::get<0>(*secondIt);
+            //fileList2 = std::get<1>(*secondIt);
+
+            secondIt++;
+            bFound = true;
+            itemsInGroup++;
+        }
+
+        secondIt = pushedEndGroupIt;
+
+        //  secondIt--;
+
+        auto firstIndex = std::ranges::distance(albumList.cbegin(), firstIt);
+        auto lastIndex = std::ranges::distance(albumList.cbegin(), secondIt);
+
+        if (bFound)
+        {
+            FindDuplicationInGroup(albumList, firstIt, secondIt);
+            firstIt = secondIt;;
+            secondIt++;
+        }
+        else
+        {
+            firstIt++;
+            secondIt++;
+        }
+    }
+
+    int iCount = _DuplicatedAlbumList.size();
+    for (auto entry : _DuplicatedAlbumList)
+    {
+        auto [dir1, dir2] = entry;
+
+        WindowsHelpers::OpenDirectoryInExplorer(dir1);
+        WindowsHelpers::OpenDirectoryInExplorer(dir2);
+    }
+}
+
+
+void AlbumCollection::FindDuplicationInGroup(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt)
+{
+    if (firstIt != lastIt && firstIt != albumList.end() && lastIt != albumList.end())
+    {
+        auto currentIt = firstIt;
+        while (currentIt != lastIt)
+        {
+            auto currentIt2 = currentIt;
+            while (currentIt2 != lastIt)
+            {
+                currentIt2++;
+
+                auto& [albumName1, trackList1] = *currentIt;
+                auto& [albumName2, trackList2] = *currentIt2;
+
+                if (trackList1.size() == trackList2.size())
+                {
+                    bool bPotentialSimilar = true;
+                    for (int i = 0; i < trackList1.size(); i++)
+                    {
+                        auto& [trackName1, size1, mediaInfo1, mediaInfoString2] = trackList1[i];
+                        auto& [trackName2, size2, mediaInfo2, mediaInfoString1] = trackList2[i];
+
+                        auto minSize = std::min(mediaInfo1.duration, mediaInfo2.duration);
+                        auto maxSize = std::max(mediaInfo1.duration, mediaInfo2.duration);
+
+                        auto diff = maxSize - minSize;
+                        long long result = (long)100 * diff / maxSize;
+
+                        if (result > SimilarPercentageTriggerValue)
+                        {
+                            bPotentialSimilar = false;
+                        }
+                    }
+
+                    if (bPotentialSimilar)
+                    {
+                        _DuplicatedAlbumList.push_back({ albumName1.path().generic_wstring(), albumName2.path().generic_wstring() });
+                    }
+                }
+
+                //chake//
+             //   auto bPotentialSimilar = CompareAlbums(*currentIt, *currentIt2);
+                //if (bPotentialSimilar)
+                //{
+                //    //_SimilarDirs++;
+                //    _DuplicatedAlbumList.push_back({ albumName1.path().generic_wstring(), albumName2.path().generic_wstring() });
+                //}
+
+            }
+            currentIt++;
+        }
+    }
+}
+

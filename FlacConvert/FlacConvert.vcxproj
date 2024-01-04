@@ -151,6 +151,7 @@
     <ClCompile Include="FolderConvert.cpp" />
     <ClCompile Include="MediaConvertionAsyncTask.cpp" />
     <ClCompile Include="MediaConvertionTask.cpp" />
+    <ClCompile Include="WindowsHelpers.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AlbumCollection.h" />
@@ -159,6 +160,7 @@
     <ClInclude Include="MediaConvertionAsyncTask.h" />
     <ClInclude Include="MediaConvertionTask.h" />
     <ClInclude Include="MediaInformation.h" />
+    <ClInclude Include="WindowsHelpers.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
