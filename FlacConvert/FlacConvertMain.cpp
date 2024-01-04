@@ -130,6 +130,7 @@ int ConvertMediaTracksToNotmalFLAC(fs::path& dirName)
     return 0;
 }
 
+#include "WindowsHelpers.h"
 
 
 int main()
@@ -181,7 +182,18 @@ int main()
         fs::path jsonMediaFile{ "R:\\24\\MediaResult.json" };
         AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonMediaFile));
         ac.SortByNumberOfTracks();
-        ac.GetDuplicatedAlbums();
+        auto& dupList = ac.CreateDuplicatedAlbums();
+
+
+        //int iCount = dupList.size();
+        for (auto entry : dupList)
+        {
+            auto [dir1, dir2] = entry;
+
+            WindowsHelpers::OpenDirectoryInExplorer(dir1);
+            WindowsHelpers::OpenDirectoryInExplorer(dir2);
+        }
+
 
         //AlbumList duplicatedAlbumList = fc.GetDuplicatedAlbums(mediaInfoList);
         // 

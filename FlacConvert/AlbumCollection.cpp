@@ -554,16 +554,21 @@ void AlbumCollection::SortByNumberOfTracks()
         });
 }
 
-#include "WindowsHelpers.h"
 
-DirectoryContentEntryList AlbumCollection::GetDuplicatedAlbums()
+SimilarDirectoryEntryList& AlbumCollection::GetDuplicatedAlbums()
+{
+    return _DuplicatedAlbumList;
+}
+
+SimilarDirectoryEntryList& AlbumCollection::CreateDuplicatedAlbums()
 {
     auto& albumList = _AlbumList;
-    DirectoryContentEntryList dupList;
+
+    _DuplicatedAlbumList.clear();
 
     if (albumList.size() < 2)
     {
-        return dupList;
+        return _DuplicatedAlbumList;
     }
 
     auto firstIt = albumList.begin();
@@ -590,19 +595,12 @@ DirectoryContentEntryList AlbumCollection::GetDuplicatedAlbums()
             pushedEndGroupIt = secondIt;
             auto& [dirEntry2, fileList2] = *secondIt;
 
-//            auto& [trackName, size, mediaInfo, mediaInfoString] = *secondIt;
-
-            //dirEntry2 = std::get<0>(*secondIt);
-            //fileList2 = std::get<1>(*secondIt);
-
             secondIt++;
             bFound = true;
             itemsInGroup++;
         }
 
         secondIt = pushedEndGroupIt;
-
-        //  secondIt--;
 
         auto firstIndex = std::ranges::distance(albumList.cbegin(), firstIt);
         auto lastIndex = std::ranges::distance(albumList.cbegin(), secondIt);
@@ -620,14 +618,7 @@ DirectoryContentEntryList AlbumCollection::GetDuplicatedAlbums()
         }
     }
 
-    int iCount = _DuplicatedAlbumList.size();
-    for (auto entry : _DuplicatedAlbumList)
-    {
-        auto [dir1, dir2] = entry;
-
-        WindowsHelpers::OpenDirectoryInExplorer(dir1);
-        WindowsHelpers::OpenDirectoryInExplorer(dir2);
-    }
+    return _DuplicatedAlbumList;
 }
 
 
@@ -671,15 +662,6 @@ void AlbumCollection::FindDuplicationInGroup(DirectoryContentEntryList& albumLis
                         _DuplicatedAlbumList.push_back({ albumName1.path().generic_wstring(), albumName2.path().generic_wstring() });
                     }
                 }
-
-                //chake//
-             //   auto bPotentialSimilar = CompareAlbums(*currentIt, *currentIt2);
-                //if (bPotentialSimilar)
-                //{
-                //    //_SimilarDirs++;
-                //    _DuplicatedAlbumList.push_back({ albumName1.path().generic_wstring(), albumName2.path().generic_wstring() });
-                //}
-
             }
             currentIt++;
         }

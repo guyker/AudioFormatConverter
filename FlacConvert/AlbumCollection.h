@@ -84,9 +84,10 @@ public:
 	//compare
 
 	void SortByNumberOfTracks();
-	DirectoryContentEntryList GetDuplicatedAlbums();
-	
+	SimilarDirectoryEntryList& CreateDuplicatedAlbums();
+	SimilarDirectoryEntryList& GetDuplicatedAlbums();
 
+	
 private:
 	//static Helpers
 	static MediaInformation ParseMediaInformation(auto formatTag);
@@ -98,7 +99,7 @@ private:
 
 	static std::filesystem::path CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
 
-	static std::string GetMediaInfoJsonString(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
+	//static std::string GetMediaInfoJsonString(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
 	static MediaInformation ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath);
 	static MediaInformation ParseMediaInfoFromJsonString(std::string jsonString);
 
