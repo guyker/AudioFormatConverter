@@ -51,16 +51,15 @@ class AlbumCollection
 {
 public:
 
-	AlbumCollection() = delete;
-	AlbumCollection(std::filesystem::path& path, std::filesystem::path& outDirPath);
+	AlbumCollection() = default;
+	//AlbumCollection(std::filesystem::path& path);
 	AlbumCollection(DirectoryContentEntryList const & albumList);
 	AlbumCollection(DirectoryContentEntryList&& albumList);
 
 
-
 	//Load album list or ddirectory structure of the albums from the file system
-	bool LoadAlbumCollection();
-	bool LoadAlbumCollectionWithMetadata();
+	bool LoadAlbumCollection(std::filesystem::path albumCollectionDirPath);
+	bool LoadAlbumCollectionWithMetadata(std::filesystem::path albumCollectionDirPath, std::filesystem::path& outDirPath);
 
 	//Load/Reload album tracks metadata information
 	bool RefreshAlbumCollectionMediaInformation();
@@ -68,6 +67,8 @@ public:
 	//Save album list and metadata to JSON file1
 	bool SaveAlbumCollectionToJSONFile(std::filesystem::path path);
 
+
+	void Clear();
 
 	static DirectoryContentEntryList LoadAlbumCollectionFromJSON(std::filesystem::path& dirPath);
 
@@ -91,8 +92,8 @@ private:
 
 	 
 
-	std::filesystem::path _AlbumCollectionDirPath;
-	std::filesystem::path _OutDirPth;
+//	std::filesystem::path _AlbumCollectionDirPath;
+//	std::filesystem::path _OutDirPth;
 
 	DirectoryContentEntryList _AlbumList;
 };

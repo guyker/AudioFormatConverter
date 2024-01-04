@@ -167,18 +167,15 @@ int main()
           //fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
 
 
-        AlbumCollection ac(pathA, outDir);
-        if (ac.LoadAlbumCollection())
-        {
-            ac.RefreshAlbumCollectionMediaInformation();
-            ac.SaveAlbumCollectionToJSONFile(outDir);
+        AlbumCollection ac;
+        ac.LoadAlbumCollection(pathA); //load albume list
+        ac.LoadAlbumCollection(pathA); //load albume list
+        ac.LoadAlbumCollection(pathA); //load albume list
+        ac.RefreshAlbumCollectionMediaInformation(); //load metadate
+        ac.SaveAlbumCollectionToJSONFile(outDir); // save to json
 
-
-            AlbumCollection ac2(AlbumCollection::LoadAlbumCollectionFromJSON(outDir));
-
-        }
-
-
+        AlbumCollection ac2(AlbumCollection::LoadAlbumCollectionFromJSON(outDir));
+        int i = 0;
     }
     else if (action == ProcessJSONEnum)
     {

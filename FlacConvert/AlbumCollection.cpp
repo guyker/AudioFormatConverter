@@ -4,9 +4,9 @@ namespace fs = std::filesystem;
 using namespace rapidjson;
 
 
-AlbumCollection::AlbumCollection(std::filesystem::path& dirPath, std::filesystem::path& outDirPath) : _AlbumCollectionDirPath(dirPath), _OutDirPth(outDirPath)
-{
-}
+//AlbumCollection::AlbumCollection(std::filesystem::path& dirPath) : _AlbumCollectionDirPath(dirPath)
+//{
+//}
 
 AlbumCollection::AlbumCollection(DirectoryContentEntryList const& albumList) : _AlbumList{ albumList }
 {
@@ -17,26 +17,32 @@ AlbumCollection::AlbumCollection(DirectoryContentEntryList && albumList) : _Albu
 }
 
 
-bool AlbumCollection::LoadAlbumCollection()
+void AlbumCollection::Clear()
+{
+    _AlbumList.clear();
+}
+
+
+bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath)
 {
     //Scan directory and load all tracks location
-    LoadFolderNamesListRecrusive(_AlbumCollectionDirPath, 9);
+    LoadFolderNamesListRecrusive(albumCollectionDirPath, 9);
 
     return true;
 }
 
 //Load all all albumes and tracks into _fileList
-bool AlbumCollection::LoadAlbumCollectionWithMetadata()
+bool AlbumCollection::LoadAlbumCollectionWithMetadata(std::filesystem::path albumCollectionDirPath, std::filesystem::path& outDirPath)
 {
 
     //Scan directory and load all tracks location
-    LoadAlbumCollection();
+    LoadAlbumCollection(albumCollectionDirPath);
 
     //For each loaded Albunm/Track, load/reload all media information 
     RefreshAlbumCollectionMediaInformation();
 
     //Save Media Information ingo a JSON file
-    SaveAlbumCollectionToJSONFile(_OutDirPth);
+    SaveAlbumCollectionToJSONFile(outDirPath);
 
     return _AlbumList.size() > 0;
 }
@@ -54,7 +60,7 @@ TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::pat
     }
 
     //Album tracks list holder 
-    rapidjson::Value trackMediaArray(rapidjson::kArrayType);
+ //   rapidjson::Value trackMediaArray(rapidjson::kArrayType);
 
     if (fs::exists(path)) {
         for (const fs::directory_entry& entry : fs::directory_iterator(path)) {
@@ -181,17 +187,13 @@ MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::string jsonS
 }
 
 
-#include <algorithm>
-#include <future>
-#include <iostream>
-#include <mutex>
-
 //Load all media media information from the preloaded album list (_AlbumList)
 bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
 {
+    int albumCount = 0;
     for (auto& [albumPath, trackList] : _AlbumList)
     {
-        std::wcout << L"Getting media info: " << albumPath.path() << std::endl;
+        std::wcout << L"Processing [" << ++albumCount << "/" << _AlbumList.size() << "]: " << albumPath.path() << std::endl;
 
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
@@ -426,7 +428,7 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
 }
 
 
-
+//returns a json document from a json file (on file system) - from path
 rapidjson::Document AlbumCollection::GetJSONDoc(std::filesystem::path mediaFilePath)
 {
     rapidjson::Document doc;
@@ -444,7 +446,7 @@ rapidjson::Document AlbumCollection::GetJSONDoc(std::filesystem::path mediaFileP
     return doc;
 }
 
-
+//returns media information (json string and media objec) from a media file (on file system)
 std::tuple<MediaInformation, std::string> AlbumCollection::GetMediaInfoFromMediaFile(std::filesystem::path mediaFilePath)
 {
     std::size_t hashNumber = std::hash<std::string>{}(mediaFilePath.generic_string());
@@ -466,7 +468,7 @@ std::tuple<MediaInformation, std::string> AlbumCollection::GetMediaInfoFromMedia
     return std::make_tuple(mi, jsonString);
 }
 
-
+//create a media file (on filesystem) from a media track
 std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
 {
     using namespace std::string_literals;
@@ -520,7 +522,7 @@ std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path
     return std::filesystem::path{};;
 }
 
-
+//parse jsonstring and return a media object
 MediaInformation AlbumCollection::ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath)
 {
     MediaInformation mediaInfo;
