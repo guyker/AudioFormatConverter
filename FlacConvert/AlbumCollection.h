@@ -88,6 +88,7 @@ public:
 
 	//DB
 	bool SaveMediaInfoDocumentToDB(std::filesystem::path path);
+	bool SaveMediaInfoDocumentToDB_ORG(std::filesystem::path path);
 	
 private:
 	//static Helpers

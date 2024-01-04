@@ -678,6 +678,7 @@ void AlbumCollection::FindDuplicationInGroup(DirectoryContentEntryList& albumLis
 #include "SQLite/sqlite-amalgamation/sqlite3.h"
 
 
+
 bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
 {
     const std::string dbPath{ path.generic_string() };
@@ -692,6 +693,7 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
 
     // Execute SQL statements
 
+    rc = sqlite3_exec(db, "DROP TABLE IF EXISTS AlbumListA;", 0, 0, 0);
 
     rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS AlbumListA (ID INTEGER PRIMARY KEY, album_name TEXT, filename TEXT, format_name TEXT, format_long_name TEXT, start_time TEXT, duration INTEGER, size TEXT, bit_rate TEXT, probe_score INTEGER, album TEXT, artist TEXT, album_artist TEXT, comment TEXT, genre TEXT, publisher TEXT, title TEXT, track TEXT, date TEXT);", 0, 0, 0);
 
@@ -704,22 +706,126 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
     for (auto [dirPath, trackList] : _AlbumList)
     {
         auto albumPath = dirPath.path().generic_string();
-        //std::string query = 
-        //    std::string("INSERT INTO test1 VALUES ('") +
-        //    std::string(albumPath) +
-        //    std::string("', 'John', 25); ");
 
         for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
         {
             //auto queryString = "INSERT INTO test1 VALUES (null, '" + std::string(albumPath) + std::string("', 'John', 25); ");
-            auto queryString = std::format("INSERT INTO AlbumListA VALUES (null, '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');", 
+            auto queryString = std::format("INSERT INTO AlbumListA VALUES (null, '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');",
                 albumPath, trackName,
                 mediaInfo.format_name, mediaInfo.format_long_name,
                 mediaInfo.start_time, mediaInfo.duration, mediaInfo.size, mediaInfo.bit_rate, mediaInfo.probe_score,
                 mediaInfo.tags.album, mediaInfo.tags.artist, mediaInfo.tags.album_artist,
                 mediaInfo.tags.comment, mediaInfo.tags.genre, mediaInfo.tags.publisher,
                 mediaInfo.tags.title, mediaInfo.tags.track, mediaInfo.tags.date);
-            
+
+            std::string query = queryString;
+
+            rc = sqlite3_exec(db, query.c_str(), 0, 0, 0);
+
+        }
+    }
+
+
+    if (rc != SQLITE_OK) {
+        std::cerr << "Cannot insert data: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_close(db);
+        return rc;
+    }
+
+
+    sqlite3_close(db);
+
+    return 0;
+
+
+    //const std::string dbPath{ path.generic_string() };
+
+    //sqlite3* db;
+    //int rc = sqlite3_open(dbPath.c_str(), &db);
+
+    //if (rc != SQLITE_OK) {
+    //    std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
+    //    return rc;
+    //}
+
+    //// Execute SQL statements
+    //rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT, age INTEGER);", 0, 0, 0);
+
+    //if (rc != SQLITE_OK) {
+    //    std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
+    //    sqlite3_close(db);
+    //    return rc;
+    //}
+
+    //// Insert data
+    //rc = sqlite3_exec(db, "INSERT INTO test VALUES (1, 'John', 25);", 0, 0, 0);
+
+    //if (rc != SQLITE_OK) {
+    //    std::cerr << "Cannot insert data: " << sqlite3_errmsg(db) << std::endl;
+    //    sqlite3_close(db);
+    //    return rc;
+    //}
+
+    //// Query data
+    //sqlite3_stmt* stmt;
+    //rc = sqlite3_prepare_v2(db, "SELECT id, name, age FROM test;", -1, &stmt, 0);
+
+    //while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+    //    int id = sqlite3_column_int(stmt, 0);
+    //    const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+    //    int age = sqlite3_column_int(stmt, 2);
+
+    //    std::cout << "ID: " << id << ", Name: " << name << ", Age: " << age << std::endl;
+    //}
+
+    //sqlite3_finalize(stmt);
+    //sqlite3_close(db);
+
+    return false;
+}
+
+
+
+
+bool AlbumCollection::SaveMediaInfoDocumentToDB_ORG(std::filesystem::path path)
+{
+    const std::string dbPath{ path.generic_string() };
+
+    sqlite3* db;
+    int rc = sqlite3_open(dbPath.c_str(), &db);
+
+    if (rc != SQLITE_OK) {
+        std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
+        return rc;
+    }
+
+    // Execute SQL statements
+
+    rc = sqlite3_exec(db, "DROP TABLE IF EXISTS AlbumListA;", 0, 0, 0);
+
+    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS AlbumListA (ID INTEGER PRIMARY KEY, album_name TEXT, filename TEXT, format_name TEXT, format_long_name TEXT, start_time TEXT, duration INTEGER, size TEXT, bit_rate TEXT, probe_score INTEGER, album TEXT, artist TEXT, album_artist TEXT, comment TEXT, genre TEXT, publisher TEXT, title TEXT, track TEXT, date TEXT);", 0, 0, 0);
+
+    if (rc != SQLITE_OK) {
+        std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_close(db);
+        return rc;
+    }
+
+    for (auto [dirPath, trackList] : _AlbumList)
+    {
+        auto albumPath = dirPath.path().generic_string();
+
+        for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
+        {
+            //auto queryString = "INSERT INTO test1 VALUES (null, '" + std::string(albumPath) + std::string("', 'John', 25); ");
+            auto queryString = std::format("INSERT INTO AlbumListA VALUES (null, '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');",
+                albumPath, trackName,
+                mediaInfo.format_name, mediaInfo.format_long_name,
+                mediaInfo.start_time, mediaInfo.duration, mediaInfo.size, mediaInfo.bit_rate, mediaInfo.probe_score,
+                mediaInfo.tags.album, mediaInfo.tags.artist, mediaInfo.tags.album_artist,
+                mediaInfo.tags.comment, mediaInfo.tags.genre, mediaInfo.tags.publisher,
+                mediaInfo.tags.title, mediaInfo.tags.track, mediaInfo.tags.date);
+
             std::string query = queryString;
 
             rc = sqlite3_exec(db, query.c_str(), 0, 0, 0);
