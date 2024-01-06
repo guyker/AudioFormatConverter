@@ -135,9 +135,9 @@ int ConvertMediaTracksToNotmalFLAC(fs::path& dirName)
 
 int main()
 {
-    enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum, TestDBEnum };
+    enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
     
-    Action action = TestDBEnum; //STATIC ACTION SELECTOR
+    Action action = PopulateJsonToDBEnum; //STATIC ACTION SELECTOR
 
 
     if (action == ConverEnum)
@@ -149,14 +149,13 @@ int main()
     else if (action == CreateJSONEnum)
     {
         //========= SCAN
-        //fs::path ourDir{ "M:\\tmp\\MediaResult.json" };
-        
-        fs::path outDir{ "R:\\24\\MediaResult.json" };
-        fs::path pathA{ "\\\\?\\R:\\24" };
+        fs::path outDir{ "M:\\tmp\\MediaResult.json" };
+        //fs::path outDir{ "R:\\24\\MediaResult.json" };
+        //fs::path pathA{ "\\\\?\\R:\\24" };
 
         //fs::path outDir{ "\\\\?\\M:\\tmp\\MediaResult.json" };
         //fs::path pathA{ "\\\\?\\M:\\tmp\\jazz" };
-        //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
+        fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]" };
         // 
       //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
           //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\Albums" };
@@ -179,7 +178,8 @@ int main()
     }
     else if (action == ProcessJSONEnum)
     {
-        fs::path jsonMediaFile{ "R:\\24\\MediaResult.json" };
+        fs::path jsonMediaFile{ "M:\\tmp\\MediaResult.json" };
+        //fs::path jsonMediaFile{ "R:\\24\\MediaResult.json" };
         AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonMediaFile));
         ac.SortByNumberOfTracks();
         auto& dupList = ac.CreateDuplicatedAlbums();
@@ -194,12 +194,14 @@ int main()
             WindowsHelpers::OpenDirectoryInExplorer(dir2);
         }
     }
-    else if (action == TestDBEnum)
+    else if (action == PopulateJsonToDBEnum)
     {
-        fs::path jsonMediaFile{ "R:\\24\\MediaResult.json" };
+        fs::path jsonMediaFile{ "M:\\tmp\\MediaResult.json" };
+        //fs::path jsonMediaFile{ "R:\\24\\MediaResult.json" };
         AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonMediaFile));
 
-        ac.SaveMediaInfoDocumentToDB("R:\\24\\all_albums.db");
+        ac.SaveMediaInfoDocumentToDB("M:\\tmp\\all_albums.db");
+        //ac.SaveMediaInfoDocumentToDB("R:\\24\\all_albums.db");
     }
     return 0;
 }
