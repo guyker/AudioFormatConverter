@@ -158,7 +158,7 @@ int main()
 {    
     enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
 
-    Action action = ConverEnum; //STATIC ACTION SELECTOR
+    Action action = CreateJSONEnum; //STATIC ACTION SELECTOR
 
 #if 0   
       fs::path mediaPath{ "\\\\?\\M:\\tmp\\24" };
@@ -177,11 +177,13 @@ int main()
 
 
 
-
-
-
-    fs::path mediaResultJsonPath { "R:\\24\\MediaResult.json" };
-    fs::path pathA{ "\\\\?\\R:\\24" };
+    //wait
+    //std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
+    //auto userSelection = std::getchar();
+    //if (userSelection == '1')
+    //{
+    //    int i = 0;
+    //}
 
 
     if (action == ConverEnum)

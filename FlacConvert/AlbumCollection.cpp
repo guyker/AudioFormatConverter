@@ -68,7 +68,12 @@ TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::pat
         for (const fs::directory_entry& entry : fs::directory_iterator(path)) {
             auto folderName = entry.path().filename();
             //auto name = folderName.generic_wstring();
-            auto name = folderName.generic_string();
+            //auto nameW1 = folderName.generic_wstring();
+            //auto nameW2 = folderName.generic_u16string();
+            //auto nameW3 = folderName.generic_u32string();
+            //auto name = folderName.generic_u8string();
+            //auto nameW5 = folderName.generic_u16string();
+//            auto name1 = folderName.generic_string();
 
             if (entry.is_directory()) {
                 //Scan directory and return the list of files under the directory entry (one level).
@@ -100,7 +105,13 @@ TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::pat
                         //    currentDirTrackList.push_back({ name, fileSize, MediaInformation{}, json});
                         //}
 
+                        auto name0 = folderName.c_str();
+                        //std::string name0 = std::string(folderName.c_str());
+                        auto name1 = folderName.generic_u8string();
+                        auto name2 = folderName.generic_u8string();
+                        auto name = folderName.generic_string();
                         currentDirTrackList.push_back({ name, fileSize, MediaInformation{}, std::string{} });
+                        //currentDirTrackList.push_back({ name, fileSize, MediaInformation{}, std::string{} });
                     }
                 }
             }
@@ -216,7 +227,7 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
                 bool bAsync = true;
                 if (bAsync)
                 {
-                    fs::path outfilePath{ trackName + "_" + std::string("media_info.json") };
+                    fs::path outfilePath{ trackName + "_" + TMP_MEDIA_JSON_FILE_NAME };
                     auto&& miFuture = std::async(std::launch::async, AlbumCollection::GetMediaInfoFromMediaFile, path2Fixed);
 
                     asyncFutureList.push_back({ std::move(miFuture), mediaInfo, mediaInfoString });
@@ -234,7 +245,7 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
                 }
                 else
                 {
-                    fs::path outfilePath{ trackName + "_" + std::string("media_info.json") };
+                    fs::path outfilePath{ trackName + "_" + TMP_MEDIA_JSON_FILE_NAME };
                     auto [mi_ret, jsonString_ret] = AlbumCollection::GetMediaInfoFromMediaFile(path2Fixed);
                     mediaInfoString = jsonString_ret;
                     mediaInfo = mi_ret;

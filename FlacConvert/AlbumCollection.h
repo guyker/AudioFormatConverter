@@ -47,6 +47,7 @@ using SimilarDirectoryEntryList = std::vector<std::tuple <std::wstring, std::wst
 
 using MediaLoadingFuture = std::future<std::tuple<MediaInformation, std::string>>;
 using TrackInfoList = std::vector<std::tuple<std::string, long long, MediaInformation, std::string>>;
+//using TrackInfoList = std::vector<std::tuple<std::wstring, long long, MediaInformation, std::string>>;
 using EntryFileTuple = std::tuple <std::filesystem::directory_entry, TrackInfoList>;
 using DirectoryContentEntryList = std::vector<EntryFileTuple>;
 
@@ -54,6 +55,7 @@ using DirectoryContentEntryList = std::vector<EntryFileTuple>;
 constexpr int SimilarPercentageTriggerValue{ 5 };
 constexpr int MinNumberOfFilesInFolderToCompare{ 4 };
 
+const std::string TMP_MEDIA_JSON_FILE_NAME{"media_info.json"};
 
 class AlbumCollection
 {
