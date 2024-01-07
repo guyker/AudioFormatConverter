@@ -78,7 +78,7 @@ bool CreateMediaInfoJsonFile(fs::path dirPath, fs::path outDir)
 
 
 
-int ConvertMediaTracksToNotmalFLAC(fs::path& dirName)
+int ConvertMediaTracksToNotmalFLAC(const fs::path& dirName)
 {
     //   _setmode(_fileno(stdout), _O_U16TEXT);
     auto ret = _setmode(_fileno(stdout), _O_U16TEXT);
@@ -133,75 +133,97 @@ int ConvertMediaTracksToNotmalFLAC(fs::path& dirName)
 #include "WindowsHelpers.h"
 
 
+
+
+//========= SCAN
+//fs::path outDir{ "M:\\tmp\\MediaResult.json" };
+//fs::path outDir{ "R:\\24\\MediaResult.json" };
+//fs::path pathA{ "\\\\?\\R:\\24" };
+
+//fs::path outDir{ "\\\\?\\M:\\tmp\\MediaResult.json" };
+//fs::path pathA{ "\\\\?\\M:\\tmp\\jazz" };
+//fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]" };
+// 
+//fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
+    //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\Albums" };
+    //fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
+      //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums" };
+      //fs::path pathA{ "\\\\?\\M:\\music\\Jazz" };
+      //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Sets" };
+    //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums\\24bit" };
+    //fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
+
+
 int main()
-{
+{    
     enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
-    
-    Action action = PopulateJsonToDBEnum; //STATIC ACTION SELECTOR
+
+    Action action = ConverEnum; //STATIC ACTION SELECTOR
+
+#if 0   
+      fs::path mediaPath{ "\\\\?\\M:\\tmp\\24" };
+      fs::path outputPath{ "\\\\?\\M:\\tmp" };
+#else
+
+    const fs::path mediaPath{ "\\\\?\\R:\\24" };
+    const fs::path outputPath{ "\\\\?\\R:\\24" };
+#endif
+
+    const fs::path mediaResultJsonFileName{ "MediaResult.json" };
+    const fs::path databaseFileName{ "all_albums.db" };
+
+    fs::path databasePath = outputPath / databaseFileName;
+    fs::path jsonDBPath = outputPath / mediaResultJsonFileName;
+
+
+
+
+
+
+    fs::path mediaResultJsonPath { "R:\\24\\MediaResult.json" };
+    fs::path pathA{ "\\\\?\\R:\\24" };
 
 
     if (action == ConverEnum)
     {
         //=========CONVERT 24BIT to FLAC
-        fs::path dirName{ "M:\\tmp\\24" };
-        ConvertMediaTracksToNotmalFLAC(dirName);
+        ConvertMediaTracksToNotmalFLAC(mediaPath);
     }
     else if (action == CreateJSONEnum)
     {
-        //========= SCAN
-        fs::path outDir{ "M:\\tmp\\MediaResult.json" };
-        //fs::path outDir{ "R:\\24\\MediaResult.json" };
-        //fs::path pathA{ "\\\\?\\R:\\24" };
-
-        //fs::path outDir{ "\\\\?\\M:\\tmp\\MediaResult.json" };
-        //fs::path pathA{ "\\\\?\\M:\\tmp\\jazz" };
-        fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]" };
-        // 
-      //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
-          //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\Albums" };
-          //fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
-            //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums" };
-            //fs::path pathA{ "\\\\?\\M:\\music\\Jazz" };
-            //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Sets" };
-          //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums\\24bit" };
-          //fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
-
 
         AlbumCollection ac;
-        ac.LoadAlbumCollection(pathA); //load albume list
+        ac.LoadAlbumCollection(mediaPath); //load albume list
         ac.SortByNumberOfTracks();
         ac.RefreshAlbumCollectionMediaInformation(); //load metadate
-        ac.SaveAlbumCollectionToJSONFile(outDir); // save to json
+        ac.SaveAlbumCollectionToJSONFile(jsonDBPath); // save to json
 
 
         int i = 0;
     }
     else if (action == ProcessJSONEnum)
     {
-        fs::path jsonMediaFile{ "M:\\tmp\\MediaResult.json" };
-        //fs::path jsonMediaFile{ "R:\\24\\MediaResult.json" };
-        AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonMediaFile));
+        AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonDBPath));
         ac.SortByNumberOfTracks();
         auto& dupList = ac.CreateDuplicatedAlbums();
 
 
-        //int iCount = dupList.size();
+        int iCount = dupList.size();
         for (auto entry : dupList)
         {
             auto [dir1, dir2] = entry;
 
             WindowsHelpers::OpenDirectoryInExplorer(dir1);
             WindowsHelpers::OpenDirectoryInExplorer(dir2);
+
+            iCount--;
         }
     }
     else if (action == PopulateJsonToDBEnum)
     {
-        fs::path jsonMediaFile{ "M:\\tmp\\MediaResult.json" };
-        //fs::path jsonMediaFile{ "R:\\24\\MediaResult.json" };
-        AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonMediaFile));
+        AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonDBPath));
 
-        ac.SaveMediaInfoDocumentToDB("M:\\tmp\\all_albums.db");
-        //ac.SaveMediaInfoDocumentToDB("R:\\24\\all_albums.db");
+        ac.SaveMediaInfoDocumentToDB(databasePath);
     }
     return 0;
 }

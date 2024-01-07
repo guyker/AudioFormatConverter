@@ -159,11 +159,21 @@ int FolderConvert::ConverAllDirectories(const std::filesystem::path& directory, 
         });
     std::for_each(tasksVector.begin(), tasksVector.end(), [](auto& f) { f->PostRun(); });
 
-    auto found = std::find_if(tasksVector.begin(), tasksVector.end(), [](auto& f) { return f->GetStatus() == -1; });
-    if (found != tasksVector.end()) {
-        std::cout << "***STOP*** error found: " << (*found)->GetStatus() << std::endl;
-        return -1;
+
+    for (auto& item : tasksVector)
+    {
+        if (item->GetStatus() != 0)
+        {
+            std::cout << "***STOP*** error found: " << item->GetStatus() << std::endl;
+            return -1;
+
+        }
     }
+    //auto found = std::find_if(tasksVector.begin(), tasksVector.end(), [](auto& f) { return f->GetStatus() == -1; });
+    //if (found != tasksVector.end()) {
+    //    std::cout << "***STOP*** error found: " << (*found)->GetStatus() << std::endl;
+    //    return -1;
+    //}
 
 
     return 0;
