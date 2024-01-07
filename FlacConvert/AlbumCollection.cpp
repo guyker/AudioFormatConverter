@@ -66,15 +66,6 @@ TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::pat
 
     if (fs::exists(path)) {
         for (const fs::directory_entry& entry : fs::directory_iterator(path)) {
-            auto folderName = entry.path().filename();
-            //auto name = folderName.generic_wstring();
-            //auto nameW1 = folderName.generic_wstring();
-            //auto nameW2 = folderName.generic_u16string();
-            //auto nameW3 = folderName.generic_u32string();
-            //auto name = folderName.generic_u8string();
-            //auto nameW5 = folderName.generic_u16string();
-//            auto name1 = folderName.generic_string();
-
             if (entry.is_directory()) {
                 //Scan directory and return the list of files under the directory entry (one level).
                 auto trackList = LoadFolderNamesListRecrusive(entry.path(), depth - 1);
@@ -105,13 +96,9 @@ TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::pat
                         //    currentDirTrackList.push_back({ name, fileSize, MediaInformation{}, json});
                         //}
 
-                        auto name0 = folderName.c_str();
-                        //std::string name0 = std::string(folderName.c_str());
-                        auto name1 = folderName.generic_u8string();
-                        auto name2 = folderName.generic_u8string();
-                        auto name = folderName.generic_string();
-                        currentDirTrackList.push_back({ name, fileSize, MediaInformation{}, std::string{} });
-                        //currentDirTrackList.push_back({ name, fileSize, MediaInformation{}, std::string{} });
+
+                        auto folderName = entry.path().filename();
+                        currentDirTrackList.push_back({ folderName, fileSize, MediaInformation{}, std::string{} });
                     }
                 }
             }
@@ -219,7 +206,6 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
 
             auto hasExtension = trackPath.has_extension();
             auto fileEextension = trackPath.extension();
-            // std::wstring entryPath{ trackPath.wstring() };
             if (trackPath.has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
                 auto path2Fixed = trackPath.lexically_normal().native();
                 long long fileSize = fs::file_size(path2Fixed);
@@ -227,7 +213,7 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
                 bool bAsync = true;
                 if (bAsync)
                 {
-                    fs::path outfilePath{ trackName + "_" + TMP_MEDIA_JSON_FILE_NAME };
+                    fs::path outfilePath{ trackName / fs::path("_" + TMP_MEDIA_JSON_FILE_NAME) };
                     auto&& miFuture = std::async(std::launch::async, AlbumCollection::GetMediaInfoFromMediaFile, path2Fixed);
 
                     asyncFutureList.push_back({ std::move(miFuture), mediaInfo, mediaInfoString });
@@ -245,7 +231,7 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
                 }
                 else
                 {
-                    fs::path outfilePath{ trackName + "_" + TMP_MEDIA_JSON_FILE_NAME };
+                    fs::path outfilePath{ trackName / fs::path("_" + TMP_MEDIA_JSON_FILE_NAME) };
                     auto [mi_ret, jsonString_ret] = AlbumCollection::GetMediaInfoFromMediaFile(path2Fixed);
                     mediaInfoString = jsonString_ret;
                     mediaInfo = mi_ret;
@@ -462,7 +448,7 @@ rapidjson::Document AlbumCollection::GetJSONDoc(std::filesystem::path mediaFileP
 //returns media information (json string and media objec) from a media file (on file system)
 std::tuple<MediaInformation, std::string> AlbumCollection::GetMediaInfoFromMediaFile(std::filesystem::path mediaFilePath)
 {
-    std::size_t hashNumber = std::hash<std::string>{}(mediaFilePath.generic_string());
+    std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
     auto tmpFile = "tmp_json_media_" + std::to_string(hashNumber) + ".json";
 
     auto outPath = AlbumCollection::CreateMediaInfoFile(mediaFilePath, tmpFile);
@@ -714,21 +700,28 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
         return rc;
     }
 
+
     for (auto [dirPath, trackList] : _AlbumList)
     {
-        auto albumPath = dirPath.path().generic_string();
-
+      
         for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
         {
             //auto queryString = "INSERT INTO test1 VALUES (null, '" + std::string(albumPath) + std::string("', 'John', 25); ");
             //auto queryString = std::format("INSERT INTO AlbumListA VALUES (null, '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');",
+
+            auto albumPath = dirPath.path().generic_string();
+            //std::string albumPath2{ dirPath.path().generic_string()};
+            //auto trackName2 = trackName.generic_string();
+
             auto queryString = std::format("INSERT INTO AlbumListA VALUES (null, \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\");",
-                albumPath, trackName,
+                albumPath, trackName.generic_string(),
                 mediaInfo.format_name, mediaInfo.format_long_name,
                 mediaInfo.start_time, mediaInfo.duration, mediaInfo.size, mediaInfo.bit_rate, mediaInfo.probe_score,
                 mediaInfo.tags.album, mediaInfo.tags.artist, mediaInfo.tags.album_artist,
                 mediaInfo.tags.comment, mediaInfo.tags.genre, mediaInfo.tags.publisher,
                 mediaInfo.tags.title, mediaInfo.tags.track, mediaInfo.tags.date);
+
+
 
             std::string query = queryString;
             char* error_report;
@@ -752,113 +745,6 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
 
     sqlite3_close(db);
 
-    return 0;
-
-
-    //const std::string dbPath{ path.generic_string() };
-
-    //sqlite3* db;
-    //int rc = sqlite3_open(dbPath.c_str(), &db);
-
-    //if (rc != SQLITE_OK) {
-    //    std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
-    //    return rc;
-    //}
-
-    //// Execute SQL statements
-    //rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT, age INTEGER);", 0, 0, 0);
-
-    //if (rc != SQLITE_OK) {
-    //    std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
-    //    sqlite3_close(db);
-    //    return rc;
-    //}
-
-    //// Insert data
-    //rc = sqlite3_exec(db, "INSERT INTO test VALUES (1, 'John', 25);", 0, 0, 0);
-
-    //if (rc != SQLITE_OK) {
-    //    std::cerr << "Cannot insert data: " << sqlite3_errmsg(db) << std::endl;
-    //    sqlite3_close(db);
-    //    return rc;
-    //}
-
-    //// Query data
-    //sqlite3_stmt* stmt;
-    //rc = sqlite3_prepare_v2(db, "SELECT id, name, age FROM test;", -1, &stmt, 0);
-
-    //while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-    //    int id = sqlite3_column_int(stmt, 0);
-    //    const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-    //    int age = sqlite3_column_int(stmt, 2);
-
-    //    std::cout << "ID: " << id << ", Name: " << name << ", Age: " << age << std::endl;
-    //}
-
-    //sqlite3_finalize(stmt);
-    //sqlite3_close(db);
-
-    return false;
-}
-
-
-
-
-bool AlbumCollection::SaveMediaInfoDocumentToDB_ORG(std::filesystem::path path)
-{
-    const std::string dbPath{ path.generic_string() };
-
-    sqlite3* db;
-    int rc = sqlite3_open(dbPath.c_str(), &db);
-
-    if (rc != SQLITE_OK) {
-        std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
-        return rc;
-    }
-
-    // Execute SQL statements
-
-    rc = sqlite3_exec(db, "DROP TABLE IF EXISTS AlbumListA;", 0, 0, 0);
-
-    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS AlbumListA (ID INTEGER PRIMARY KEY, album_name TEXT, filename TEXT, format_name TEXT, format_long_name TEXT, start_time TEXT, duration INTEGER, size TEXT, bit_rate TEXT, probe_score INTEGER, album TEXT, artist TEXT, album_artist TEXT, comment TEXT, genre TEXT, publisher TEXT, title TEXT, track TEXT, date TEXT);", 0, 0, 0);
-
-    if (rc != SQLITE_OK) {
-        std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
-        sqlite3_close(db);
-        return rc;
-    }
-
-    for (auto [dirPath, trackList] : _AlbumList)
-    {
-        auto albumPath = dirPath.path().generic_string();
-
-        for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
-        {
-            //auto queryString = "INSERT INTO test1 VALUES (null, '" + std::string(albumPath) + std::string("', 'John', 25); ");
-            auto queryString = std::format("INSERT INTO AlbumListA VALUES (null, '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');",
-                albumPath, trackName,
-                mediaInfo.format_name, mediaInfo.format_long_name,
-                mediaInfo.start_time, mediaInfo.duration, mediaInfo.size, mediaInfo.bit_rate, mediaInfo.probe_score,
-                mediaInfo.tags.album, mediaInfo.tags.artist, mediaInfo.tags.album_artist,
-                mediaInfo.tags.comment, mediaInfo.tags.genre, mediaInfo.tags.publisher,
-                mediaInfo.tags.title, mediaInfo.tags.track, mediaInfo.tags.date);
-
-            std::string query = queryString;
-
-            rc = sqlite3_exec(db, query.c_str(), 0, 0, 0);
-
-        }
-    }
-
-
-    if (rc != SQLITE_OK) {
-        std::cerr << "Cannot insert data: " << sqlite3_errmsg(db) << std::endl;
-        sqlite3_close(db);
-        return rc;
-    }
-
-
-    sqlite3_close(db);
 
     return 0;
 

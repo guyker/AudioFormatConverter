@@ -36,18 +36,11 @@
 #include "rapidjson/stringbuffer.h"
 
 
-//using MediaInfoList = std::vector<MediaInformation>;
-//using AlbumList = std::vector<std::tuple<std::string, MediaInfoList>>;
-
-
-//XXX
 
 using SimilarDirectoryEntryList = std::vector<std::tuple <std::wstring, std::wstring>>;
 
-
 using MediaLoadingFuture = std::future<std::tuple<MediaInformation, std::string>>;
-using TrackInfoList = std::vector<std::tuple<std::string, long long, MediaInformation, std::string>>;
-//using TrackInfoList = std::vector<std::tuple<std::wstring, long long, MediaInformation, std::string>>;
+using TrackInfoList = std::vector<std::tuple<std::filesystem::path, long long, MediaInformation, std::string>>;
 using EntryFileTuple = std::tuple <std::filesystem::directory_entry, TrackInfoList>;
 using DirectoryContentEntryList = std::vector<EntryFileTuple>;
 
@@ -90,7 +83,6 @@ public:
 
 	//DB
 	bool SaveMediaInfoDocumentToDB(std::filesystem::path path);
-	bool SaveMediaInfoDocumentToDB_ORG(std::filesystem::path path);
 	
 private:
 	//static Helpers
