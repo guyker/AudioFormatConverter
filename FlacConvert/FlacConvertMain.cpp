@@ -47,14 +47,10 @@ fs::path _TMPDirectory{  };
 
 int ConvertMediaTracksToNotmalFLAC(const fs::path& dirName)
 {
-    //   _setmode(_fileno(stdout), _O_U16TEXT);
-    auto ret = _setmode(_fileno(stdout), _O_U16TEXT);
-
     _TMPDirectory = std::filesystem::temp_directory_path();
 
     std::string userSourcePath;
-    //    std::wcout << "Enter source directory [" << sourceDirectory << "]: " << std::endl;
-     //   std::cin >> userSourcePath;
+ 
     std::wcout << "Using " << dirName << std::endl;
 
     auto startTime = std::chrono::steady_clock::now();
@@ -66,8 +62,8 @@ int ConvertMediaTracksToNotmalFLAC(const fs::path& dirName)
     int retStatus = fc.GetFilesData(scanInfo, dirName);
 
     //wait
-    std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
-    std::getchar();
+    //std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
+    //std::getchar();
 
     auto& [retStatus2, nFiles, nFilesSize] = scanInfo;
 
@@ -75,17 +71,16 @@ int ConvertMediaTracksToNotmalFLAC(const fs::path& dirName)
     std::wcout << "Total Files:" << nFiles << std::endl;
     std::wcout << "Total Size:" << nFilesSize << std::endl;
 
-    //  return 0;
+    
 
-      // while (true) {
-    ret = fc.ConverAllDirectories(dirName, false);
+    auto ret = fc.ConverAllDirectories(dirName, false);
     if (ret == -1) {
         std::wcout << "***STOP*** ConverAllDirectories" << std::endl;
         return -1;
     }
 
-    std::wcout << "Success!!!" << std::endl;
-    // }
+    std::wcout << std::endl << L"Success!!!" << std::endl;
+
 
        //log total execution time (millis)
     auto endTime = std::chrono::steady_clock::now();
@@ -123,11 +118,10 @@ int ConvertMediaTracksToNotmalFLAC(const fs::path& dirName)
 
 int main()
 {    
+    auto ret = _setmode(_fileno(stdout), _O_U16TEXT);
     enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
 
-    Action action = ProcessJSONEnum; //STATIC ACTION SELECTOR
-
-
+    Action action = CreateJSONEnum; //STATIC ACTION SELECTOR
     const fs::path databaseFileName{ "all_albums.db" };
 
 #if 0

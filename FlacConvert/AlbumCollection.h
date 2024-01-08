@@ -45,7 +45,7 @@ using EntryFileTuple = std::tuple <std::filesystem::directory_entry, TrackInfoLi
 using DirectoryContentEntryList = std::vector<EntryFileTuple>;
 
 
-constexpr int SimilarPercentageTriggerValue{ 5 };
+constexpr int SimilarPercentageTriggerValue{ 3 };
 constexpr int MinNumberOfFilesInFolderToCompare{ 4 };
 
 const std::string TMP_MEDIA_JSON_FILE_NAME{"media_info.json"};
