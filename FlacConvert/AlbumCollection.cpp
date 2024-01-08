@@ -552,42 +552,30 @@ void AlbumCollection::SortByNumberOfTracks()
 }
 
 
-SimilarDirectoryEntryList& AlbumCollection::GetDuplicatedAlbums()
+
+SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums()
 {
-    return _DuplicatedAlbumList;
-}
+    SimilarDirectoryEntryList duplicatedAlbumList;
 
-SimilarDirectoryEntryList& AlbumCollection::CreateDuplicatedAlbums()
-{
-    auto& albumList = _AlbumList;
-
-    _DuplicatedAlbumList.clear();
-
-    if (albumList.size() < 2)
+    if (_AlbumList.size() < 2)
     {
-        return _DuplicatedAlbumList;
+        return duplicatedAlbumList;
     }
 
-    auto firstIt = albumList.begin();
+    auto firstIt = _AlbumList.begin();
     auto secondIt = firstIt;
     secondIt++;
 
-    while (firstIt != albumList.end() && secondIt != albumList.end())
+    while (firstIt != _AlbumList.end() && secondIt != _AlbumList.end())
     {
         bool bFound = false;
         auto& [dirEntry1, fileList1] = *firstIt;
         auto& [dirEntry2, fileList2] = *secondIt;
 
-        //auto dirEntry1 = std::get<0>(*firstIt);
-        //auto dirEntry2 = std::get<0>(*secondIt);
-
-        //auto fileList1 = std::get<1>(*firstIt);
-        //auto fileList2 = std::get<1>(*secondIt);
-
         auto pushedEndGroupIt = secondIt;
         int itemsInGroup{ 0 };
         auto fileList1Seize{ fileList1.size() };
-        while (secondIt != albumList.end() && fileList1.size() == fileList2.size())
+        while (secondIt != _AlbumList.end() && fileList1.size() == fileList2.size())
         {
             pushedEndGroupIt = secondIt;
             auto& [dirEntry2, fileList2] = *secondIt;
@@ -599,12 +587,13 @@ SimilarDirectoryEntryList& AlbumCollection::CreateDuplicatedAlbums()
 
         secondIt = pushedEndGroupIt;
 
-        auto firstIndex = std::ranges::distance(albumList.cbegin(), firstIt);
-        auto lastIndex = std::ranges::distance(albumList.cbegin(), secondIt);
+        auto firstIndex = std::ranges::distance(_AlbumList.cbegin(), firstIt);
+        auto lastIndex = std::ranges::distance(_AlbumList.cbegin(), secondIt);
 
         if (bFound)
         {
-            FindDuplicationInGroup(albumList, firstIt, secondIt);
+            auto dupAlbums = FindDuplicationInGroup(_AlbumList, firstIt, secondIt);
+            duplicatedAlbumList.insert(duplicatedAlbumList.end(), dupAlbums.begin(), dupAlbums.end());
             firstIt = secondIt;;
             secondIt++;
         }
@@ -615,12 +604,14 @@ SimilarDirectoryEntryList& AlbumCollection::CreateDuplicatedAlbums()
         }
     }
 
-    return _DuplicatedAlbumList;
+    return duplicatedAlbumList;
 }
 
 
-void AlbumCollection::FindDuplicationInGroup(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt)
+SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt)
 {
+    SimilarDirectoryEntryList duplicatedAlbumList;
+
     if (firstIt != lastIt && firstIt != albumList.end() && lastIt != albumList.end())
     {
         auto currentIt = firstIt;
@@ -656,13 +647,15 @@ void AlbumCollection::FindDuplicationInGroup(DirectoryContentEntryList& albumLis
 
                     if (bPotentialSimilar)
                     {
-                        _DuplicatedAlbumList.push_back({ albumName1.path().generic_wstring(), albumName2.path().generic_wstring() });
+                        duplicatedAlbumList.push_back({ albumName1.path().generic_wstring(), albumName2.path().generic_wstring() });
                     }
                 }
             }
             currentIt++;
         }
     }
+
+    return duplicatedAlbumList;
 }
 
 
@@ -713,7 +706,7 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
             //std::string albumPath2{ dirPath.path().generic_string()};
             //auto trackName2 = trackName.generic_string();
 
-            auto queryString = std::format("INSERT INTO AlbumListA VALUES (null, \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\");",
+            auto queryString = std::format("INSERT OR REPLACE INTO AlbumListA VALUES (null, \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\");",
                 albumPath, trackName.generic_string(),
                 mediaInfo.format_name, mediaInfo.format_long_name,
                 mediaInfo.start_time, mediaInfo.duration, mediaInfo.size, mediaInfo.bit_rate, mediaInfo.probe_score,

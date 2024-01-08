@@ -24,7 +24,6 @@
 #include <any>
 
 #include "AlbumCollection.h"
-#include "FolderCompare.h"
 #include "FolderConvert.h"
 
 #include "MediaInformation.h"
@@ -43,38 +42,6 @@ fs::path _TMPDirectory{  };
 #include <fcntl.h>
 #include <io.h>
 
-
-bool CreateMediaInfoJsonFile(fs::path dirPath, fs::path outDir)
-{
-
-    //FolderCompare fc;
-    //fc.GetFolderNamesList2(dirPath, 9);
-
-    //fc.SaveMediaInfoDocument(outDir);
-    //fc.SaveMediaInfoDocumentToDB("all_albums.db");
-
-    //fc.sort();
-    //fc.findDuplicates_old();
-
-    return true;
-}
-
-
-
-//
-//
-//AlbumList ReadMediaInfoJsonFile()
-//{
-//    //FolderCompare fc;
-//    fs::path mediaResultPath{ "M:\\tmp\\MediaResult.json" };
-////    auto mediaInfoList = fc.LoadMediaInfoDocument(mediaResultPath);
-//
-//
-//
-//    //return mediaInfoList;
-//
-//    return AlbumList{};
-//}
 
 
 
@@ -158,23 +125,28 @@ int main()
 {    
     enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
 
-    Action action = CreateJSONEnum; //STATIC ACTION SELECTOR
+    Action action = ProcessJSONEnum; //STATIC ACTION SELECTOR
 
-#if 0   
-      fs::path mediaPath{ "\\\\?\\M:\\tmp\\24" };
-      fs::path outputPath{ "\\\\?\\M:\\tmp" };
-#else
 
-    const fs::path mediaPath{ "\\\\?\\R:\\24" };
-    const fs::path outputPath{ "\\\\?\\R:\\24" };
-#endif
-
-    const fs::path mediaResultJsonFileName{ "MediaResult.json" };
     const fs::path databaseFileName{ "all_albums.db" };
 
-    fs::path databasePath = outputPath / databaseFileName;
-    fs::path jsonDBPath = outputPath / mediaResultJsonFileName;
+#if 0
+      fs::path outputPath{ "\\\\?\\M:\\tmp" };
+      
+      std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
+          {"\\\\?\\M:\\tmp\\jazz", outputPath / "MediaResult.json"}
+      };
 
+#else
+    const fs::path outputPath{ "\\\\?\\R:\\24" };
+
+    std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = { 
+        {"\\\\?\\R:\\24", outputPath / "MediaResult.json"}
+    };
+#endif
+
+
+    fs::path databasePath = outputPath / databaseFileName;
 
 
     //wait
@@ -185,48 +157,70 @@ int main()
     //    int i = 0;
     //}
 
-
     if (action == ConverEnum)
     {
-        //=========CONVERT 24BIT to FLAC
-        ConvertMediaTracksToNotmalFLAC(mediaPath);
+            //=========CONVERT 24BIT to FLAC
+        for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+        {
+            ConvertMediaTracksToNotmalFLAC(mediaPath);
+        }
+
     }
     else if (action == CreateJSONEnum)
     {
-
-        AlbumCollection ac;
-        ac.LoadAlbumCollection(mediaPath); //load albume list
-        ac.SortByNumberOfTracks();
-        ac.RefreshAlbumCollectionMediaInformation(); //load metadate
-        ac.SaveAlbumCollectionToJSONFile(jsonDBPath); // save to json
-
-
-        int i = 0;
+        for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+        {
+            AlbumCollection ac;
+            ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
+            ac.SortByNumberOfTracks();         // sort by album size - optional
+            ac.RefreshAlbumCollectionMediaInformation(); //load media metadate
+            ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
+        }
     }
     else if (action == ProcessJSONEnum)
     {
-        AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonDBPath));
+        DirectoryContentEntryList medialList;
+        for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+        {
+            auto const& accumulatedList = AlbumCollection::LoadAlbumCollectionFromJSON(jsonPath);
+            medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
+        }
+
+        AlbumCollection ac(std::move(medialList));
+        // ***by know medialList should contain an empty list***
+
         ac.SortByNumberOfTracks();
-        auto& dupList = ac.CreateDuplicatedAlbums();
+        auto dupList = ac.FindDuplicatedAlbums();
 
 
         int iCount = dupList.size();
+        int iCurrent = 0;
         for (auto entry : dupList)
         {
+            iCurrent++;
             auto [dir1, dir2] = entry;
 
-            WindowsHelpers::OpenDirectoryInExplorer(dir1);
-            WindowsHelpers::OpenDirectoryInExplorer(dir2);
+            
+            std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir1) << std::endl;
+            std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir2) << std::endl << std::endl;
+            
+            //auto userSelection = std::getchar();
+            //WindowsHelpers::OpenDirectoryInExplorer(dir1);
+            //WindowsHelpers::OpenDirectoryInExplorer(dir2);
 
             iCount--;
         }
     }
     else if (action == PopulateJsonToDBEnum)
     {
-        AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonDBPath));
-
-        ac.SaveMediaInfoDocumentToDB(databasePath);
+        for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+        {
+            AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonPath));
+            ac.SaveMediaInfoDocumentToDB(databasePath);
+        }
     }
+
+
     return 0;
 }
 

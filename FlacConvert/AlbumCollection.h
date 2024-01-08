@@ -55,7 +55,6 @@ class AlbumCollection
 public:
 
 	AlbumCollection() = default;
-	//AlbumCollection(std::filesystem::path& path);
 	AlbumCollection(DirectoryContentEntryList const & albumList);
 	AlbumCollection(DirectoryContentEntryList&& albumList);
 
@@ -78,8 +77,8 @@ public:
 
 	//compare
 	void SortByNumberOfTracks();
-	SimilarDirectoryEntryList& CreateDuplicatedAlbums();
-	SimilarDirectoryEntryList& GetDuplicatedAlbums();
+	SimilarDirectoryEntryList FindDuplicatedAlbums();
+	//SimilarDirectoryEntryList& GetDuplicatedAlbums();
 
 	//DB
 	bool SaveMediaInfoDocumentToDB(std::filesystem::path path);
@@ -101,7 +100,7 @@ private:
 
 
 	//sort and find duplications
-	void FindDuplicationInGroup(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt);
+	SimilarDirectoryEntryList FindDuplicationInGroup(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt);
 	//void OpenDirectoryInExplorer(std::wstring dirName);
 
 
@@ -114,6 +113,6 @@ private:
 //	std::filesystem::path _OutDirPth;
 
 	DirectoryContentEntryList _AlbumList;
-	SimilarDirectoryEntryList _DuplicatedAlbumList;
+//	SimilarDirectoryEntryList _DuplicatedAlbumList;
 };
 
