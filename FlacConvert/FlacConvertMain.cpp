@@ -121,7 +121,7 @@ int main()
     auto ret = _setmode(_fileno(stdout), _O_U16TEXT);
     enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
 
-    Action action = CreateJSONEnum; //STATIC ACTION SELECTOR
+    Action action = ProcessJSONEnum; //STATIC ACTION SELECTOR
     const fs::path databaseFileName{ "all_albums.db" };
 
 #if 0
@@ -176,7 +176,7 @@ int main()
         DirectoryContentEntryList medialList;
         for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
         {
-            auto const& accumulatedList = AlbumCollection::LoadAlbumCollectionFromJSON(jsonPath);
+            auto const& accumulatedList = AlbumCollection::LoadAlbumCollectionFromJSON(jsonPath, true);
             medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
         }
 

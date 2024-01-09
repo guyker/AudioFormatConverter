@@ -364,7 +364,7 @@ MediaInformation AlbumCollection::ParseMediaInformation(auto formatTag)
 }
 
 //ststic function that loads album list from a Json file and returns a DirectoryContentEntryList object
-DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::filesystem::path& path)
+DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::filesystem::path& path, bool bBasicDataOnly)
 {
     DirectoryContentEntryList albumList;
 
@@ -394,11 +394,6 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
     auto jsonObject = doc.GetObj();
 
 
-    //using TrackInfoList = std::vector<std::tuple<std::wstring, long long, MediaInformation, std::string>>;
-    //using EntryFileTuple = std::tuple <std::filesystem::directory_entry, TrackInfoList>;
-    //using DirectoryContentEntryList = std::vector<EntryFileTuple>;
-
-
     //Albums
     for (auto itr = jsonObject.begin(); itr != jsonObject.end(); itr++)
     {
@@ -411,7 +406,14 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
             if (mediaTrackList[i].IsObject())
             {
                 MediaInformation mi{ AlbumCollection::ParseMediaInformation(mediaTrackList[i].GetObj()) };
-                trackList.push_back({ mi.filename, std::stol(mi.size), mi, json });
+                if (bBasicDataOnly)
+                {
+                    trackList.push_back({ mi.filename, std::stol(mi.size), mi, std::string() });
+                }
+                else
+                {
+                    trackList.push_back({ mi.filename, std::stol(mi.size), mi, json });
+                }
             }
         }
 
