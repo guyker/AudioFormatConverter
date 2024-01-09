@@ -209,7 +209,7 @@ int main()
     {
         for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
         {
-            AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON_Full(jsonPath));
+            AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonPath));
             ac.SaveMediaInfoDocumentToDB(databasePath);
         }
     }

@@ -72,7 +72,6 @@ public:
 
 	void Clear();
 
-	static DirectoryContentEntryList LoadAlbumCollectionFromJSON_Full(std::filesystem::path& dirPath);
 	static DirectoryContentEntryList LoadAlbumCollectionFromJSON(std::filesystem::path& dirPath);
 
 

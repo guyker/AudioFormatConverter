@@ -319,8 +319,7 @@ bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path path)
     if (file.is_open()) {
         file << json;
         file.close();
-
-        std::wcout << std::endl << std::format(L"====> Document saved to: {}", path.generic_wstring()) << std::endl;
+        std::cout << "Document saved to 'output.json'" << std::endl;
     }
     else {
         std::cerr << "Unable to open file for writing" << std::endl;
@@ -363,14 +362,8 @@ MediaInformation AlbumCollection::ParseMediaInformation(auto formatTag)
     return mi;
 }
 
-DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::filesystem::path& path)
-{
-    return LoadAlbumCollectionFromJSON_Full(path);
-}
-
-
 //ststic function that loads album list from a Json file and returns a DirectoryContentEntryList object
-DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON_Full(std::filesystem::path& path)
+DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::filesystem::path& path)
 {
     DirectoryContentEntryList albumList;
 
