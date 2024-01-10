@@ -25,7 +25,7 @@ void AlbumCollection::Clear()
 
 bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath)
 {
-    std::wcout << L"Processing new collection: " << albumCollectionDirPath.generic_wstring() << std::endl;
+  //  std::wcout << L"Processing new collection: " << albumCollectionDirPath.generic_wstring() << std::endl;
 
     //Scan directory and load all tracks location
     LoadFolderNamesListRecrusive(albumCollectionDirPath, 9);
@@ -193,7 +193,7 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
     int albumCount = 0;
     for (auto& [albumPath, trackList] : _AlbumList)
     {
-        std::wcout << L"Processing [" << ++albumCount << "/" << _AlbumList.size() << "]: " << albumPath.path() << std::endl;
+     //   std::wcout << L"Processing [" << ++albumCount << "/" << _AlbumList.size() << "]: " << albumPath.path() << std::endl;
 
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
@@ -578,7 +578,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums()
         auto pushedEndGroupIt = secondIt;
         int itemsInGroup{ 0 };
         auto fileList1Seize{ fileList1.size() };
-        while (secondIt != _AlbumList.end() && fileList1.size() == fileList2.size())
+        while (secondIt != _AlbumList.end() && fileList1.size() == fileList2.size() && fileList1.size() > 4)
         {
             pushedEndGroupIt = secondIt;
             auto& [dirEntry2, fileList2] = *secondIt;

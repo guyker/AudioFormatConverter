@@ -121,14 +121,24 @@ int main()
     auto ret = _setmode(_fileno(stdout), _O_U16TEXT);
     enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
 
-    Action action = ProcessJSONEnum; //STATIC ACTION SELECTOR
+    Action action = CreateJSONEnum; //STATIC ACTION SELECTOR
     const fs::path databaseFileName{ "all_albums.db" };
 
-#if 0
+#if 1
       fs::path outputPath{ "\\\\?\\M:\\tmp" };
       
+      //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
+      //    {"\\\\?\\M:\\tmp\\jazz", outputPath / "MediaResult.json"}
+      //};
+
+
+      //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
+      //      {"\\\\?\\M:\\music\\Classical\\Albums\\24bit", outputPath / "MediaResult_classical_24.json"},
+      //      {"\\\\?\\M:\\tmp\\24_rdy", outputPath / "MediaResult_24_rdy.json"}
+      //};
+
       std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
-          {"\\\\?\\M:\\tmp\\jazz", outputPath / "MediaResult.json"}
+            {"\\\\?\\M:\\music\\Classical\\Albums", outputPath / "MediaResult_classical_albums.json"},
       };
 
 #else
@@ -199,8 +209,8 @@ int main()
             std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir2) << std::endl << std::endl;
             
             //auto userSelection = std::getchar();
-            //WindowsHelpers::OpenDirectoryInExplorer(dir1);
-            //WindowsHelpers::OpenDirectoryInExplorer(dir2);
+            WindowsHelpers::OpenDirectoryInExplorer(dir1);
+            WindowsHelpers::OpenDirectoryInExplorer(dir2);
 
             iCount--;
         }
