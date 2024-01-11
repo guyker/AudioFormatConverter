@@ -25,7 +25,7 @@ void AlbumCollection::Clear()
 
 bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath)
 {
-  //  std::wcout << L"Processing new collection: " << albumCollectionDirPath.generic_wstring() << std::endl;
+    std::cout << "Processing new collection: " << albumCollectionDirPath.generic_string() << std::endl;
 
     //Scan directory and load all tracks location
     LoadFolderNamesListRecrusive(albumCollectionDirPath, 9);
@@ -68,6 +68,9 @@ TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::pat
         for (const fs::directory_entry& entry : fs::directory_iterator(path)) {
             if (entry.is_directory()) {
                 //Scan directory and return the list of files under the directory entry (one level).
+
+                std::cout << "Scanning: " << entry.path() << std::endl;
+
                 auto trackList = LoadFolderNamesListRecrusive(entry.path(), depth - 1);
                 if (trackList.size() > 0)
                 {
@@ -395,12 +398,22 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
 
 
     //Albums
+    int iAlbumCount = 0;
     for (auto itr = jsonObject.begin(); itr != jsonObject.end(); itr++)
     {
         TrackInfoList trackList;
         //MediaInfoList mediaInfoList;
         std::string albumName = itr->name.GetString();
         auto mediaTrackList = itr->value.GetArray();
+        
+        //std::string spacesString(80, ' ');
+        //std::cout << spacesString << 'r';
+
+        auto albumLogStr = std::format("Album [{}]: {}", ++iAlbumCount, albumName);
+        //std::cout << albumLogStr << std::endl;
+        std::cout << albumLogStr << '\r';
+
+
         for (int i = 0; i < mediaTrackList.Size(); i++)
         {
             if (mediaTrackList[i].IsObject())

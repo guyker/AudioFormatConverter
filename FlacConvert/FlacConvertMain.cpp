@@ -96,35 +96,15 @@ int ConvertMediaTracksToNotmalFLAC(const fs::path& dirName)
 
 
 
-
-//========= SCAN
-//fs::path outDir{ "M:\\tmp\\MediaResult.json" };
-//fs::path outDir{ "R:\\24\\MediaResult.json" };
-//fs::path pathA{ "\\\\?\\R:\\24" };
-
-//fs::path outDir{ "\\\\?\\M:\\tmp\\MediaResult.json" };
-//fs::path pathA{ "\\\\?\\M:\\tmp\\jazz" };
-//fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]" };
-// 
-//fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\[misc]\\Bartees Strange" };
-    //fs::path pathA{ "\\\\?\\M:\\music\\Rock-Pop\\Rock\\Albums" };
-    //fs::path pathA{ "\\\\?\\M:\\tmp\\24_rdy" };
-      //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums" };
-      //fs::path pathA{ "\\\\?\\M:\\music\\Jazz" };
-      //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Sets" };
-    //fs::path pathA{ "\\\\?\\M:\\music\\Classical\\Albums\\24bit" };
-    //fs::path pathB{ "E:\\VM-Share\\ut2\\DONE" };
-
-
 int main()
 {    
-    auto ret = _setmode(_fileno(stdout), _O_U16TEXT);
+ //   auto ret = _setmode(_fileno(stdout), _O_U16TEXT);
     enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
 
-    Action action = CreateJSONEnum; //STATIC ACTION SELECTOR
+    Action action = ProcessJSONEnum; //STATIC ACTION SELECTOR
     const fs::path databaseFileName{ "all_albums.db" };
 
-#if 1
+#if 0
       fs::path outputPath{ "\\\\?\\M:\\tmp" };
       
       //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
@@ -144,8 +124,13 @@ int main()
 #else
     const fs::path outputPath{ "\\\\?\\R:\\24" };
 
+    //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = { 
+    //    {"\\\\?\\R:\\24", outputPath / "MediaResult.json"}
+    //};
+
     std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = { 
-        {"\\\\?\\R:\\24", outputPath / "MediaResult.json"}
+        {"\\\\?\\R:\\24", outputPath / "MediaResult_classical_24.json"},
+        {"\\\\?\\R:\\24", outputPath / "MediaResult_24_rdy.json"}
     };
 #endif
 
@@ -186,6 +171,8 @@ int main()
         DirectoryContentEntryList medialList;
         for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
         {
+            std::wcout << std::format(L"Processing: {}", jsonPath.generic_wstring()) << std::endl;
+
             auto const& accumulatedList = AlbumCollection::LoadAlbumCollectionFromJSON(jsonPath, true);
             medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
         }
