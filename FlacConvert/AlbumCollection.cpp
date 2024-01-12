@@ -25,7 +25,9 @@ void AlbumCollection::Clear()
 
 bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath)
 {
-    std::cout << "Processing new collection: " << albumCollectionDirPath.generic_string() << std::endl;
+    std::cout << std::format("Processing new collection: {}", albumCollectionDirPath.generic_string()) << std::endl;
+
+    //std::cout << "Processing new collection: " << path << std::endl;
 
     //Scan directory and load all tracks location
     LoadFolderNamesListRecrusive(albumCollectionDirPath, 9);
@@ -69,7 +71,8 @@ TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::pat
             if (entry.is_directory()) {
                 //Scan directory and return the list of files under the directory entry (one level).
 
-                std::cout << "Scanning: " << entry.path() << std::endl;
+                auto path1 = entry.path().generic_wstring();
+             //   std::wcout << "Scanning: " << path1 << std::endl;
 
                 auto trackList = LoadFolderNamesListRecrusive(entry.path(), depth - 1);
                 if (trackList.size() > 0)
@@ -191,12 +194,12 @@ MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::string jsonS
 
 
 //Load all media media information from the preloaded album list (_AlbumList)
-bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
+bool AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
 {
     int albumCount = 0;
     for (auto& [albumPath, trackList] : _AlbumList)
     {
-     //   std::wcout << L"Processing [" << ++albumCount << "/" << _AlbumList.size() << "]: " << albumPath.path() << std::endl;
+        std::wcout << L"Processing [" << ++albumCount << "/" << _AlbumList.size() << "]: " << albumPath.path() << std::endl;
 
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
@@ -213,7 +216,6 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation()
                 auto path2Fixed = trackPath.lexically_normal().native();
                 long long fileSize = fs::file_size(path2Fixed);
 
-                bool bAsync = true;
                 if (bAsync)
                 {
                     fs::path outfilePath{ trackName / fs::path("_" + TMP_MEDIA_JSON_FILE_NAME) };
@@ -470,18 +472,35 @@ std::tuple<MediaInformation, std::string> AlbumCollection::GetMediaInfoFromMedia
     auto outPath = AlbumCollection::CreateMediaInfoFile(mediaFilePath, tmpFile);
     auto mi = AlbumCollection::ParseMediaInfoFromJsonFile(outPath);
     
+
+    //std::string jsonString = "jsonString";
     std::ifstream file(outPath);
     std::string jsonString((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
 
+    std::error_code ec;
     if (fs::exists(outPath)) {
-        std::error_code ec;
         if (fs::remove(outPath, ec)) {
         }
-    }
+        else
+        {
+            auto ms = ec.message();
 
+            int i = 0;
+        }
+    }
+    else
+    {
+        int i = 0;
+    }
 
     return std::make_tuple(mi, jsonString);
 }
+
+
+#include <locale>
+#include <codecvt>
+#include <windows.h>
 
 //create a media file (on filesystem) from a media track
 std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
@@ -497,7 +516,6 @@ std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path
 
 
     std::wstring cmdExecNameW{ L"ffprobe -v quiet -print_format json -show_format "s };
-    //std::wstring commandW{ cmdExecNameW + L"'"s + mediaFilePath.generic_wstring() + L"'"s  + L" > '"s + tmpFilePath.generic_wstring() + L"'"s};
     std::wstring commandW{ cmdExecNameW + L"\""s + mediaFilePath.generic_wstring() + L"\""s + L" > \""s + tmpFilePath.generic_wstring() + L"\""s };
 
     //std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + L"'" + _targetTMPPath.generic_wstring() + L"'" };
@@ -514,11 +532,17 @@ std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path
         }
 
         status = _wsystem(commandW.c_str());
+      //  status = std::system(commandW.c_str());
+
+        ////std::string narrowCommand(commandW.begin(), commandW.end());
+        //status = std::system(narrowCommand.c_str());
+            
+
+
 
         if (status == 0)
         {
-            jsonDoc = AlbumCollection::GetJSONDoc(tmpFilePath);
-
+        //    jsonDoc = AlbumCollection::GetJSONDoc(tmpFilePath);
 
             //if (fs::exists(tmpFilePath)) {
             //    std::error_code ec;
@@ -527,6 +551,41 @@ std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path
             //}
 
             return tmpFilePath;
+        }
+        else
+        {
+            std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
+            auto tmpName = "tmp_media_" + std::to_string(hashNumber) + ".data";
+
+            auto extension = mediaFilePath.extension();
+
+            fs::path tmpFixFilePath{ tmpPath / tmpName };
+            tmpFixFilePath.replace_extension(extension);
+
+            try
+            {
+                fs::copy(mediaFilePath, tmpFixFilePath);
+            }
+            catch (const std::exception& ex) {
+                std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << ex.what() << std::endl;
+
+            }
+            std::wstring commandWAlt{ cmdExecNameW + L"\""s + tmpFixFilePath.generic_wstring() + L"\""s + L" > \""s + tmpFilePath.generic_wstring() + L"\""s };
+
+            status = _wsystem(commandWAlt.c_str());
+
+            std::error_code ec;
+            fs::remove(tmpFixFilePath, ec);
+
+            if (status == 0)
+            {
+                return tmpFilePath;
+            }
+            else
+            {
+                int i = 0;
+            }
+          //  return tmpFilePath;
         }
     }
     catch (const std::exception& ex) {
@@ -649,8 +708,10 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(DirectoryConte
                         auto& [trackName1, size1, mediaInfo1, mediaInfoString2] = trackList1[i];
                         auto& [trackName2, size2, mediaInfo2, mediaInfoString1] = trackList2[i];
 
-                        auto minSize = std::min(mediaInfo1.duration, mediaInfo2.duration);
-                        auto maxSize = std::max(mediaInfo1.duration, mediaInfo2.duration);
+                        //auto minSize = std::min(mediaInfo1.duration, mediaInfo2.duration);
+                        //auto maxSize = std::max(mediaInfo1.duration, mediaInfo2.duration);
+                        auto minSize = mediaInfo1.duration < mediaInfo2.duration ? mediaInfo1.duration : mediaInfo2.duration;
+                        auto maxSize = mediaInfo1.duration > mediaInfo2.duration ? mediaInfo1.duration : mediaInfo2.duration;
 
                         auto diff = maxSize - minSize;
                         long long result = (long)100 * diff / maxSize;

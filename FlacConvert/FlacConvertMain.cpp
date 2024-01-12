@@ -104,7 +104,7 @@ int main()
     Action action = ProcessJSONEnum; //STATIC ACTION SELECTOR
     const fs::path databaseFileName{ "all_albums.db" };
 
-#if 0
+#if 1
       fs::path outputPath{ "\\\\?\\M:\\tmp" };
       
       //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
@@ -113,13 +113,17 @@ int main()
 
 
       //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
-      //      {"\\\\?\\M:\\music\\Classical\\Albums\\24bit", outputPath / "MediaResult_classical_24.json"},
-      //      {"\\\\?\\M:\\tmp\\24_rdy", outputPath / "MediaResult_24_rdy.json"}
       //};
 
-      std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
-            {"\\\\?\\M:\\music\\Classical\\Albums", outputPath / "MediaResult_classical_albums.json"},
-      };
+    std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
+        {"\\\\?\\M:\\tmp\\24_rdy", outputPath / "MediaResult_24_rdy.json"},
+        {"\\\\?\\M:\\music\\Classical\\Albums\\24bit", outputPath / "MediaResult_classical_24.json"},
+        {"\\\\?\\M:\\music\\Classical\\Albums\\XRCD", outputPath / "MediaResult_classical_album_XRCD_.json"},
+        {"\\\\?\\M:\\music\\Classical\\Albums\\flac", outputPath / "MediaResult_classical_album_flac_.json"},
+        {"\\\\?\\M:\\music\\Classical\\Albums\\mp3", outputPath / "MediaResult_classical_album_mp3_.json"},
+        //{"\\\\?\\M:\\music\\Classical\\Albums\\AlbumSets_MultiCover", outputPath / "MediaResult_classical_AlbumSets_MultiCover.json"},
+        //{"\\\\?\\M:\\music\\Classical\\Albums\\AlbumSets_OneCover", outputPath / "MediaResult_AlbumSets_OneCover.json"},
+    };
 
 #else
     const fs::path outputPath{ "\\\\?\\R:\\24" };
@@ -162,7 +166,7 @@ int main()
             AlbumCollection ac;
             ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
             ac.SortByNumberOfTracks();         // sort by album size - optional
-            ac.RefreshAlbumCollectionMediaInformation(); //load media metadate
+            ac.RefreshAlbumCollectionMediaInformation(true); //load media metadate
             ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
         }
     }
