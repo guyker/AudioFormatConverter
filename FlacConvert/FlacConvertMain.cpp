@@ -97,14 +97,38 @@ int ConvertMediaTracksToNotmalFLAC(const fs::path& dirName)
 
 
 int main()
-{    
- //   auto ret = _setmode(_fileno(stdout), _O_U16TEXT);
-    enum Action { ConverEnum, CreateJSONEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
+{
 
-    Action action = ProcessJSONEnum; //STATIC ACTION SELECTOR
+    enum Action { NullEnum, ConverEnum, CreateJSONEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
+
+    Action action{ NullEnum };
     const fs::path databaseFileName{ "all_albums.db" };
 
-#if 1
+    std::cout << "Select run option [1 - Re/Convert FLAC, 2 - Scan directories, 3 - Get Duplicates, 4 - Update DB]" << std::endl;
+    char input = getchar();
+    switch (input)
+    {
+    case '1':
+        action = ConverEnum;
+        break;
+    case '2':
+        action = CreateJSONEnum;
+        break;
+    case '3':
+        action = ProcessJSONEnum;
+        break;
+    case '4':
+        action = PopulateJsonToDBEnum;
+        break;
+    default:
+        std::cout << "Selection Error: " << input;
+        return 0;
+        break;
+    }
+
+
+#if 0
+    action = CreateJSONEnum;
       fs::path outputPath{ "\\\\?\\M:\\tmp" };
       
       //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
@@ -126,6 +150,7 @@ int main()
     };
 
 #else
+    action = CreateJSONEnum;
     const fs::path outputPath{ "\\\\?\\R:\\24" };
 
     //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = { 

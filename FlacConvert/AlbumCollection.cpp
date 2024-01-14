@@ -3,6 +3,8 @@
 namespace fs = std::filesystem;
 using namespace rapidjson;
 
+constexpr auto CLEAR_LINE{ L"\x1b[H\x1b[J" };
+
 
 //AlbumCollection::AlbumCollection(std::filesystem::path& dirPath) : _AlbumCollectionDirPath(dirPath)
 //{
@@ -72,7 +74,7 @@ TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::pat
                 //Scan directory and return the list of files under the directory entry (one level).
 
                 auto path1 = entry.path().generic_wstring();
-             //   std::wcout << "Scanning: " << path1 << std::endl;
+                std::wcout << "Scanning: " << path1 << std::endl;
 
                 auto trackList = LoadFolderNamesListRecrusive(entry.path(), depth - 1);
                 if (trackList.size() > 0)
@@ -199,8 +201,9 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
     int albumCount = 0;
     for (auto& [albumPath, trackList] : _AlbumList)
     {
+        std::wcout << CLEAR_LINE;
         std::wcout << L"Processing [" << ++albumCount << "/" << _AlbumList.size() << "]: " << albumPath.path() << std::endl;
-
+        
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
 
