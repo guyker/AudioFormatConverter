@@ -1,7 +1,13 @@
+
+#include <ranges>
+
 #include "AlbumCollection.h"
 
 namespace fs = std::filesystem;
 using namespace rapidjson;
+
+
+const std::vector<char> ProgressCircleChars { '|', '/', '-', '\\' };
 
 //constexpr auto CLEAR_LINE{ L"\x1b[H\x1b[J" };
 
@@ -192,16 +198,17 @@ MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::string jsonS
     return mediaInfo;
 }
 
-
 //Load all media media information from the preloaded album list (_AlbumList)
-bool AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
+int AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
 {
     int albumCount = 0;
+    int progressIndex = 0;
+
     for (auto& [albumPath, trackList] : _AlbumList)
     {
+        std::cout << std::format("{} Processing [{}/{}]: {}", ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), albumPath.path().generic_string());
+        progressIndex = (progressIndex + 1) % ProgressCircleChars.size();
 
-        std::wcout << L"Processing[" << ++albumCount << " / " << _AlbumList.size() << "]:" << albumPath.path();
-        
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
 
@@ -255,7 +262,7 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
         std::wcout << "\r\033[K";
     }
 
-    return true;
+    return _AlbumList.size();
 }
 
 
