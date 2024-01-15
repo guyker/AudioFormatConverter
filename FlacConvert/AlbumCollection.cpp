@@ -27,12 +27,14 @@ void AlbumCollection::Clear()
 
 bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath)
 {
-    std::cout << std::format("Processing new collection: {}", albumCollectionDirPath.generic_string()) << std::endl;
-
-    //std::cout << "Processing new collection: " << path << std::endl;
+    auto startTime = std::chrono::steady_clock::now();
+    std::cout << "Scanning collection... ";
 
     //Scan directory and load all tracks location
     LoadFolderNamesListRecrusive(albumCollectionDirPath, 9);
+
+    auto endTime = std::chrono::steady_clock::now();
+    std::cout << std::format("Completed, Albums: {} [{}ms]", _AlbumList.size(), std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
 
     return true;
 }
@@ -74,7 +76,7 @@ TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::pat
                 //Scan directory and return the list of files under the directory entry (one level).
 
                 auto path1 = entry.path().generic_wstring();
-                std::wcout << "Scanning: " << path1 << std::endl;
+                //std::wcout << "Scanning: " << path1 << std::endl;
 
                 auto trackList = LoadFolderNamesListRecrusive(entry.path(), depth - 1);
                 if (trackList.size() > 0)
@@ -198,11 +200,13 @@ MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::string jsonS
 //Load all media media information from the preloaded album list (_AlbumList)
 bool AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
 {
+    int lastLineLength = 0;
     int albumCount = 0;
     for (auto& [albumPath, trackList] : _AlbumList)
     {
-        std::wcout << CLEAR_LINE;
-        std::wcout << L"Processing [" << ++albumCount << "/" << _AlbumList.size() << "]: " << albumPath.path() << std::endl;
+        //std::wcout << CLEAR_LINE;
+
+        std::wcout << L"Processing[" << ++albumCount << " / " << _AlbumList.size() << "]:" << albumPath.path();
         
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
@@ -254,6 +258,7 @@ bool AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
             mediaInfoString = mediaInfoString_ret;
         }
 
+        std::wcout << "\r\033[K";
     }
 
     return true;
@@ -328,7 +333,7 @@ bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path path)
         file << json;
         file.close();
 
-        std::wcout << std::endl << std::format(L"====> Document saved to: {}", path.generic_wstring()) << std::endl;
+        //std::wcout << std::endl << std::format(L"====> Document saved to: {}", path.generic_wstring()) << std::endl;
     }
     else {
         std::cerr << "Unable to open file for writing" << std::endl;

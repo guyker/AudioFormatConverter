@@ -188,11 +188,18 @@ int main()
     {
         for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
         {
+            auto startTime = std::chrono::steady_clock::now();
+            std::cout << std::format("===>Processing new collection: {}...", mediaPath.generic_string()) << std::endl;
+
             AlbumCollection ac;
             ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
             ac.SortByNumberOfTracks();         // sort by album size - optional
             ac.RefreshAlbumCollectionMediaInformation(true); //load media metadate
             ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
+
+            auto endTime = std::chrono::steady_clock::now();
+            std::cout << std::format("<===Processing time for {} = {}ms", mediaPath.generic_string(), std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
+            std::cout << std::endl;
         }
     }
     else if (action == ProcessJSONEnum)
