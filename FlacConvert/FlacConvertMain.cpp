@@ -166,15 +166,6 @@ int main()
 
     fs::path databasePath = outputPath / databaseFileName;
 
-
-    //wait
-    //std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
-    //auto userSelection = std::getchar();
-    //if (userSelection == '1')
-    //{
-    //    int i = 0;
-    //}
-
     if (action == ConverEnum)
     {
             //=========CONVERT 24BIT to FLAC

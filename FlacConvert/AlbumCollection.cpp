@@ -3,12 +3,8 @@
 namespace fs = std::filesystem;
 using namespace rapidjson;
 
-constexpr auto CLEAR_LINE{ L"\x1b[H\x1b[J" };
+//constexpr auto CLEAR_LINE{ L"\x1b[H\x1b[J" };
 
-
-//AlbumCollection::AlbumCollection(std::filesystem::path& dirPath) : _AlbumCollectionDirPath(dirPath)
-//{
-//}
 
 AlbumCollection::AlbumCollection(DirectoryContentEntryList const& albumList) : _AlbumList{ albumList }
 {
@@ -200,11 +196,9 @@ MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::string jsonS
 //Load all media media information from the preloaded album list (_AlbumList)
 bool AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
 {
-    int lastLineLength = 0;
     int albumCount = 0;
     for (auto& [albumPath, trackList] : _AlbumList)
     {
-        //std::wcout << CLEAR_LINE;
 
         std::wcout << L"Processing[" << ++albumCount << " / " << _AlbumList.size() << "]:" << albumPath.path();
         
