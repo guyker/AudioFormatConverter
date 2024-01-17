@@ -198,6 +198,7 @@ MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::string jsonS
     return mediaInfo;
 }
 
+
 //Load all media media information from the preloaded album list (_AlbumList)
 int AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
 {
@@ -206,7 +207,17 @@ int AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
 
     for (auto& [albumPath, trackList] : _AlbumList)
     {
-        std::cout << std::format("{} Processing [{}/{}]: {}", ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), albumPath.path().generic_string());
+        std::cout << "\r\033[K";
+        //std::wcout << std::format(L"{} Processing [{}/{}]: {}", ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), albumPath.path().generic_wstring());
+        std::string str{ "???" };
+        try
+        {
+            //str = RemoveSpecialCharacter(albumPath.path().generic_string());
+            str = albumPath.path().generic_string();
+        }
+        catch (...) {}
+        std::cout << std::format("{} Processing [{}/{}]: {}", ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), str);
+        //std::wcout << std::format(L"{} Processing [{}/{}]", ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size());
         progressIndex = (progressIndex + 1) % ProgressCircleChars.size();
 
         //Album tracks list holder 
@@ -259,7 +270,7 @@ int AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
             mediaInfoString = mediaInfoString_ret;
         }
 
-        std::wcout << "\r\033[K";
+      //  std::wcout << "\r\033[K";
     }
 
     return _AlbumList.size();
@@ -489,12 +500,22 @@ std::tuple<MediaInformation, std::string> AlbumCollection::GetMediaInfoFromMedia
 
     std::error_code ec;
     if (fs::exists(outPath)) {
-        if (fs::remove(outPath, ec)) {
-        }
-        else
+        bool bDeleted = false;
+        int iRetry = 3;
+        while (!bDeleted && iRetry > 0)
         {
-            auto ms = ec.message();
-
+            if (fs::remove(outPath, ec)) {
+                bDeleted = true;
+            }
+            else
+            {
+                auto ms = ec.message();
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                iRetry--;
+            }
+        }
+        if (!bDeleted)
+        {
             int i = 0;
         }
     }

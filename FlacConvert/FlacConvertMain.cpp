@@ -127,30 +127,31 @@ int main()
     }
 
 
-#if 0
-    action = CreateJSONEnum;
-      fs::path outputPath{ "\\\\?\\M:\\tmp" };
+#if 1
+  //  action = CreateJSONEnum;
+      fs::path outputPath{ "\\\\?\\M:\\tmp\\mediaDB" };
       
       //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
       //    {"\\\\?\\M:\\tmp\\jazz", outputPath / "MediaResult.json"}
       //};
 
 
-      //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
-      //};
+      std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
+        {"\\\\?\\M:\\tmp\\24", outputPath / "XXXX"},
+      };
 
-    std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
-        {"\\\\?\\M:\\tmp\\24_rdy", outputPath / "MediaResult_24_rdy.json"},
-        {"\\\\?\\M:\\music\\Classical\\Albums\\24bit", outputPath / "MediaResult_classical_24.json"},
-        {"\\\\?\\M:\\music\\Classical\\Albums\\XRCD", outputPath / "MediaResult_classical_album_XRCD_.json"},
-        {"\\\\?\\M:\\music\\Classical\\Albums\\flac", outputPath / "MediaResult_classical_album_flac_.json"},
-        {"\\\\?\\M:\\music\\Classical\\Albums\\mp3", outputPath / "MediaResult_classical_album_mp3_.json"},
-        //{"\\\\?\\M:\\music\\Classical\\Albums\\AlbumSets_MultiCover", outputPath / "MediaResult_classical_AlbumSets_MultiCover.json"},
-        //{"\\\\?\\M:\\music\\Classical\\Albums\\AlbumSets_OneCover", outputPath / "MediaResult_AlbumSets_OneCover.json"},
-    };
+    //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
+    //    {"\\\\?\\M:\\tmp\\24_rdy", outputPath / "MediaResult_24_rdy.json"},
+    //    {"\\\\?\\M:\\music\\Classical\\Albums\\24bit", outputPath / "MediaResult_classical_24.json"},
+    //    ////{"\\\\?\\M:\\music\\Classical\\Albums\\XRCD", outputPath / "MediaResult_classical_album_XRCD_.json"},
+    //    {"\\\\?\\M:\\music\\Classical\\Albums\\flac", outputPath / "MediaResult_classical_album_flac_.json"},
+    //    //{"\\\\?\\M:\\music\\Classical\\Albums\\mp3", outputPath / "MediaResult_classical_album_mp3_.json"},
+    //    {"\\\\?\\M:\\music\\Classical\\Albums\\AlbumSets_MultiCover", outputPath / "MediaResult_classical_AlbumSets_MultiCover.json"},
+    //    //{"\\\\?\\M:\\music\\Classical\\Albums\\AlbumSets_OneCover", outputPath / "MediaResult_AlbumSets_OneCover.json"},
+    //};
 
 #else
-    action = CreateJSONEnum;
+  //  action = CreateJSONEnum;
     const fs::path outputPath{ "\\\\?\\R:\\24" };
 
     //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = { 
