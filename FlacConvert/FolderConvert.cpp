@@ -35,7 +35,7 @@ bool FolderConvert::IsFileCollectable(std::filesystem::path pathName)
     return false;
 }
 
-int FolderConvert::GetFilesData(std::tuple<int, long, long>& scanInfo, const std::filesystem::path& directory, bool bAsync)
+int FolderConvert::GetFilesData(std::tuple<int, long, long long>& scanInfo, const std::filesystem::path& directory, bool bAsync)
 {
     _nDictionary++;
 
@@ -145,18 +145,20 @@ int FolderConvert::ConverAllDirectories(const std::filesystem::path& directory, 
         }
     }
 
-    int saa = tasksVector.size();
-
     //process all files in current directory
     int processStatus{ 0 };
-    std::for_each(tasksVector.begin(), tasksVector.end(), [](auto& f)
-        {
-            f->Run();
-            if (f->GetStatus() == -1)
-            {
+    std::for_each(tasksVector.begin(), tasksVector.end(), [](auto& f) {
+        f->Run();
+        if (f->GetStatus() == -1)
 
-            }
-        });
+        {
+
+
+
+        }
+
+    });
+
     std::for_each(tasksVector.begin(), tasksVector.end(), [](auto& f) { f->PostRun(); });
 
 

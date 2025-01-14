@@ -55,7 +55,7 @@ int ConvertMediaTracksToNotmalFLAC(const fs::path& dirName)
 
     auto startTime = std::chrono::steady_clock::now();
 
-    std::tuple<int, long, long> scanInfo{ 0, 0, 0, };
+    std::tuple<int, long, long long> scanInfo{ 0, 0, 0};
 
     FolderConvert fc;
 
@@ -212,7 +212,7 @@ int main()
         auto dupList = ac.FindDuplicatedAlbums();
 
 
-        int iCount = dupList.size();
+        auto iCount = dupList.size();
         int iCurrent = 0;
         for (auto entry : dupList)
         {

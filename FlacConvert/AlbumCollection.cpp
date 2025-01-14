@@ -200,7 +200,7 @@ MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::string jsonS
 
 
 //Load all media media information from the preloaded album list (_AlbumList)
-int AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
+size_t AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
 {
     int albumCount = 0;
     int progressIndex = 0;
@@ -436,7 +436,7 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
         std::cout << albumLogStr << '\r';
 
 
-        for (int i = 0; i < mediaTrackList.Size(); i++)
+        for (SizeType i = 0; i < mediaTrackList.Size(); i++)
         {
             if (mediaTrackList[i].IsObject())
             {

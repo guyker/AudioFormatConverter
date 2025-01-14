@@ -64,7 +64,7 @@ public:
 	bool LoadAlbumCollectionWithMetadata(std::filesystem::path albumCollectionDirPath, std::filesystem::path& outDirPath);
 
 	//Load/Reload album tracks metadata information
-	int RefreshAlbumCollectionMediaInformation(bool bAsync = true);
+	size_t RefreshAlbumCollectionMediaInformation(bool bAsync = true);
 
 	//Save album list and metadata to JSON file1
 	bool SaveAlbumCollectionToJSONFile(std::filesystem::path path);
