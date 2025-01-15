@@ -1,13 +1,15 @@
 
+
+
 #include "WindowsHelpers.h"
-
-
-
+#include <filesystem>
 #include <Windows.h>
+
+//namespace fs = std::filesystem;
 
 void WindowsHelpers::OpenDirectoryInExplorer(std::wstring dirName)
 {
-
+    auto pathSeperator = std::filesystem::path::preferred_separator;
     //using namespace std::string_literals;
     //COMMAND
 
