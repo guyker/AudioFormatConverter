@@ -59,7 +59,7 @@ int ConvertFLACToFLAC(const fs::path& dirName)
 
     FolderConvert fc;
 
-    int retStatus = fc.RecursivelyScanAudioFiles(scanInfo, dirName);
+    int retStatus = fc.ScanAudioFiles(scanInfo, dirName);
 
     //wait
     //std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
@@ -67,9 +67,9 @@ int ConvertFLACToFLAC(const fs::path& dirName)
 
     auto& [retStatus2, nFiles, nFilesSize] = scanInfo;
 
-    std::wcout << std::endl << "======================" << std::endl;
     std::wcout << "Total Files:" << nFiles << std::endl;
     std::wcout << "Total Size:" << nFilesSize << std::endl;
+    std::wcout << std::endl << "======================" << std::endl;
 
     
 

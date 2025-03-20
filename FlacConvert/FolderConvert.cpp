@@ -12,21 +12,28 @@ using namespace std;
 namespace fs = std::filesystem;
 
 
+std::wstring FolderConvert::ToLower(const std::wstring& str) {
+    std::wstring lowerStr = str;
+
+    std::transform(lowerStr.begin(), lowerStr.end(), lowerStr.begin(), ::towlower);
+
+    return lowerStr;
+}
 
 bool FolderConvert::IsFileConvertable(std::filesystem::path filePath)
 {
     //L".mp3", L".wav", L".flac", L".aac", L".ogg", L".wma", L".m4a"
     static std::set<wstring> fileExtensionList = { L".FLAC", L".flac", L".ape", L".dsf", L".dff", L".dsd", L".wv", L".wav", L".m2ts" , L".m4a" };
 
+    auto fileExtension = ToLower(filePath.extension().wstring());
+
     return filePath.has_extension() && (fileExtensionList.find(filePath.extension().wstring()) != fileExtensionList.end());
 }
 
-int FolderConvert::RecursivelyScanAudioFiles(std::tuple<int, long, long long>& scanInfo, const std::filesystem::path& directory, bool bAsync)
+int FolderConvert::ScanAudioFiles(std::tuple<int, long, long long>& scanInfo, const std::filesystem::path& directory, bool bAsync)
 {
-    _nDictionary++;
-
     std::wstring entryPath{ directory.wstring() };
-    std::wcout << std::endl << L"Scanning Dictionary (" << _nDictionary << "): " << entryPath << std::endl;
+    std::wcout << std::endl << L"Scanning Dictionary: " << entryPath << std::endl;
 
     // Recursively process all subdirectories within the specified directory
     std::filesystem::directory_iterator directoryIT;
@@ -43,14 +50,14 @@ int FolderConvert::RecursivelyScanAudioFiles(std::tuple<int, long, long long>& s
 
         for (const auto& entry : fs::recursive_directory_iterator(directory)) {
             if (entry.is_regular_file() && entry.path().has_extension() && IsFileConvertable(entry.path())) {
-                std::wcout << L"Found Audio File: " << entry.path().wstring() << std::endl;
+          //      std::wcout << L"Found Audio File: " << entry.path().wstring() << std::endl;
                 nFiles++;
                 nFilesSize += entry.file_size();
             }
         }
     }
     catch (const fs::filesystem_error& e) {
-        std::cerr << "RecursivelyScanAudioFiles: Filesystem error: " << e.what() << std::endl;
+        std::cerr << "ScanAudioFiles: Filesystem error: " << e.what() << std::endl;
 
         return -1;
     }
@@ -74,14 +81,10 @@ int FolderConvert::ConverAllDirectories(const std::filesystem::path& directory, 
 
 
     for (const fs::directory_entry& entry : fs::directory_iterator(directory)) {
-        auto hasExtension = entry.path().has_extension();
-        auto fileEextension = entry.path().extension();
 
-        const fs::path sourcePath = entry.path();
-
-        if (entry.is_regular_file())
+        if (entry.is_regular_file() && entry.path().has_extension())
         {
-            if (entry.path().has_extension() && IsFileConvertable(fileEextension)) {
+            if (entry.path().has_extension() && IsFileConvertable(entry.path())) {
 
                 fs::path targetPath = entry.path();
                 targetPath.replace_extension(_TargetFileType);
@@ -93,12 +96,12 @@ int FolderConvert::ConverAllDirectories(const std::filesystem::path& directory, 
 
                 //     fs::path targetTMPPath = _TMPDirectory += entry.path().stem() += fs::path{ "_TMP" } += fs::path{ _TargetFileType };
 
-                std::shared_ptr<MediaConvertionTask> pTask = bAsync ? std::make_shared<MediaConvertionAsyncTask>(sourcePath, targetPath, targetTMPPath) : std::make_shared<MediaConvertionTask>(sourcePath, targetPath, targetTMPPath);
+                std::shared_ptr<MediaConvertionTask> pTask = bAsync ? std::make_shared<MediaConvertionAsyncTask>(entry.path(), targetPath, targetTMPPath) : std::make_shared<MediaConvertionTask>(entry.path(), targetPath, targetTMPPath);
                 tasksVector.push_back(pTask);
             }
             else
             {
-                std::wcout << L"---Skipping: " << sourcePath << std::endl;
+                std::wcout << L"---Skipping: " << entry.path() << std::endl;
             }
         }
         else {
@@ -106,7 +109,7 @@ int FolderConvert::ConverAllDirectories(const std::filesystem::path& directory, 
             }
             else
             {
-                std::wcout << L"***UUNKNOWN ENTRY: " << sourcePath << std::endl;
+                std::wcout << L"***UUNKNOWN ENTRY: " << entry.path() << std::endl;
             }
         }
     }
