@@ -45,7 +45,7 @@ fs::path _TMPDirectory{  };
 
 
 
-int ConvertMediaTracksToNotmalFLAC(const fs::path& dirName)
+int ConvertFLACToFLAC(const fs::path& dirName)
 {
     _TMPDirectory = std::filesystem::temp_directory_path();
 
@@ -59,7 +59,7 @@ int ConvertMediaTracksToNotmalFLAC(const fs::path& dirName)
 
     FolderConvert fc;
 
-    int retStatus = fc.GetFilesData(scanInfo, dirName);
+    int retStatus = fc.RecursivelyScanAudioFiles(scanInfo, dirName);
 
     //wait
     //std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
@@ -127,7 +127,7 @@ int main()
     }
 
 
-#if 1
+#if 0
   //  action = CreateJSONEnum;
       fs::path outputPath{ "\\\\?\\M:\\tmp\\mediaDB" };
       
@@ -152,15 +152,15 @@ int main()
 
 #else
   //  action = CreateJSONEnum;
-    const fs::path outputPath{ "\\\\?\\R:\\24" };
+    const fs::path outputPath{ "\\\\?\\R:\\tmp\24" };
 
     //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = { 
     //    {"\\\\?\\R:\\24", outputPath / "MediaResult.json"}
     //};
 
     std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = { 
-        {"\\\\?\\R:\\24", outputPath / "MediaResult_classical_24.json"},
-        {"\\\\?\\R:\\24", outputPath / "MediaResult_24_rdy.json"}
+        {"\\\\?\\R:\\tmp\\24", outputPath / "MediaResult_flac_result.json"},
+        //{"\\\\?\\R:\\tmp\24", outputPath / "MediaResult_24_rdy.json"}
     };
 #endif
 
@@ -172,7 +172,7 @@ int main()
             //=========CONVERT 24BIT to FLAC
         for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
         {
-            ConvertMediaTracksToNotmalFLAC(mediaPath);
+            ConvertFLACToFLAC(mediaPath);
         }
 
     }

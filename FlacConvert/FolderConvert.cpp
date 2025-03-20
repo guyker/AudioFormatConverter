@@ -4,90 +4,56 @@
 
 #include <iostream>
 #include <algorithm>
+#include <set>
+
+
+using namespace std;
 
 namespace fs = std::filesystem;
 
 
 
-bool FolderConvert::IsFileConvertable(std::filesystem::path pathName)
+bool FolderConvert::IsFileConvertable(std::filesystem::path filePath)
 {
-    static std::vector<std::string> _ConvertableFileTypeList = { ".FLAC", ".flac", ".ape", ".dsf", ".dff", ".dsd", ".wv", ".wav", ".m2ts" , ".m4a" };
+    //L".mp3", L".wav", L".flac", L".aac", L".ogg", L".wma", L".m4a"
+    static std::set<wstring> fileExtensionList = { L".FLAC", L".flac", L".ape", L".dsf", L".dff", L".dsd", L".wv", L".wav", L".m2ts" , L".m4a" };
 
-    auto it = std::find_if(_ConvertableFileTypeList.begin(), _ConvertableFileTypeList.end(), [&](auto item) {return item == pathName; });
-    if (it != _ConvertableFileTypeList.end())
-    {
-        return true;
-    }
-
-    return false;
+    return filePath.has_extension() && (fileExtensionList.find(filePath.extension().wstring()) != fileExtensionList.end());
 }
 
-bool FolderConvert::IsFileCollectable(std::filesystem::path pathName)
-{
-    static std::vector<std::string> _ConvertableFileTypeList = { ".FLAC", ".flac", ".mp3" };
-
-    auto it = std::find_if(_ConvertableFileTypeList.begin(), _ConvertableFileTypeList.end(), [&](auto item) {return item == pathName; });
-    if (it != _ConvertableFileTypeList.end())
-    {
-        return true;
-    }
-
-    return false;
-}
-
-int FolderConvert::GetFilesData(std::tuple<int, long, long long>& scanInfo, const std::filesystem::path& directory, bool bAsync)
+int FolderConvert::RecursivelyScanAudioFiles(std::tuple<int, long, long long>& scanInfo, const std::filesystem::path& directory, bool bAsync)
 {
     _nDictionary++;
 
     std::wstring entryPath{ directory.wstring() };
     std::wcout << std::endl << L"Scanning Dictionary (" << _nDictionary << "): " << entryPath << std::endl;
 
-
-    for (const fs::directory_entry& entry : fs::directory_iterator(directory)) {
-        if (entry.is_directory()) {
-            GetFilesData(scanInfo, entry.path());
+    // Recursively process all subdirectories within the specified directory
+    std::filesystem::directory_iterator directoryIT;
+    try {
+        if (!fs::exists(directory) || !fs::is_directory(directory)) {
+            std::cerr << directory << " - Error: Directory does not exist or is not valid.\n";
+            return -1;
         }
-    }
 
-    auto& [retStatus, nFiles, nFilesSize] { scanInfo };
+        auto& [retStatus, nFiles, nFilesSize] { scanInfo };
 
+        // int nFileCount{ 0 };
+        // long long nDictionartFilesSize{ 0 };
 
-    auto nDictionaryFiles{ 0 };
-    long long nDictionartFilesSize{ 0 };
-    for (const fs::directory_entry& entry : fs::directory_iterator(directory)) {
-        auto hasExtension = entry.path().has_extension();
-        auto fileEextension = entry.path().extension();
-
-        if (entry.is_regular_file())
-        {
-            std::wstring entryPath{ entry.path().wstring() };
-            if (entry.path().has_extension() && IsFileConvertable(fileEextension)) {
-
-                nDictionartFilesSize += entry.file_size();
-
-                //                std::wcout << L"File (" << ++nDictionaryFiles << "):" << entryPath << std::endl;
-            }
-            else
-            {
-                //                std::wcout << L"SKIP: " << entryPath << std::endl;
+        for (const auto& entry : fs::recursive_directory_iterator(directory)) {
+            if (entry.is_regular_file() && entry.path().has_extension() && IsFileConvertable(entry.path())) {
+                std::wcout << L"Found Audio File: " << entry.path().wstring() << std::endl;
+                nFiles++;
+                nFilesSize += entry.file_size();
             }
         }
-        else if (entry.is_directory()) {
-
-        }
-        else
-        {
-            std::wcout << L"***UUNKNOWN ENTRY: " << entryPath << std::endl;
-        }
     }
+    catch (const fs::filesystem_error& e) {
+        std::cerr << "RecursivelyScanAudioFiles: Filesystem error: " << e.what() << std::endl;
 
-    nDictionartFilesSize /= (1024 * 1024);
-
-    std::wcout << L"----Total dictionaty Size: " << nDictionartFilesSize << L"Mb" << std::endl;
-
-    nFiles += nDictionaryFiles;
-    nFilesSize += nDictionartFilesSize;
-    //  return { retStatus, nFiles + nDictionaryFiles, nFilesSize + nDictionartFilesSize };
+        return -1;
+    }
 
     return 0;
 }
