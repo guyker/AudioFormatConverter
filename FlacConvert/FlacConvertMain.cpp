@@ -95,12 +95,12 @@ int ConvertFLACToFLAC(const fs::path& dirName)
 int main()
 {
 
-    enum Action { NullEnum, ConverEnum, CreateJSONEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
+    enum Action { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
 
     Action action{ NullEnum };
     const fs::path databaseFileName{ "all_albums.db" };
 
-    std::cout << "Select run option [1 - Re/Convert FLAC, 2 - Scan directories, 3 - Get Duplicates, 4 - Update DB]" << std::endl;
+    std::cout << "Select run option [1 - Re/Convert FLAC, 2 - Scan directories, 3 - Get Duplicates, 4 - Update DB, XX 5 - Scan DIR to DB, ]" << std::endl;
     char input = getchar();
     switch (input)
     {
@@ -109,6 +109,9 @@ int main()
         break;
     case '2':
         action = CreateJSONEnum;
+        break;
+    case '5':
+        action = CreateDBFromFolderEnum;
         break;
     case '3':
         action = ProcessJSONEnum;
@@ -182,7 +185,28 @@ int main()
             AlbumCollection ac;
             ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
             ac.SortByNumberOfTracks();         // sort by album size - optional
-            auto nAlbums = ac.RefreshAlbumCollectionMediaInformation(true); //load media metadate
+            auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
+            ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
+
+            auto endTime = std::chrono::steady_clock::now();
+            std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaPath.generic_string(), nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
+            std::cout << std::endl;
+        }
+    }
+    else if (action == CreateDBFromFolderEnum)
+    {
+        for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+        {
+            auto startTime = std::chrono::steady_clock::now();
+            std::cout << std::format("===>Processing new collection (DB): {}...", mediaPath.generic_string()) << std::endl;
+
+            AlbumCollection ac;
+            ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
+            ac.SortByNumberOfTracks();         // sort by album size - optional
+            
+//            auto nAlbums = ac.RefreshAlbumCollectionMediaInformation(true); //load media metadate
+            auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
+
             ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
 
             auto endTime = std::chrono::steady_clock::now();

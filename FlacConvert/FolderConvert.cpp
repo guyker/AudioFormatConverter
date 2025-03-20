@@ -23,8 +23,15 @@ std::wstring FolderConvert::ToLower(const std::wstring& str) {
 bool FolderConvert::IsFileConvertable(std::filesystem::path filePath)
 {
     //L".mp3", L".wav", L".flac", L".aac", L".ogg", L".wma", L".m4a"
-    static std::set<wstring> fileExtensionList = { L".FLAC", L".flac", L".ape", L".dsf", L".dff", L".dsd", L".wv", L".wav", L".m2ts" , L".m4a" };
+    static std::set<wstring> fileExtensionList = { L".flac", L".ape", L".dsf", L".dff", L".dsd", L".wv", L".wav", L".m2ts" , L".m4a" };
+    auto fileExtension = ToLower(filePath.extension().wstring());
 
+    return filePath.has_extension() && (fileExtensionList.find(filePath.extension().wstring()) != fileExtensionList.end());
+}
+
+bool FolderConvert::IsFileAcceptedAudioFile(std::filesystem::path filePath)
+{
+    static std::set<wstring> fileExtensionList = { L".flac", L".mp3" };
     auto fileExtension = ToLower(filePath.extension().wstring());
 
     return filePath.has_extension() && (fileExtensionList.find(filePath.extension().wstring()) != fileExtensionList.end());

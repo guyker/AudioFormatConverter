@@ -13,7 +13,7 @@ public:
 
 
     static bool IsFileConvertable(std::filesystem::path pathName);
-
+    static bool IsFileAcceptedAudioFile(std::filesystem::path filePath);
 
 
 private:

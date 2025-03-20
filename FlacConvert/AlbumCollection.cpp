@@ -2,6 +2,7 @@
 #include <ranges>
 
 #include "AlbumCollection.h"
+#include "FolderConvert.h"
 
 namespace fs = std::filesystem;
 using namespace rapidjson;
@@ -33,7 +34,7 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
     std::cout << "Scanning collection... ";
 
     //Scan directory and load all tracks location
-    LoadFolderNamesListRecrusive(albumCollectionDirPath, 9);
+    LoadAlbumFromCurrentFolder(albumCollectionDirPath, 9);
 
     auto endTime = std::chrono::steady_clock::now();
     std::cout << std::format("Completed, Albums: {} [{}ms]", _AlbumList.size(), std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
@@ -49,7 +50,7 @@ bool AlbumCollection::LoadAlbumCollectionWithMetadata(std::filesystem::path albu
     LoadAlbumCollection(albumCollectionDirPath);
 
     //For each loaded Albunm/Track, load/reload all media information 
-    RefreshAlbumCollectionMediaInformation();
+    ExportMediaInformationToDB();
 
     //Save Media Information ingo a JSON file
     SaveAlbumCollectionToJSONFile(outDirPath);
@@ -59,7 +60,7 @@ bool AlbumCollection::LoadAlbumCollectionWithMetadata(std::filesystem::path albu
 
 
 
-TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::path path, int depth)
+TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path path, int depth)
 {
     //Empty list to store all potential tracks under the current directory (path)
     TrackInfoList currentDirTrackList;
@@ -77,24 +78,20 @@ TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::pat
             if (entry.is_directory()) {
                 //Scan directory and return the list of files under the directory entry (one level).
 
-                auto path1 = entry.path().generic_wstring();
-                //std::wcout << "Scanning: " << path1 << std::endl;
+                auto trackList = LoadAlbumFromCurrentFolder(entry.path(), depth - 1);
 
-                auto trackList = LoadFolderNamesListRecrusive(entry.path(), depth - 1);
+                //check if the current folder has at least one track and add it to a new Album
                 if (trackList.size() > 0)
                 {
-                    //push the track list
                     _AlbumList.push_back({ entry, trackList });
                 }
             }
             else {
-                if (entry.is_regular_file())
+                if (entry.is_regular_file() && entry.path().has_extension())
                 {
-                    auto hasExtension = entry.path().has_extension();
                     auto fileEextension = entry.path().extension();
-                    std::wstring entryPath{ entry.path().wstring() };
-                    if (entry.path().has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
-
+                    if (FolderConvert::IsFileAcceptedAudioFile(entry.path()))
+                    {
                         auto path2Fixed = entry.path().lexically_normal().native();
                         long long fileSize = fs::file_size(path2Fixed);
 
@@ -109,8 +106,8 @@ TrackInfoList AlbumCollection::LoadFolderNamesListRecrusive(std::filesystem::pat
                         //}
 
 
-                        auto folderName = entry.path().filename();
-                        currentDirTrackList.push_back({ folderName, fileSize, MediaInformation{}, std::string{} });
+                        auto fileName = entry.path().filename();
+                        currentDirTrackList.push_back({ fileName, fileSize, MediaInformation{}, std::string{} });
                     }
                 }
             }
@@ -200,7 +197,7 @@ MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::string jsonS
 
 
 //Load all media media information from the preloaded album list (_AlbumList)
-size_t AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
+size_t AlbumCollection::ExportMediaInformationToDB(bool bAsync)
 {
     int albumCount = 0;
     int progressIndex = 0;
@@ -217,7 +214,6 @@ size_t AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
         }
         catch (...) {}
         std::cout << std::format("{} Processing [{}/{}]: {}", ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), str);
-        //std::wcout << std::format(L"{} Processing [{}/{}]", ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size());
         progressIndex = (progressIndex + 1) % ProgressCircleChars.size();
 
         //Album tracks list holder 
@@ -231,7 +227,7 @@ size_t AlbumCollection::RefreshAlbumCollectionMediaInformation(bool bAsync)
 
             auto hasExtension = trackPath.has_extension();
             auto fileEextension = trackPath.extension();
-            if (trackPath.has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
+            if (trackPath.has_extension() && FolderConvert::IsFileAcceptedAudioFile(trackPath)) {
                 auto path2Fixed = trackPath.lexically_normal().native();
                 long long fileSize = fs::file_size(path2Fixed);
 
@@ -648,12 +644,12 @@ MediaInformation AlbumCollection::ParseMediaInfoFromJsonFile(std::filesystem::pa
 
 void AlbumCollection::SortByNumberOfTracks()
 {
-    std::ranges::stable_sort(_AlbumList, [](auto& album1, auto& album2) {
-        auto [albumName1, trackList1] = album1;
-        auto [albumName2, trackList2] = album2;
+    std::ranges::stable_sort(_AlbumList, [](const auto& album1, const auto& album2) {
+        const auto& [albumName1, trackList1] = album1;
+        const auto& [albumName2, trackList2] = album2;
 
         return trackList2.size() > trackList1.size();
-        });
+    });
 }
 
 
