@@ -65,15 +65,15 @@ int FolderConvert::ScanAudioFiles(std::tuple<int, long, long long>& scanInfo, co
     return 0;
 }
 
-int FolderConvert::ConverAllDirectories(const std::filesystem::path& directory, bool bAsync)
+int FolderConvert::ConverAudioFiles(const std::filesystem::path& directory, bool bAsync)
 {
     std::vector<std::shared_ptr<MediaConvertionTask>> tasksVector;
 
     for (const fs::directory_entry& entry : fs::directory_iterator(directory)) {
         if (entry.is_directory()) {
-            int ret = ConverAllDirectories(entry.path(), bAsync);
+            int ret = ConverAudioFiles(entry.path(), bAsync);
             if (ret == -1) {
-                std::cout << "***ERROR*** returned from ConverAllDirectories" << std::endl;
+                std::cout << "***ERROR*** returned from ConverAudioFiles" << std::endl;
                 return -1;
             }
         }

@@ -8,7 +8,7 @@ class FolderConvert
 {
 public:
 
-    int ConverAllDirectories(const std::filesystem::path& directory, bool bAsync = false);
+    int ConverAudioFiles(const std::filesystem::path& directory, bool bAsync = false);
     int ScanAudioFiles(std::tuple<int, long, long long>& scanInfo, const std::filesystem::path& directory, bool bAsync = false);
 
 

@@ -31,18 +31,14 @@
 #include "MediaConvertionTask.h"
 #include "MediaConvertionAsyncTask.h"
 
-namespace fs = std::filesystem;
-
-
-
-fs::path _TMPDirectory{  };
-
-
 #include <iostream>
 #include <fcntl.h>
 #include <io.h>
+#include "WindowsHelpers.h"
 
 
+namespace fs = std::filesystem;
+fs::path _TMPDirectory{  };
 
 
 int ConvertFLACToFLAC(const fs::path& dirName)
@@ -73,9 +69,9 @@ int ConvertFLACToFLAC(const fs::path& dirName)
 
     
 
-    auto ret = fc.ConverAllDirectories(dirName, false);
+    auto ret = fc.ConverAudioFiles(dirName, false);
     if (ret == -1) {
-        std::wcout << "***STOP*** ConverAllDirectories" << std::endl;
+        std::wcout << "***STOP*** ConverAudioFiles" << std::endl;
         return -1;
     }
 
@@ -92,7 +88,7 @@ int ConvertFLACToFLAC(const fs::path& dirName)
     return 0;
 }
 
-#include "WindowsHelpers.h"
+
 
 
 
