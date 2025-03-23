@@ -37,7 +37,7 @@ bool FolderConvert::IsFileAcceptedAudioFile(std::filesystem::path filePath)
     return filePath.has_extension() && (fileExtensionList.find(filePath.extension().wstring()) != fileExtensionList.end());
 }
 
-int FolderConvert::ScanAudioFiles(std::tuple<int, long, long long>& scanInfo, const std::filesystem::path& directory, bool bAsync)
+int FolderConvert::ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::path& directory, bool bAsync)
 {
     std::wstring entryPath{ directory.wstring() };
     std::wcout << std::endl << L"Scanning Dictionary: " << entryPath << std::endl;
@@ -50,16 +50,23 @@ int FolderConvert::ScanAudioFiles(std::tuple<int, long, long long>& scanInfo, co
             return -1;
         }
 
-        auto& [retStatus, nFiles, nFilesSize] { scanInfo };
-
-        // int nFileCount{ 0 };
-        // long long nDictionartFilesSize{ 0 };
-
         for (const auto& entry : fs::recursive_directory_iterator(directory)) {
-            if (entry.is_regular_file() && entry.path().has_extension() && IsFileConvertable(entry.path())) {
-          //      std::wcout << L"Found Audio File: " << entry.path().wstring() << std::endl;
-                nFiles++;
-                nFilesSize += entry.file_size();
+            if (entry.is_directory()) {
+				scanInfo.folders_count++;
+            }
+            else if (!entry.is_regular_file()) {
+                scanInfo.not_regular_file_count++;
+            }
+            else if (!entry.path().has_extension()) {
+                scanInfo.file_with_no_extension_count++;
+            }
+            else if (!IsFileConvertable(entry.path())) {
+                scanInfo.not_convertable_file_count++;
+            }
+            else
+            {
+                scanInfo.convertable_files_size += entry.file_size();
+                scanInfo.convertable_file_count += 1;
             }
         }
     }
