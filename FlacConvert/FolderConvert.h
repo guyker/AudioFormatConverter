@@ -8,8 +8,8 @@ class FolderConvert
 {
 public:
 
-    int ConverAudioFiles(const std::filesystem::path& directory, bool bAsync = false);
-    int ScanAudioFiles(std::tuple<int, long, long long>& scanInfo, const std::filesystem::path& directory, bool bAsync = false);
+    static int ConverAudioFiles(const std::filesystem::path& directory, bool bAsync = false);
+    static int ScanAudioFiles(std::tuple<int, long, long long>& scanInfo, const std::filesystem::path& directory, bool bAsync = false);
 
 
     static bool IsFileConvertable(std::filesystem::path pathName);
@@ -17,8 +17,11 @@ public:
 
 
 private:
-    std::string const _TargetFileType{ ".flac" };
 
+    static constexpr std::string_view GetTargetFileType() {
+        return ".flac";
+    }
+   
     static std::wstring ToLower(const std::wstring& str);
 };
 

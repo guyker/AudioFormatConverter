@@ -45,18 +45,14 @@ int ConvertFLACToFLAC(std::vector<std::tuple<fs::path, fs::path>> mediaDirectory
 {
     for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
     {
-        _TMPDirectory = std::filesystem::temp_directory_path();
-
-        std::string userSourcePath;
+        //_TMPDirectory = std::filesystem::temp_directory_path();
 
         std::wcout << "Using " << mediaPath << std::endl;
 
         auto startTime = std::chrono::steady_clock::now();
 
         std::tuple<int, long, long long> scanInfo{ 0, 0, 0 };
-
         FolderConvert fc;
-
         int retStatus = fc.ScanAudioFiles(scanInfo, mediaPath);
 
         //wait

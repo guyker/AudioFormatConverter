@@ -94,12 +94,12 @@ int FolderConvert::ConverAudioFiles(const std::filesystem::path& directory, bool
             if (entry.path().has_extension() && IsFileConvertable(entry.path())) {
 
                 fs::path targetPath = entry.path();
-                targetPath.replace_extension(_TargetFileType);
+                targetPath.replace_extension(GetTargetFileType());
 
                 fs::path targetTMPPath = entry.path();
                 fs::path targetTMPFileName = targetTMPPath.stem() += fs::path{ "_TMP" };
                 targetTMPPath.replace_filename(targetTMPFileName);
-                targetTMPPath += _TargetFileType;
+                targetTMPPath += GetTargetFileType();
 
                 //     fs::path targetTMPPath = _TMPDirectory += entry.path().stem() += fs::path{ "_TMP" } += fs::path{ _TargetFileType };
 
