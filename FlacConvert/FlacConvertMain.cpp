@@ -262,27 +262,27 @@ int main()
 
     fs::path databasePath = outputPath / databaseFileName;
 
-    if (action == ConverEnum)
+    switch (action)
     {
+    case ConverEnum:
         ConvertFLACToFLAC(mediaDirectoryList);
-    }
-    else if (action == CreateJSONEnum)
-    {
+        break;
+    case CreateJSONEnum:
         ScanFolderAndCreateJSON(mediaDirectoryList);
-    }
-    else if (action == CreateDBFromFolderEnum)
-    {
+        break;
+    case CreateDBFromFolderEnum:
         ScanFolderAndCreateDB(mediaDirectoryList);
-    }
-    else if (action == ProcessJSONEnum)
-    {
-		ScanFolderProcessJSONAndFindDuplicates(mediaDirectoryList);
-    }
-    else if (action == PopulateJsonToDBEnum)
-    {
+        break;
+    case ProcessJSONEnum:
+        ScanFolderProcessJSONAndFindDuplicates(mediaDirectoryList);
+        break;
+    case PopulateJsonToDBEnum:
         ExportJSONToDB(mediaDirectoryList, databasePath);
+        break;
+    default:
+        std::cout << "Acrtion not found: " << action;
+        break;
     }
-
 
     return 0;
 }
