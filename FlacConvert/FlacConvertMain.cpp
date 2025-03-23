@@ -43,35 +43,33 @@ fs::path _TMPDirectory{  };
 
 int ConvertFLACToFLAC(std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList)
 {
+    std::wcout << "Processing " << mediaDirectoryList.size() << " directories" << std::endl;
+
     for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
     {
-        //_TMPDirectory = std::filesystem::temp_directory_path();
-
-        std::wcout << "Using " << mediaPath << std::endl;
+        std::wcout << "Scanning: " << mediaPath << "..." << std::endl;
 
         auto startTime = std::chrono::steady_clock::now();
 
         ScanInfo scanInfo{};
         int retStatus = FolderConvert::ScanAudioFiles(scanInfo, mediaPath);
 
-        //wait
-        //std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
-        //std::getchar();
-
-        std::wcout << "Convertables:" <<
-            scanInfo.convertable_file_count << ", Not Regular: " <<
+        std::wcout << "Files: " <<
+            scanInfo.convertable_file_count << " (Not Regular: " <<
             scanInfo.not_regular_file_count << ", No extension: " <<
             scanInfo.file_with_no_extension_count << ", Not convertable: " <<
             scanInfo.not_convertable_file_count << ", Folders: " <<
-            scanInfo.folders_count << std::endl;
+            scanInfo.folders_count << ")" << std::endl;
         std::wcout << "Total Size:" << scanInfo.convertable_files_size << std::endl;
         std::wcout << std::endl << "======================" << std::endl;
 
 
+        //std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
+        //std::getchar();
 
-        auto ret = FolderConvert::ConverAudioFiles(mediaPath, false);
+        auto ret = FolderConvert::ConverAudioFiles(mediaPath, scanInfo, false);
         if (ret == -1) {
-            std::wcout << "***STOP*** ConverAudioFiles" << std::endl;
+            std::wcout << "***ERROR*** ConverAudioFiles" << std::endl;
             return -1;
         }
 

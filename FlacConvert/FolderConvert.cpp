@@ -40,7 +40,7 @@ bool FolderConvert::IsFileAcceptedAudioFile(std::filesystem::path filePath)
 int FolderConvert::ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::path& directory, bool bAsync)
 {
     std::wstring entryPath{ directory.wstring() };
-    std::wcout << std::endl << L"Scanning Dictionary: " << entryPath << std::endl;
+    //std::wcout << std::endl << L"Scanning Dictionary: " << entryPath << std::endl;
 
     // Recursively process all subdirectories within the specified directory
     std::filesystem::directory_iterator directoryIT;
@@ -79,13 +79,13 @@ int FolderConvert::ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::pat
     return 0;
 }
 
-int FolderConvert::ConverAudioFiles(const std::filesystem::path& directory, bool bAsync)
+int FolderConvert::ConverAudioFiles(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync)
 {
     std::vector<std::shared_ptr<MediaConvertionTask>> tasksVector;
 
     for (const fs::directory_entry& entry : fs::directory_iterator(directory)) {
         if (entry.is_directory()) {
-            int ret = ConverAudioFiles(entry.path(), bAsync);
+            int ret = ConverAudioFiles(entry.path(), scanInfo, bAsync);
             if (ret == -1) {
                 std::cout << "***ERROR*** returned from ConverAudioFiles" << std::endl;
                 return -1;

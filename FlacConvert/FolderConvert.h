@@ -22,7 +22,7 @@ class FolderConvert
 {
 public:
 
-    static int ConverAudioFiles(const std::filesystem::path& directory, bool bAsync = false);
+    static int ConverAudioFiles(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync = false);
     static int ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::path& directory, bool bAsync = false);
 
 
