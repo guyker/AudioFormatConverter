@@ -89,7 +89,95 @@ int ConvertFLACToFLAC(const fs::path& dirName)
 }
 
 
+int ScanFolderAndCreateJSON(const fs::path& mediaPath, const fs::path& jsonPath)
+{
 
+    auto startTime = std::chrono::steady_clock::now();
+    std::cout << std::format("===>Processing new collection: {}...", mediaPath.generic_string()) << std::endl;
+
+    AlbumCollection ac;
+    ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
+    ac.SortByNumberOfTracks();         // sort by album size - optional
+    auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
+    ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
+
+    auto endTime = std::chrono::steady_clock::now();
+    std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaPath.generic_string(), nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
+    std::cout << std::endl;
+
+    return 0;
+}
+
+int ScanFolderAndCreateDB(const fs::path& mediaPath, const fs::path& jsonPath)
+{
+    auto startTime = std::chrono::steady_clock::now();
+    std::cout << std::format("===>Processing new collection (DB): {}...", mediaPath.generic_string()) << std::endl;
+
+    AlbumCollection ac;
+    ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
+    ac.SortByNumberOfTracks();         // sort by album size - optional
+
+    //            auto nAlbums = ac.RefreshAlbumCollectionMediaInformation(true); //load media metadate
+    auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
+
+    ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
+
+    auto endTime = std::chrono::steady_clock::now();
+    std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaPath.generic_string(), nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
+    std::cout << std::endl;
+    return 0;
+}
+
+int ScanFolderProcessJSONAndFindDuplicates(std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList)
+{
+    DirectoryContentEntryList medialList;
+    for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+    {
+        std::wcout << std::format(L"Processing: {}", jsonPath.generic_wstring()) << std::endl;
+
+        auto const& accumulatedList = AlbumCollection::LoadAlbumCollectionFromJSON(jsonPath, true);
+        medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
+    }
+
+    AlbumCollection ac(std::move(medialList));
+    // ***by know medialList should contain an empty list***
+
+    ac.SortByNumberOfTracks();
+    auto dupList = ac.FindDuplicatedAlbums();
+
+
+    auto iCount = dupList.size();
+    int iCurrent = 0;
+    for (auto entry : dupList)
+    {
+        iCurrent++;
+        auto [dir1, dir2] = entry;
+
+
+        std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir1) << std::endl;
+        std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir2) << std::endl << std::endl;
+
+        //auto userSelection = std::getchar();
+        WindowsHelpers::OpenDirectoryInExplorer(dir1);
+        WindowsHelpers::OpenDirectoryInExplorer(dir2);
+
+        iCount--;
+    }
+
+    return 0;
+}
+
+int ExportJSONToDB(std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList, fs::path databasePath)
+{
+
+    for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+    {
+        AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonPath));
+        ac.SaveMediaInfoDocumentToDB(databasePath);
+    }
+
+    return 0;
+}
 
 
 int main()
@@ -179,84 +267,23 @@ int main()
     {
         for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
         {
-            auto startTime = std::chrono::steady_clock::now();
-            std::cout << std::format("===>Processing new collection: {}...", mediaPath.generic_string()) << std::endl;
-
-            AlbumCollection ac;
-            ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
-            ac.SortByNumberOfTracks();         // sort by album size - optional
-            auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
-            ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
-
-            auto endTime = std::chrono::steady_clock::now();
-            std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaPath.generic_string(), nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
-            std::cout << std::endl;
+			ScanFolderAndCreateJSON(mediaPath, jsonPath);
         }
     }
     else if (action == CreateDBFromFolderEnum)
     {
         for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
         {
-            auto startTime = std::chrono::steady_clock::now();
-            std::cout << std::format("===>Processing new collection (DB): {}...", mediaPath.generic_string()) << std::endl;
-
-            AlbumCollection ac;
-            ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
-            ac.SortByNumberOfTracks();         // sort by album size - optional
-            
-//            auto nAlbums = ac.RefreshAlbumCollectionMediaInformation(true); //load media metadate
-            auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
-
-            ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
-
-            auto endTime = std::chrono::steady_clock::now();
-            std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaPath.generic_string(), nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
-            std::cout << std::endl;
+			ScanFolderAndCreateDB(mediaPath, jsonPath);
         }
     }
     else if (action == ProcessJSONEnum)
     {
-        DirectoryContentEntryList medialList;
-        for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
-        {
-            std::wcout << std::format(L"Processing: {}", jsonPath.generic_wstring()) << std::endl;
-
-            auto const& accumulatedList = AlbumCollection::LoadAlbumCollectionFromJSON(jsonPath, true);
-            medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
-        }
-
-        AlbumCollection ac(std::move(medialList));
-        // ***by know medialList should contain an empty list***
-
-        ac.SortByNumberOfTracks();
-        auto dupList = ac.FindDuplicatedAlbums();
-
-
-        auto iCount = dupList.size();
-        int iCurrent = 0;
-        for (auto entry : dupList)
-        {
-            iCurrent++;
-            auto [dir1, dir2] = entry;
-
-            
-            std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir1) << std::endl;
-            std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir2) << std::endl << std::endl;
-            
-            //auto userSelection = std::getchar();
-            WindowsHelpers::OpenDirectoryInExplorer(dir1);
-            WindowsHelpers::OpenDirectoryInExplorer(dir2);
-
-            iCount--;
-        }
+		ScanFolderProcessJSONAndFindDuplicates(mediaDirectoryList);
     }
     else if (action == PopulateJsonToDBEnum)
     {
-        for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
-        {
-            AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonPath));
-            ac.SaveMediaInfoDocumentToDB(databasePath);
-        }
+        ExportJSONToDB(mediaDirectoryList, databasePath);
     }
 
 
