@@ -41,90 +41,98 @@ namespace fs = std::filesystem;
 fs::path _TMPDirectory{  };
 
 
-int ConvertFLACToFLAC(const fs::path& dirName)
+int ConvertFLACToFLAC(std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList)
 {
-    _TMPDirectory = std::filesystem::temp_directory_path();
+    for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+    {
+        _TMPDirectory = std::filesystem::temp_directory_path();
 
-    std::string userSourcePath;
- 
-    std::wcout << "Using " << dirName << std::endl;
+        std::string userSourcePath;
 
-    auto startTime = std::chrono::steady_clock::now();
+        std::wcout << "Using " << mediaPath << std::endl;
 
-    std::tuple<int, long, long long> scanInfo{ 0, 0, 0};
+        auto startTime = std::chrono::steady_clock::now();
 
-    FolderConvert fc;
+        std::tuple<int, long, long long> scanInfo{ 0, 0, 0 };
 
-    int retStatus = fc.ScanAudioFiles(scanInfo, dirName);
+        FolderConvert fc;
 
-    //wait
-    //std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
-    //std::getchar();
+        int retStatus = fc.ScanAudioFiles(scanInfo, mediaPath);
 
-    auto& [retStatus2, nFiles, nFilesSize] = scanInfo;
+        //wait
+        //std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
+        //std::getchar();
 
-    std::wcout << "Total Files:" << nFiles << std::endl;
-    std::wcout << "Total Size:" << nFilesSize << std::endl;
-    std::wcout << std::endl << "======================" << std::endl;
+        auto& [retStatus2, nFiles, nFilesSize] = scanInfo;
 
-    
+        std::wcout << "Total Files:" << nFiles << std::endl;
+        std::wcout << "Total Size:" << nFilesSize << std::endl;
+        std::wcout << std::endl << "======================" << std::endl;
 
-    auto ret = fc.ConverAudioFiles(dirName, false);
-    if (ret == -1) {
-        std::wcout << "***STOP*** ConverAudioFiles" << std::endl;
-        return -1;
+
+
+        auto ret = fc.ConverAudioFiles(mediaPath, false);
+        if (ret == -1) {
+            std::wcout << "***STOP*** ConverAudioFiles" << std::endl;
+            return -1;
+        }
+
+        std::wcout << std::endl << L"Success!!!" << std::endl;
+
+
+        //log total execution time (millis)
+        auto endTime = std::chrono::steady_clock::now();
+        std::wcout << "-->### Total processing time(milliseconds) : "
+            << std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()
+            << " ms" << std::endl;
     }
 
-    std::wcout << std::endl << L"Success!!!" << std::endl;
-
-
-       //log total execution time (millis)
-    auto endTime = std::chrono::steady_clock::now();
-    std::wcout << "-->### Total processing time(milliseconds) : "
-        << std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()
-        << " ms" << std::endl;
-
-
     return 0;
 }
 
 
-int ScanFolderAndCreateJSON(const fs::path& mediaPath, const fs::path& jsonPath)
+int ScanFolderAndCreateJSON(std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList)
 {
+    for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+    {
+        auto startTime = std::chrono::steady_clock::now();
+        std::cout << std::format("===>Processing new collection: {}...", mediaPath.generic_string()) << std::endl;
 
-    auto startTime = std::chrono::steady_clock::now();
-    std::cout << std::format("===>Processing new collection: {}...", mediaPath.generic_string()) << std::endl;
+        AlbumCollection ac;
+        ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
+        ac.SortByNumberOfTracks();         // sort by album size - optional
+        auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
+        ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
 
-    AlbumCollection ac;
-    ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
-    ac.SortByNumberOfTracks();         // sort by album size - optional
-    auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
-    ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
-
-    auto endTime = std::chrono::steady_clock::now();
-    std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaPath.generic_string(), nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
-    std::cout << std::endl;
+        auto endTime = std::chrono::steady_clock::now();
+        std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaPath.generic_string(), nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
+        std::cout << std::endl;
+    }
 
     return 0;
 }
 
-int ScanFolderAndCreateDB(const fs::path& mediaPath, const fs::path& jsonPath)
+int ScanFolderAndCreateDB(std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList)
 {
-    auto startTime = std::chrono::steady_clock::now();
-    std::cout << std::format("===>Processing new collection (DB): {}...", mediaPath.generic_string()) << std::endl;
+    for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+    {
+        auto startTime = std::chrono::steady_clock::now();
+        std::cout << std::format("===>Processing new collection (DB): {}...", mediaPath.generic_string()) << std::endl;
 
-    AlbumCollection ac;
-    ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
-    ac.SortByNumberOfTracks();         // sort by album size - optional
+        AlbumCollection ac;
+        ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
+        ac.SortByNumberOfTracks();         // sort by album size - optional
 
-    //            auto nAlbums = ac.RefreshAlbumCollectionMediaInformation(true); //load media metadate
-    auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
+        //            auto nAlbums = ac.RefreshAlbumCollectionMediaInformation(true); //load media metadate
+        auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
 
-    ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
+        ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
 
-    auto endTime = std::chrono::steady_clock::now();
-    std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaPath.generic_string(), nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
-    std::cout << std::endl;
+        auto endTime = std::chrono::steady_clock::now();
+        std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaPath.generic_string(), nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
+        std::cout << std::endl;
+    }
+
     return 0;
 }
 
@@ -256,26 +264,15 @@ int main()
 
     if (action == ConverEnum)
     {
-            //=========CONVERT 24BIT to FLAC
-        for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
-        {
-            ConvertFLACToFLAC(mediaPath);
-        }
-
+        ConvertFLACToFLAC(mediaDirectoryList);
     }
     else if (action == CreateJSONEnum)
     {
-        for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
-        {
-			ScanFolderAndCreateJSON(mediaPath, jsonPath);
-        }
+        ScanFolderAndCreateJSON(mediaDirectoryList);
     }
     else if (action == CreateDBFromFolderEnum)
     {
-        for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
-        {
-			ScanFolderAndCreateDB(mediaPath, jsonPath);
-        }
+        ScanFolderAndCreateDB(mediaDirectoryList);
     }
     else if (action == ProcessJSONEnum)
     {
