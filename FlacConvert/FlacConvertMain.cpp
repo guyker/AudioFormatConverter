@@ -64,10 +64,12 @@ int ConvertFLACToFLAC(std::vector<std::tuple<fs::path, fs::path>> mediaDirectory
         std::wcout << std::endl << "======================" << std::endl;
 
 
+
+
         //std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
         //std::getchar();
 
-        auto ret = FolderConvert::ConverAudioFiles(mediaPath, scanInfo, false);
+        auto ret = FolderConvert::ConverAudioFolder(mediaPath, scanInfo, false);
         if (ret == -1) {
             std::wcout << "***ERROR*** ConverAudioFiles" << std::endl;
             return -1;
@@ -242,7 +244,7 @@ int main()
 
 #else
   //  action = CreateJSONEnum;
-    const fs::path outputPath{ "\\\\?\\R:\\tmp\24" };
+    const fs::path outputPath{ "\\\\?\\R:\\tmp\\24" };
 
     //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = { 
     //    {"\\\\?\\R:\\24", outputPath / "MediaResult.json"}

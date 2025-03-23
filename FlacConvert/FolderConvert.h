@@ -24,8 +24,10 @@ class FolderConvert
 public:
 
     static int ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::path& directory, bool bAsync = false);
-    static int ConverAudioFiles(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync = false);
-    static int ConverAudioFiles_OLD(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync = false);
+    
+    static int ConverAudioFolder(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync);
+    //static int ConverAudioFolder(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync = false);
+    static int ConverAudioFolder2(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync = false);
 
     static bool IsFileConvertable(std::filesystem::path pathName);
     static bool IsFileAcceptedAudioFile(std::filesystem::path filePath);

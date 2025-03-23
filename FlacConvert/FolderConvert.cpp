@@ -82,68 +82,14 @@ int FolderConvert::ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::pat
 }
 
 
-int FolderConvert::ConverAudioFiles(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync)
-{
-    std::vector<std::shared_ptr<MediaConvertionTask>> tasksVector;
 
-    for (auto& mediaFile : scanInfo.mediaList) {
-        fs::path targetPath = mediaFile.path();
-        targetPath.replace_extension(GetTargetFileType());
-
-        fs::path targetTMPPath = mediaFile.path();
-        fs::path targetTMPFileName = targetTMPPath.stem() += fs::path{ "_TMP" };
-        targetTMPPath.replace_filename(targetTMPFileName);
-        targetTMPPath += GetTargetFileType();
-
-        //     fs::path targetTMPPath = _TMPDirectory += entry.path().stem() += fs::path{ "_TMP" } += fs::path{ _TargetFileType };
-
-        std::shared_ptr<MediaConvertionTask> pTask = bAsync ? std::make_shared<MediaConvertionAsyncTask>(mediaFile.path(), targetPath, targetTMPPath) : std::make_shared<MediaConvertionTask>(mediaFile.path(), targetPath, targetTMPPath);
-        tasksVector.push_back(pTask);
-    }
-
-
-
-    //process all files in current directory
-    int processStatus{ 0 };
-    std::for_each(tasksVector.begin(), tasksVector.end(), [](auto& f) {
-        f->Run();
-        if (f->GetStatus() == -1)
-        {
-
-        }
-
-        });
-
-    std::for_each(tasksVector.begin(), tasksVector.end(), [](auto& f) { f->PostRun(); });
-
-
-    for (auto& item : tasksVector)
-    {
-        if (item->GetStatus() != 0)
-        {
-            std::cout << "***STOP*** error found: " << item->GetStatus() << std::endl;
-            return -1;
-
-        }
-    }
-    //auto found = std::find_if(tasksVector.begin(), tasksVector.end(), [](auto& f) { return f->GetStatus() == -1; });
-    //if (found != tasksVector.end()) {
-    //    std::cout << "***STOP*** error found: " << (*found)->GetStatus() << std::endl;
-    //    return -1;
-    //}
-
-
-    return 0;
-}
-
-
-int FolderConvert::ConverAudioFiles_OLD(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync)
+int FolderConvert::ConverAudioFolder(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync)
 {
     std::vector<std::shared_ptr<MediaConvertionTask>> tasksVector;
 
     for (const fs::directory_entry& entry : fs::directory_iterator(directory)) {
         if (entry.is_directory()) {
-            int ret = ConverAudioFiles(entry.path(), scanInfo, bAsync);
+            int ret = ConverAudioFolder(entry.path(), scanInfo, bAsync);
             if (ret == -1) {
                 std::cout << "***ERROR*** returned from ConverAudioFiles" << std::endl;
                 return -1;
@@ -198,7 +144,7 @@ int FolderConvert::ConverAudioFiles_OLD(const std::filesystem::path& directory, 
 
         }
 
-    });
+        });
 
     std::for_each(tasksVector.begin(), tasksVector.end(), [](auto& f) { f->PostRun(); });
 
@@ -221,5 +167,88 @@ int FolderConvert::ConverAudioFiles_OLD(const std::filesystem::path& directory, 
 
     return 0;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int FolderConvert::ConverAudioFolder2(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync)
+{
+    std::vector<std::shared_ptr<MediaConvertionTask>> tasksVector;
+
+    std::vector<MediaConvertionTask> AlbumConvertTask;
+
+    std::vector<std::shared_ptr<std::vector<MediaConvertionTask>>> tasksVector2;
+
+
+
+
+    for (auto& mediaFile : scanInfo.mediaList) {
+        fs::path targetPath = mediaFile.path();
+        targetPath.replace_extension(GetTargetFileType());
+
+        fs::path targetTMPPath = mediaFile.path();
+        fs::path targetTMPFileName = targetTMPPath.stem() += fs::path{ "_TMP" };
+        targetTMPPath.replace_filename(targetTMPFileName);
+        targetTMPPath += GetTargetFileType();
+
+        //     fs::path targetTMPPath = _TMPDirectory += entry.path().stem() += fs::path{ "_TMP" } += fs::path{ _TargetFileType };
+
+        std::shared_ptr<MediaConvertionTask> pTask = bAsync ? std::make_shared<MediaConvertionAsyncTask>(mediaFile.path(), targetPath, targetTMPPath) : std::make_shared<MediaConvertionTask>(mediaFile.path(), targetPath, targetTMPPath);
+        tasksVector.push_back(pTask);
+    }
+
+
+
+    //process all files in current directory
+    int processStatus{ 0 };
+	for (auto& task : tasksVector) {
+		task->Run();
+		if (task->GetStatus() == -1) {
+			std::cerr << "***ERROR*** Media convert error: " << task->GetStatus() << std::endl;
+		}
+	}
+    for (auto& task : tasksVector) {
+		task->PostRun();
+        if (task->GetStatus() != 0)
+        {
+            std::cerr << "***STOP*** error found: " << task->GetStatus() << std::endl;
+        }
+    }
+
+    for (auto& item : tasksVector)
+    {
+        if (item->GetStatus() != 0)
+        {
+            std::cerr << "***STOP***2 error found: " << item->GetStatus() << std::endl;
+            return -1;
+
+        }
+    }
+
+
+    //auto found = std::find_if(tasksVector.begin(), tasksVector.end(), [](auto& f) { return f->GetStatus() == -1; });
+    //if (found != tasksVector.end()) {
+    //    std::cout << "***STOP*** error found: " << (*found)->GetStatus() << std::endl;
+    //    return -1;
+    //}
+
+
+    return 0;
+}
+
 
 

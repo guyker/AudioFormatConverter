@@ -5,6 +5,10 @@
 
 namespace fs = std::filesystem;
 
+constexpr std::wstring_view FFMPEG_EXE_NAME{ L"ffmpeg" };
+constexpr std::wstring_view FFMPEG_ARGUMENTS{ L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats" };
+
+
 int MediaConvertionTask::ConvertFile()
 {
     if (_status != -1) {
@@ -14,8 +18,8 @@ int MediaConvertionTask::ConvertFile()
         //std::string cmdExecName{ "ffmpeg" };
         //std::string command{ cmdExecName + R"( -i ")"s + _sourcePath.generic_string() + R"(" )"s + convertParams + R"( ")"s + _targetPath.generic_string() + R"(")"s };
 
-        std::wstring cmdExecNameW{ L"ffmpeg" };
-        std::wstring convertParamsW{ L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats"s };
+        std::wstring cmdExecNameW{ FFMPEG_EXE_NAME };
+        std::wstring convertParamsW{ FFMPEG_ARGUMENTS };
         std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + LR"( ")"s + _targetTMPPath.generic_wstring() + LR"(")"s };
         //std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + L"'" + _targetTMPPath.generic_wstring() + L"'" };
 
