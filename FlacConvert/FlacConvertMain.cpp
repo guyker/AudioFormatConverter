@@ -224,11 +224,13 @@ bool LoadConfiguration()
     std::filesystem::path currentPath = std::filesystem::current_path();
 	std::filesystem::path configPath = currentPath / "config.json";
 
-	//if (!fs::exists(configPath))
-	//{
-	//	std::cout << "Configuration file not found: " << configPath << std::endl;
-	//	return false;
-	//}
+    std::cout << "Configuration file path: " << configPath << std::endl;
+
+	if (!fs::exists(configPath))
+	{
+		std::cout << "Configuration file not found: " << std::endl;
+		return false;
+	}
 
 
 
