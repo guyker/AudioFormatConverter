@@ -35,6 +35,7 @@
 #include <fcntl.h>
 #include <io.h>
 #include "WindowsHelpers.h"
+#include "AppSettings.h"
 
 
 namespace fs = std::filesystem;
@@ -228,17 +229,29 @@ bool LoadConfiguration()
 
 	if (!fs::exists(configPath))
 	{
+        //AppSettingsJson appSettingsJson{
+        //    "\\\\?\\R:\\tmp\\24",
+        //    {
+        //        {"\\\\?\\R:\\tmp\\24", "MediaResult_flac_result.json"},
+        //        {"\\\\?\\R:\\tmp\24", "MediaResult_24_rdy.json"}
+        //    }
+        //};
+        //auto str = appSettingsJson.toJson();
+        //appSettingsJson.saveToFile("R:\\tmp\\24\\config.json");
+
+
 		std::cout << "Configuration file not found: " << std::endl;
 		return false;
 	}
-
-
-
-    //std::ifstream configFile(configPath);
-    //if (!configFile) {
-    //    std::cerr << "Error: Config file not found at " << configPath << std::endl;
-    //    return true;
-    //}
+    AppSettingsJson appSettingsJson{
+    "\\\\?\\R:\\tmp\\24",
+    {
+        {true, "\\\\?\\R:\\tmp\\24", "MediaResult_flac_result.json"},
+        {true, "\\\\?\\R:\\tmp\24", "MediaResult_24_rdy.json"}
+    }
+};
+auto str = appSettingsJson.toJson();
+appSettingsJson.saveToFile("R:\\tmp\\24\\config.json");
 
 	return true;
 }   
