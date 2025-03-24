@@ -58,8 +58,8 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="config.json">
+    <CopyFileToFolders Include="config.json">
       <Filter>Resources</Filter>
-    </None>
+    </CopyFileToFolders>
   </ItemGroup>
 </Project>

@@ -217,9 +217,40 @@ ConvertActionEnum GetUserAction()
 	return action;
 }
 
+
+bool LoadConfiguration()
+{
+
+    std::filesystem::path currentPath = std::filesystem::current_path();
+	std::filesystem::path configPath = currentPath / "config.json";
+
+	//if (!fs::exists(configPath))
+	//{
+	//	std::cout << "Configuration file not found: " << configPath << std::endl;
+	//	return false;
+	//}
+
+
+
+    //std::ifstream configFile(configPath);
+    //if (!configFile) {
+    //    std::cerr << "Error: Config file not found at " << configPath << std::endl;
+    //    return true;
+    //}
+
+	return true;
+}   
+
+
 int main()
 {
-    std::filesystem::path currentPath = std::filesystem::current_path();
+    if (!LoadConfiguration())
+    {
+        std::cout << "Failed to load Configuration File" << std::endl;
+
+		return -1;
+    }
+
 
     const fs::path databaseFileName{ "all_albums.db" };
 
