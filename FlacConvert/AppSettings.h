@@ -31,6 +31,7 @@ struct MediaDirectoryElement
 
 struct AppSettingsJson
 {
+	std::string Version {"1.0.0"};
 	std::string OutputPath{};
 	std::vector<MediaDirectoryElement> MediaDirectoryList{};
 
@@ -38,6 +39,24 @@ struct AppSettingsJson
 
 	void saveToFile(const std::string& filename) const;
 	std::string toJson() const;
+
+
+	static AppSettingsJson GetDefaultSettings()
+	{
+		auto eerr = new MediaDirectoryElement{ true, "\\\\?\\R:\\tmp\\24", "MediaResult_flac_result.json" };
+
+		AppSettingsJson appSettingsJson
+		{	
+			"1.0.0",
+			"\\\\?\\R:\\tmp\\24",
+			{
+				{true, "\\\\?\\R:\\tmp\\24", "MediaResult_flac_result.json"},
+				{true, "\\\\?\\R:\\tmp\\24", "MediaResult_24_rdy.json"}
+			}
+		};
+
+		return appSettingsJson;
+	}
 };
 
 class AppSettings

@@ -243,15 +243,10 @@ bool LoadConfiguration()
 		std::cout << "Configuration file not found: " << std::endl;
 		return false;
 	}
-    AppSettingsJson appSettingsJson{
-    "\\\\?\\R:\\tmp\\24",
-    {
-        {true, "\\\\?\\R:\\tmp\\24", "MediaResult_flac_result.json"},
-        {true, "\\\\?\\R:\\tmp\24", "MediaResult_24_rdy.json"}
-    }
-};
-auto str = appSettingsJson.toJson();
-appSettingsJson.saveToFile("R:\\tmp\\24\\config.json");
+
+	auto defaultSettings = AppSettingsJson::GetDefaultSettings();
+    auto str = defaultSettings.toJson();
+    defaultSettings.saveToFile("R:\\tmp\\24\\config.json");
 
 	return true;
 }   
