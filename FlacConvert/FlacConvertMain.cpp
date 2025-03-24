@@ -40,6 +40,7 @@
 namespace fs = std::filesystem;
 fs::path _TMPDirectory{  };
 
+enum ConvertActionEnum { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
 
 int ConvertFLACToFLAC(std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList)
 {
@@ -184,14 +185,9 @@ int ExportJSONToDB(std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryLis
     return 0;
 }
 
-
-int main()
+ConvertActionEnum GetUserAction()
 {
-
-    enum Action { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
-
-    Action action{ NullEnum };
-    const fs::path databaseFileName{ "all_albums.db" };
+    ConvertActionEnum action{ NullEnum };
 
     std::cout << "Select run option [1 - Re/Convert FLAC, 2 - Scan directories, 3 - Get Duplicates, 4 - Update DB, XX 5 - Scan DIR to DB, ]" << std::endl;
     char input = getchar();
@@ -214,10 +210,18 @@ int main()
         break;
     default:
         std::cout << "Selection Error: " << input;
-        return 0;
+        action = NullEnum;
         break;
     }
 
+	return action;
+}
+
+int main()
+{
+    std::filesystem::path currentPath = std::filesystem::current_path();
+
+    const fs::path databaseFileName{ "all_albums.db" };
 
 #if 0
   //  action = CreateJSONEnum;
@@ -256,9 +260,9 @@ int main()
     };
 #endif
 
-
     fs::path databasePath = outputPath / databaseFileName;
 
+    auto action = GetUserAction();
     switch (action)
     {
     case ConverEnum:
