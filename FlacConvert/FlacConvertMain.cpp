@@ -153,7 +153,6 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
     ac.SortByNumberOfTracks();
     auto dupList = ac.FindDuplicatedAlbums();
 
-
     auto iCount = dupList.size();
     int iCurrent = 0;
     for (auto entry : dupList)
@@ -220,47 +219,11 @@ ConvertActionEnum GetUserAction()
 }
 
 
-std::shared_ptr<AppSettingsJson> LoadConfiguration()
-{
-    std::filesystem::path configPath;
-
-    //Get configuration file path from current directory
-    if (AppSettingsJson::DefaultConfigDirectory == nullptr || *AppSettingsJson::DefaultConfigDirectory == '\0')
-    {
-        std::filesystem::path currentPath = std::filesystem::current_path();
-        configPath = currentPath / AppSettingsJson::DefaultConfigFileName;
-    }
-	else
-	{
-		configPath = fs::path(AppSettingsJson::DefaultConfigDirectory) / fs::path(AppSettingsJson::DefaultConfigFileName);
-	}
-   
-
-    std::cout << "Configuration file path: " << configPath << std::endl;
-
-	if (fs::exists(configPath))
-	{
-        std::shared_ptr<AppSettingsJson> appSettingPtr = std::make_shared<AppSettingsJson>();
-		appSettingPtr->loadFromFile(configPath.string());
-
-        return appSettingPtr;
-	}
-    else
-    {
-		std::cout << "Configuration file not found - Generating default config file, please update settings in config file and run again" << std::endl;
-
-        auto defaultSettings = AppSettingsJson::GetDefaultSettings();
-        auto str = defaultSettings.toJsonString();
-        defaultSettings.saveToFile(configPath.string());
-    }
-
-	return nullptr;
-}   
 
 
 int main()
 {
-    auto appSettingPtr = LoadConfiguration();
+    auto appSettingPtr = AppSettingsJson::AppSetting();
     if (appSettingPtr == nullptr)
     {
         std::cout << "Failed to load Configuration File" << std::endl;

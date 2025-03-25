@@ -1,7 +1,67 @@
 #include "AppSettings.h"
 #include "AlbumCollection.h"
 
-constexpr const char* OUTPUT_PATH = "\\\\?\\R:\\tmp\\24";
+
+std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSettingsInstance = nullptr;
+
+//std::shared_ptr<AppSettingsJson> AppSettingsJson::GetDefaultSettings()
+//{
+//	std::shared_ptr<AppSettingsJson> appSettingPtr = std::make_shared<AppSettingsJson>();
+//	appSettingPtr->Version = "1.0.0";
+//	appSettingPtr->WorkingDirectory = OUTPUT_PATH;
+//	appSettingPtr->DatabaseFileName = "all_albums.db";
+//	appSettingPtr->FLACSettings.ffmpeg_exe_name = L"ffmpeg";
+//	appSettingPtr->FLACSettings.ffmpeg_arguments = L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats";
+//	MediaDirectoryElement mediaElement;
+//	mediaElement.isActive = true;
+//	mediaElement.mediaPath = OUTPUT_PATH;
+//	mediaElement.resultPath = OUTPUT_PATH;
+//	appSettingPtr->MediaDirectoryList.push_back(mediaElement);
+//	return appSettingPtr;
+//}
+
+std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting()
+{
+    if (AppSettingsInstance != nullptr)
+    {
+		return AppSettingsInstance;
+    }
+
+    std::filesystem::path configPath;
+
+    //Get configuration file path from current directory
+    if (AppSettingsJson::DefaultConfigDirectory == nullptr || *AppSettingsJson::DefaultConfigDirectory == '\0')
+    {
+        std::filesystem::path currentPath = std::filesystem::current_path();
+        configPath = currentPath / AppSettingsJson::DefaultConfigFileName;
+    }
+    else
+    {
+        configPath = fs::path(AppSettingsJson::DefaultConfigDirectory) / fs::path(AppSettingsJson::DefaultConfigFileName);
+    }
+
+
+    std::cout << "Configuration file path: " << configPath << std::endl;
+
+    if (fs::exists(configPath))
+    {
+        std::shared_ptr<AppSettingsJson> appSettingPtr = std::make_shared<AppSettingsJson>();
+        appSettingPtr->loadFromFile(configPath.string());
+
+		AppSettingsInstance = appSettingPtr;
+    }
+    else
+    {
+        std::cout << "Configuration file not found - Generating default config file, please update settings in config file and run again" << std::endl;
+
+        auto defaultSettings = AppSettingsJson::GetDefaultSettings();
+        auto str = defaultSettings.toJsonString();
+        defaultSettings.saveToFile(configPath.string());
+    }
+
+    return AppSettingsInstance;
+}
+
 
 // Convert wide string to UTF-8 for JSON compatibility
 std::string WideToUTF8(const std::wstring& wstr) {
@@ -40,6 +100,11 @@ std::string AppSettingsJson::toJsonString() const {
         mediaArray.PushBack(mediaObj, allocator);
     }
     doc.AddMember("MediaDirectoryList", mediaArray, allocator);
+
+
+    doc.AddMember("MinMatchingTracksForDuplicate", MinMatchingTracksForDuplicate, allocator);
+    doc.AddMember("SizeMatchPercentageThreshold", SizeMatchPercentageThreshold, allocator);
+
 
     // Convert document to string
     rapidjson::StringBuffer buffer;
@@ -121,6 +186,13 @@ void AppSettingsJson::loadFromFile(const std::string& filename) {
             }
             MediaDirectoryList.push_back(media);
         }
+    }
+
+    if (doc.HasMember("MinMatchingTracksForDuplicate") && doc["MinMatchingTracksForDuplicate"].IsInt()) {
+        MinMatchingTracksForDuplicate = doc["MinMatchingTracksForDuplicate"].GetInt();
+    }
+    if (doc.HasMember("SizeMatchPercentageThreshold") && doc["SizeMatchPercentageThreshold"].IsInt()) {
+        SizeMatchPercentageThreshold = doc["SizeMatchPercentageThreshold"].GetInt();
     }
 }
 

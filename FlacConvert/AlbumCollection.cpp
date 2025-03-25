@@ -1,5 +1,6 @@
 
 #include <ranges>
+#include <algorithm> 
 
 #include "AlbumCollection.h"
 #include "FolderConvert.h"
@@ -527,6 +528,7 @@ std::tuple<MediaInformation, std::string> AlbumCollection::GetMediaInfoFromMedia
 #include <locale>
 #include <codecvt>
 #include <windows.h>
+#include "AppSettings.h"
 
 //create a media file (on filesystem) from a media track
 std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
@@ -667,6 +669,8 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums()
     auto secondIt = firstIt;
     secondIt++;
 
+    auto appSettingPtr = AppSettingsJson::AppSetting();
+	auto minMatchingTracksForDuplicate = appSettingPtr->MinMatchingTracksForDuplicate;
     while (firstIt != _AlbumList.end() && secondIt != _AlbumList.end())
     {
         bool bFound = false;
@@ -676,7 +680,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums()
         auto pushedEndGroupIt = secondIt;
         int itemsInGroup{ 0 };
         auto fileList1Seize{ fileList1.size() };
-        while (secondIt != _AlbumList.end() && fileList1.size() == fileList2.size() && fileList1.size() > 4)
+        while (secondIt != _AlbumList.end() && fileList1.size() == fileList2.size() && fileList1.size() >= minMatchingTracksForDuplicate)
         {
             pushedEndGroupIt = secondIt;
             auto& [dirEntry2, fileList2] = *secondIt;
@@ -708,9 +712,11 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums()
     return duplicatedAlbumList;
 }
 
-
 SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt)
 {
+    auto appSettingPtr = AppSettingsJson::AppSetting();
+    auto sizeMatchPercentageThreshold = appSettingPtr->SizeMatchPercentageThreshold;
+
     SimilarDirectoryEntryList duplicatedAlbumList;
 
     if (firstIt != lastIt && firstIt != albumList.end() && lastIt != albumList.end())
@@ -734,15 +740,16 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(DirectoryConte
                         auto& [trackName1, size1, mediaInfo1, mediaInfoString2] = trackList1[i];
                         auto& [trackName2, size2, mediaInfo2, mediaInfoString1] = trackList2[i];
 
-                        //auto minSize = std::min(mediaInfo1.duration, mediaInfo2.duration);
-                        //auto maxSize = std::max(mediaInfo1.duration, mediaInfo2.duration);
-                        auto minSize = mediaInfo1.duration < mediaInfo2.duration ? mediaInfo1.duration : mediaInfo2.duration;
-                        auto maxSize = mediaInfo1.duration > mediaInfo2.duration ? mediaInfo1.duration : mediaInfo2.duration;
+
+                        auto minSize = (std::min)(mediaInfo1.duration, mediaInfo2.duration);
+                        auto maxSize = (std::max)(mediaInfo1.duration, mediaInfo2.duration);
+                        //auto minSize = mediaInfo1.duration < mediaInfo2.duration ? mediaInfo1.duration : mediaInfo2.duration;
+                        //auto maxSize = mediaInfo1.duration > mediaInfo2.duration ? mediaInfo1.duration : mediaInfo2.duration;
 
                         auto diff = maxSize - minSize;
                         long long result = (long)100 * diff / maxSize;
 
-                        if (result > SimilarPercentageTriggerValue)
+                        if (result > sizeMatchPercentageThreshold)
                         {
                             bPotentialSimilar = false;
                         }
