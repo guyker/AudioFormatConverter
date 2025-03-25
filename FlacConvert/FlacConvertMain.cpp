@@ -219,42 +219,48 @@ ConvertActionEnum GetUserAction()
 }
 
 
-bool LoadConfiguration()
+std::shared_ptr<AppSettingsJson> LoadConfiguration()
 {
+    std::filesystem::path configPath;
 
-    std::filesystem::path currentPath = std::filesystem::current_path();
-	std::filesystem::path configPath = currentPath / "config.json";
+    //Get configuration file path from current directory
+    if (AppSettingsJson::DefaultConfigDirectory == nullptr || *AppSettingsJson::DefaultConfigDirectory == '\0')
+    {
+        std::filesystem::path currentPath = std::filesystem::current_path();
+        configPath = currentPath / AppSettingsJson::DefaultConfigFileName;
+    }
+	else
+	{
+		configPath = fs::path(AppSettingsJson::DefaultConfigDirectory) / fs::path(AppSettingsJson::DefaultConfigFileName);
+	}
+   
 
     std::cout << "Configuration file path: " << configPath << std::endl;
 
-	if (!fs::exists(configPath))
+	if (fs::exists(configPath))
 	{
-        //AppSettingsJson appSettingsJson{
-        //    "\\\\?\\R:\\tmp\\24",
-        //    {
-        //        {"\\\\?\\R:\\tmp\\24", "MediaResult_flac_result.json"},
-        //        {"\\\\?\\R:\\tmp\24", "MediaResult_24_rdy.json"}
-        //    }
-        //};
-        //auto str = appSettingsJson.toJson();
-        //appSettingsJson.saveToFile("R:\\tmp\\24\\config.json");
+        std::shared_ptr<AppSettingsJson> appSettingPtr = std::make_shared<AppSettingsJson>();
+		appSettingPtr->loadFromFile(configPath.string());
 
-
-		std::cout << "Configuration file not found: " << std::endl;
-		return false;
+        return appSettingPtr;
 	}
+    else
+    {
+		std::cout << "Configuration file not found - Generating default config file, please update settings in config file and run again" << std::endl;
 
-	auto defaultSettings = AppSettingsJson::GetDefaultSettings();
-    auto str = defaultSettings.toJson();
-    defaultSettings.saveToFile("R:\\tmp\\24\\config.json");
+        auto defaultSettings = AppSettingsJson::GetDefaultSettings();
+        auto str = defaultSettings.toJsonString();
+        defaultSettings.saveToFile(configPath.string());
+    }
 
-	return true;
+	return nullptr;
 }   
 
 
 int main()
 {
-    if (!LoadConfiguration())
+    auto appSettingPtr = LoadConfiguration();
+    if (appSettingPtr == nullptr)
     {
         std::cout << "Failed to load Configuration File" << std::endl;
 

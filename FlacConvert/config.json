@@ -1,5 +1,20 @@
 {
-  "name": "John Doe",
-  "age": 30,
-  "email": "johndoe@example.com"
+    "Version": "1.0.0",
+    "OutputPath": "\\\\?\\R:\\tmp\\24",
+    "FLACSettings": {
+        "ffmpeg_exe_name": "ffmpeg",
+        "ffmpeg_arguments": "-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats"
+    },
+    "MediaDirectoryList": [
+        {
+            "isActive": true,
+            "mediaPath": "\\\\?\\R:\\tmp\\24",
+            "resultPath": "MediaResult_flac_result.json"
+        },
+        {
+            "isActive": true,
+            "mediaPath": "\\\\?\\R:\\tmp\\24",
+            "resultPath": "MediaResult_24_rdy.json"
+        }
+    ]
 }
