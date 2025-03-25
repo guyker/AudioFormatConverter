@@ -743,13 +743,10 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(DirectoryConte
 
                         auto minSize = (std::min)(mediaInfo1.duration, mediaInfo2.duration);
                         auto maxSize = (std::max)(mediaInfo1.duration, mediaInfo2.duration);
-                        //auto minSize = mediaInfo1.duration < mediaInfo2.duration ? mediaInfo1.duration : mediaInfo2.duration;
-                        //auto maxSize = mediaInfo1.duration > mediaInfo2.duration ? mediaInfo1.duration : mediaInfo2.duration;
 
-                        auto diff = maxSize - minSize;
-                        long long result = (long)100 * diff / maxSize;
+                        long long diffPercentage = (long)100 * (maxSize - minSize) / maxSize;
 
-                        if (result > sizeMatchPercentageThreshold)
+                        if (diffPercentage > sizeMatchPercentageThreshold)
                         {
                             bPotentialSimilar = false;
                         }

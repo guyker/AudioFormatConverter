@@ -30,18 +30,83 @@
 
 #include "MediaConvertionTask.h"
 #include "MediaConvertionAsyncTask.h"
-
-#include <iostream>
-#include <fcntl.h>
-#include <io.h>
-#include "WindowsHelpers.h"
 #include "AppSettings.h"
 
+//#include <iostream>
+//#include <fcntl.h>
+//#include <io.h>
+//#include "WindowsHelpers.h"
+
+#ifdef _WIN32
+#include <conio.h>
+#else
+#include <termios.h>
+#include <unistd.h>
+#endif
 
 namespace fs = std::filesystem;
 fs::path _TMPDirectory{  };
 
 enum ConvertActionEnum { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
+
+
+void waitForKeyPress() {
+#ifdef _WIN32
+    _getch(); // Windows: Use _getch
+#else
+    struct termios oldt, newt;
+    tcgetattr(STDIN_FILENO, &oldt);
+    newt = oldt;
+    newt.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+    getchar();
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+#endif
+}
+
+
+
+#include <string>
+#include <stdexcept>
+#include <filesystem>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#include "WindowsHelpers.h"
+#else
+#include <cstdlib>
+#endif
+
+namespace FileExplorer {
+    void openDirectory(const std::filesystem::path& path) {
+#ifdef _WIN32
+        std::wstring wPath = path.wstring();
+        HINSTANCE result = ShellExecuteW(
+            nullptr, L"open", wPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL
+        );
+        if (reinterpret_cast<intptr_t>(result) <= 32) {
+            throw std::runtime_error("Failed to open directory on Windows: " + path.string());
+        }
+#else
+        std::string p = path.string();
+        // Try xdg-open first
+        std::string command = "xdg-open \"" + p + "\"";
+        if (std::system(command.c_str()) != 0) {
+            // Fallback to common file managers
+            command = "nautilus \"" + p + "\" 2>/dev/null || dolphin \"" + p + "\" 2>/dev/null";
+            if (std::system(command.c_str()) != 0) {
+                throw std::runtime_error("Failed to open directory on Linux: " + p);
+            }
+        }
+#endif
+    }
+}
+
+
+
+
+
 
 int ConvertFLACToFLAC(std::vector<MediaDirectoryElement> mediaDirectoryList)
 {
@@ -164,9 +229,13 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
         std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir1) << std::endl;
         std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir2) << std::endl << std::endl;
 
-        //auto userSelection = std::getchar();
+        waitForKeyPress();
         WindowsHelpers::OpenDirectoryInExplorer(dir1);
         WindowsHelpers::OpenDirectoryInExplorer(dir2);
+//        FileExplorer::openDirectory(dir1);
+//        FileExplorer::openDirectory(dir2);
+
+
 
         iCount--;
     }
