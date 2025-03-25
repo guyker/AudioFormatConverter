@@ -43,18 +43,18 @@ fs::path _TMPDirectory{  };
 
 enum ConvertActionEnum { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
 
-int ConvertFLACToFLAC(std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList)
+int ConvertFLACToFLAC(std::vector<MediaDirectoryElement> mediaDirectoryList)
 {
     std::wcout << "Processing " << mediaDirectoryList.size() << " directories" << std::endl;
 
-    for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+    for (auto& mediaEntry: mediaDirectoryList)
     {
-        std::wcout << "Scanning: " << mediaPath << "..." << std::endl;
+        std::wcout << "Scanning: " << mediaEntry.mediaPath.c_str() << "..." << std::endl;
 
         auto startTime = std::chrono::steady_clock::now();
 
         ScanInfo scanInfo{};
-        int retStatus = FolderConvert::ScanAudioFiles(scanInfo, mediaPath);
+        int retStatus = FolderConvert::ScanAudioFiles(scanInfo, mediaEntry.mediaPath);
 
         std::wcout << "Files: " <<
             scanInfo.convertable_file_count << " (Not Regular: " <<
@@ -71,7 +71,7 @@ int ConvertFLACToFLAC(std::vector<std::tuple<fs::path, fs::path>> mediaDirectory
         //std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
         //std::getchar();
 
-        auto ret = FolderConvert::ConverAudioFolder(mediaPath, scanInfo, false);
+        auto ret = FolderConvert::ConverAudioFolder(mediaEntry.mediaPath, scanInfo, false);
         if (ret == -1) {
             std::wcout << "***ERROR*** ConverAudioFiles" << std::endl;
             return -1;
@@ -90,59 +90,60 @@ int ConvertFLACToFLAC(std::vector<std::tuple<fs::path, fs::path>> mediaDirectory
 }
 
 
-int ScanFolderAndCreateJSON(std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList)
+int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryList)
 {
-    for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+    for (auto& mediaEntry : mediaDirectoryList)
     {
         auto startTime = std::chrono::steady_clock::now();
-        std::cout << std::format("===>Processing new collection: {}...", mediaPath.generic_string()) << std::endl;
+        std::cout << std::format("===>Processing new collection: {}...", mediaEntry.mediaPath) << std::endl;
 
         AlbumCollection ac;
-        ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
+        ac.LoadAlbumCollection(mediaEntry.mediaPath); //load albume list from directory path
         ac.SortByNumberOfTracks();         // sort by album size - optional
         auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
-        ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
+        ac.SaveAlbumCollectionToJSONFile(mediaEntry.resultPath); // save to json
 
         auto endTime = std::chrono::steady_clock::now();
-        std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaPath.generic_string(), nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
+        std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaEntry.mediaPath, nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
         std::cout << std::endl;
     }
 
     return 0;
 }
 
-int ScanFolderAndCreateDB(std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList)
+int ScanFolderAndCreateDB(std::vector<MediaDirectoryElement> mediaDirectoryList)
 {
-    for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+    for (auto& mediaEntry : mediaDirectoryList)
     {
         auto startTime = std::chrono::steady_clock::now();
-        std::cout << std::format("===>Processing new collection (DB): {}...", mediaPath.generic_string()) << std::endl;
+        std::cout << std::format("===>Processing new collection (DB): {}...", mediaEntry.mediaPath) << std::endl;
 
         AlbumCollection ac;
-        ac.LoadAlbumCollection(mediaPath); //load albume list from directory path
+        ac.LoadAlbumCollection(mediaEntry.mediaPath); //load albume list from directory path
         ac.SortByNumberOfTracks();         // sort by album size - optional
 
         //            auto nAlbums = ac.RefreshAlbumCollectionMediaInformation(true); //load media metadate
         auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
 
-        ac.SaveAlbumCollectionToJSONFile(jsonPath); // save to json
+        ac.SaveAlbumCollectionToJSONFile(mediaEntry.resultPath); // save to json
 
         auto endTime = std::chrono::steady_clock::now();
-        std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaPath.generic_string(), nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
+        std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaEntry.mediaPath, nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
         std::cout << std::endl;
     }
 
     return 0;
 }
 
-int ScanFolderProcessJSONAndFindDuplicates(std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList)
+int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> mediaDirectoryList)
 {
     DirectoryContentEntryList medialList;
-    for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+    for (auto& mediaEntry : mediaDirectoryList)
     {
-        std::wcout << std::format(L"Processing: {}", jsonPath.generic_wstring()) << std::endl;
+        //std::wcout << std::format(L"Processing: {}", mediaEntry.resultPath) << std::endl;
+        std::cout << "Processing: {}" << mediaEntry.resultPath << std::endl;
 
-        auto const& accumulatedList = AlbumCollection::LoadAlbumCollectionFromJSON(jsonPath, true);
+        auto const& accumulatedList = AlbumCollection::LoadAlbumCollectionFromJSON(mediaEntry.resultPath, true);
         medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
     }
 
@@ -174,12 +175,12 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<std::tuple<fs::path, fs::
     return 0;
 }
 
-int ExportJSONToDB(std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList, fs::path databasePath)
+int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList, fs::path databasePath)
 {
 
-    for (auto& [mediaPath, jsonPath] : mediaDirectoryList)
+    for (auto& mediaEntry : mediaDirectoryList)
     {
-        AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(jsonPath));
+        AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(mediaEntry.resultPath));
         ac.SaveMediaInfoDocumentToDB(databasePath);
     }
 
@@ -268,65 +269,28 @@ int main()
     }
 
 
-    const fs::path databaseFileName{ "all_albums.db" };
-
-#if 0
-  //  action = CreateJSONEnum;
-      fs::path outputPath{ "\\\\?\\M:\\tmp\\mediaDB" };
-      
-      //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
-      //    {"\\\\?\\M:\\tmp\\jazz", outputPath / "MediaResult.json"}
-      //};
-
-
-      std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
-        {"\\\\?\\M:\\tmp\\24", outputPath / "XXXX"},
-      };
-
-    //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = {
-    //    {"\\\\?\\M:\\tmp\\24_rdy", outputPath / "MediaResult_24_rdy.json"},
-    //    {"\\\\?\\M:\\music\\Classical\\Albums\\24bit", outputPath / "MediaResult_classical_24.json"},
-    //    ////{"\\\\?\\M:\\music\\Classical\\Albums\\XRCD", outputPath / "MediaResult_classical_album_XRCD_.json"},
-    //    {"\\\\?\\M:\\music\\Classical\\Albums\\flac", outputPath / "MediaResult_classical_album_flac_.json"},
-    //    //{"\\\\?\\M:\\music\\Classical\\Albums\\mp3", outputPath / "MediaResult_classical_album_mp3_.json"},
-    //    {"\\\\?\\M:\\music\\Classical\\Albums\\AlbumSets_MultiCover", outputPath / "MediaResult_classical_AlbumSets_MultiCover.json"},
-    //    //{"\\\\?\\M:\\music\\Classical\\Albums\\AlbumSets_OneCover", outputPath / "MediaResult_AlbumSets_OneCover.json"},
-    //};
-
-#else
-  //  action = CreateJSONEnum;
-    const fs::path outputPath{ "\\\\?\\R:\\tmp\\24" };
-
-    //std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = { 
-    //    {"\\\\?\\R:\\24", outputPath / "MediaResult.json"}
-    //};
-
-    std::vector<std::tuple<fs::path, fs::path>> mediaDirectoryList = { 
-        {"\\\\?\\R:\\tmp\\24", outputPath / "MediaResult_flac_result.json"},
-        //{"\\\\?\\R:\\tmp\24", outputPath / "MediaResult_24_rdy.json"}
-    };
-#endif
-
-    fs::path databasePath = outputPath / databaseFileName;
-
     auto action = GetUserAction();
     switch (action)
     {
     case ConverEnum:
-        ConvertFLACToFLAC(mediaDirectoryList);
+        ConvertFLACToFLAC(appSettingPtr->MediaDirectoryList);
         break;
     case CreateJSONEnum:
-        ScanFolderAndCreateJSON(mediaDirectoryList);
+        ScanFolderAndCreateJSON(appSettingPtr->MediaDirectoryList);
         break;
     case CreateDBFromFolderEnum:
-        ScanFolderAndCreateDB(mediaDirectoryList);
+        ScanFolderAndCreateDB(appSettingPtr->MediaDirectoryList);
         break;
     case ProcessJSONEnum:
-        ScanFolderProcessJSONAndFindDuplicates(mediaDirectoryList);
+        ScanFolderProcessJSONAndFindDuplicates(appSettingPtr->MediaDirectoryList);
         break;
     case PopulateJsonToDBEnum:
-        ExportJSONToDB(mediaDirectoryList, databasePath);
+    {
+        fs::path databasePath = fs::path(appSettingPtr->WorkingDirectory) / fs::path(appSettingPtr->DatabaseFileName);
+        ExportJSONToDB(appSettingPtr->MediaDirectoryList, databasePath);
+    }
         break;
+
     default:
         std::cout << "Acrtion not found: " << action;
         break;

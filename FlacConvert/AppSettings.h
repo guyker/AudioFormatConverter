@@ -58,8 +58,10 @@ struct AppSettingsJson
 	static constexpr const char* DefaultConfigDirectory = isCustomAppConfigPath ? DefaultWorkingDirectory : nullptr;
 
 	static constexpr const char* DefaultConfigFileName = "config.json";
+	static constexpr const char* DefaultDatabaseFileName = "all_albums.db";
 
-	std::string OutputPath{};
+	std::string WorkingDirectory{};
+	std::string DatabaseFileName{};
 	std::vector<MediaDirectoryElement> MediaDirectoryList{};
 
 	FLACEncodingSettings FLACSettings{};
@@ -79,10 +81,18 @@ struct AppSettingsJson
 		AppSettingsJson appSettingsJson
 		{	
 			"1.0.0",
-			"\\\\?\\R:\\tmp\\24",
+			AppSettingsJson::DefaultWorkingDirectory,
+			AppSettingsJson::DefaultDatabaseFileName,
 			{
-				{true, "\\\\?\\R:\\tmp\\24", "MediaResult_flac_result.json"},
-				{true, "\\\\?\\R:\\tmp\\24", "MediaResult_24_rdy.json"}
+				{true, "\\\\?\\R:\\tmp\\24\\flac_tracks1", "\\\\?\\R:\\tmp\\24\\MediaResult_flac_result1.json"},
+				{true, "\\\\?\\R:\\tmp\\24\\flac_tracks2", "\\\\?\\R:\\tmp\\24\\MediaResult_flac_result2.json"}
+				//    {"\\\\?\\M:\\tmp\\24_rdy", outputPath / "MediaResult_24_rdy.json"},
+				//    {"\\\\?\\M:\\music\\Classical\\Albums\\24bit", outputPath / "MediaResult_classical_24.json"},
+				//    ////{"\\\\?\\M:\\music\\Classical\\Albums\\XRCD", outputPath / "MediaResult_classical_album_XRCD_.json"},
+				//    {"\\\\?\\M:\\music\\Classical\\Albums\\flac", outputPath / "MediaResult_classical_album_flac_.json"},
+				//    //{"\\\\?\\M:\\music\\Classical\\Albums\\mp3", outputPath / "MediaResult_classical_album_mp3_.json"},
+				//    {"\\\\?\\M:\\music\\Classical\\Albums\\AlbumSets_MultiCover", outputPath / "MediaResult_classical_AlbumSets_MultiCover.json"},
+				//    //{"\\\\?\\M:\\music\\Classical\\Albums\\AlbumSets_OneCover", outputPath / "MediaResult_AlbumSets_OneCover.json"},
 			}
 		};
 

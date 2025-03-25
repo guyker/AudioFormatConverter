@@ -1,6 +1,7 @@
 {
     "Version": "1.0.0",
-    "OutputPath": "\\\\?\\R:\\tmp\\24",
+    "WorkingDirectory": "\\\\?\\R:\\tmp\\24",
+    "DatabaseFileName": "all_albums.db",
     "FLACSettings": {
         "ffmpeg_exe_name": "ffmpeg",
         "ffmpeg_arguments": "-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats"
@@ -8,13 +9,13 @@
     "MediaDirectoryList": [
         {
             "isActive": true,
-            "mediaPath": "\\\\?\\R:\\tmp\\24",
-            "resultPath": "MediaResult_flac_result.json"
+            "mediaPath": "\\\\?\\R:\\tmp\\24\\flac_tracks1",
+            "resultPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac_result1.json"
         },
         {
             "isActive": true,
-            "mediaPath": "\\\\?\\R:\\tmp\\24",
-            "resultPath": "MediaResult_24_rdy.json"
+            "mediaPath": "\\\\?\\R:\\tmp\\24\\flac_tracks2",
+            "resultPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac_result2.json"
         }
     ]
 }

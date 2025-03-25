@@ -385,7 +385,7 @@ MediaInformation AlbumCollection::ParseMediaInformation(auto formatTag)
 }
 
 //ststic function that loads album list from a Json file and returns a DirectoryContentEntryList object
-DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::filesystem::path& path, bool bBasicDataOnly)
+DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::filesystem::path path, bool bBasicDataOnly)
 {
     DirectoryContentEntryList albumList;
 

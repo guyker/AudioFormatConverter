@@ -21,7 +21,8 @@ std::string AppSettingsJson::toJsonString() const {
     rapidjson::Document::AllocatorType& allocator = doc.GetAllocator();
 
     doc.AddMember("Version", rapidjson::Value(Version.c_str(), allocator), allocator);
-    doc.AddMember("OutputPath", rapidjson::Value(OutputPath.c_str(), allocator), allocator);
+    doc.AddMember("WorkingDirectory", rapidjson::Value(WorkingDirectory.c_str(), allocator), allocator);
+    doc.AddMember("DatabaseFileName", rapidjson::Value(DatabaseFileName.c_str(), allocator), allocator);
 
     // Serialize FLACEncodingSettings
     rapidjson::Value flacObj(rapidjson::kObjectType);
@@ -87,8 +88,12 @@ void AppSettingsJson::loadFromFile(const std::string& filename) {
     if (doc.HasMember("Version") && doc["Version"].IsString()) {
         Version = doc["Version"].GetString();
     }
-    if (doc.HasMember("OutputPath") && doc["OutputPath"].IsString()) {
-        OutputPath = doc["OutputPath"].GetString();
+    
+    if (doc.HasMember("WorkingDirectory") && doc["WorkingDirectory"].IsString()) {
+        WorkingDirectory = doc["WorkingDirectory"].GetString();
+    }
+    if (doc.HasMember("DatabaseFileName") && doc["DatabaseFileName"].IsString()) {
+        DatabaseFileName = doc["DatabaseFileName"].GetString();
     }
 
     if (doc.HasMember("FLACSettings") && doc["FLACSettings"].IsObject()) {
@@ -128,7 +133,7 @@ void AppSettingsJson::loadFromFile(const std::string& filename) {
 //    Document::AllocatorType& allocator = doc.GetAllocator();
 //
 //    // Add 'name' field
-//    doc.AddMember("Output", Value(OutputPath.c_str(), allocator), allocator);
+//    doc.AddMember("Output", Value(WorkingDirectory.c_str(), allocator), allocator);
 //
 //    // Add 'elements' array
 //    Value elementsArray(kArrayType);
