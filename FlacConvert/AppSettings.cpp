@@ -41,7 +41,7 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting()
     }
 
 
-    std::cout << "Configuration file path: " << configPath << std::endl;
+    std::cout << "Loading configuration file: " << configPath << std::endl;
 
     if (fs::exists(configPath))
     {

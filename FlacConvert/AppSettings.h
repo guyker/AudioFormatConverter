@@ -66,9 +66,10 @@ struct AppSettingsJson
 
 	FLACEncodingSettings FLACSettings{};
 
-
 	int MinMatchingTracksForDuplicate{ 1 };
 	int SizeMatchPercentageThreshold{ 3 }; // tracks are identical if the size difference is less than 3%
+
+
 
 
 	void loadFromFile(const std::string& filename);

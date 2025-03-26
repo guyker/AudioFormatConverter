@@ -299,6 +299,16 @@ int main()
 
 		return -1;
     }
+  
+    std::cout << "App Settings: " << std::filesystem::path(AppSettingsJson::DefaultConfigDirectory) / AppSettingsJson::DefaultConfigFileName << std::endl;
+    std::cout << "Working directory: " << appSettingPtr->WorkingDirectory << std::endl;
+    std::cout << "Database file name: " << appSettingPtr->DatabaseFileName << std::endl;
+	for (auto& mediaEntry : appSettingPtr->MediaDirectoryList)
+	{
+		std::cout << "Media Path: " << mediaEntry.mediaPath << " - " << mediaEntry.resultPath << std::endl;
+	}
+
+    std::cout << std::endl;
 
 
     auto action = GetUserAction();
