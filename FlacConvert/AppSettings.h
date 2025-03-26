@@ -72,7 +72,7 @@ struct AppSettingsJson
 
 
 
-	void loadFromFile(const std::string& filename);
+	bool loadFromFile(const std::string& filename);
 	void saveToFile(const std::string& filename) const;
 	std::string toJsonString() const;
 

@@ -43,20 +43,44 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting()
 
     std::cout << "Loading configuration file: " << configPath << std::endl;
 
-    if (fs::exists(configPath))
+    bool isAppSettingLoaded = fs::exists(configPath);
+    if (isAppSettingLoaded)
     {
         std::shared_ptr<AppSettingsJson> appSettingPtr = std::make_shared<AppSettingsJson>();
-        appSettingPtr->loadFromFile(configPath.string());
-
-		AppSettingsInstance = appSettingPtr;
+        isAppSettingLoaded = appSettingPtr->loadFromFile(configPath.string());
+		if (isAppSettingLoaded)
+        {
+            AppSettingsInstance = appSettingPtr;
+		}
+        else
+        {
+            std::cerr << "Error: Failed to parse configuration file: " << configPath << std::endl;
+        }
     }
     else
     {
         std::cout << "Configuration file not found - Generating default config file, please update settings in config file and run again" << std::endl;
+    }
 
-        auto defaultSettings = AppSettingsJson::GetDefaultSettings();
-        auto str = defaultSettings.toJsonString();
-        defaultSettings.saveToFile(configPath.string());
+	if (!isAppSettingLoaded)
+    {
+        std::cout << std::endl << "Would you like to create a new configuration file with defaults? Y/N (" << configPath << ")" << std::endl;
+        char input = getchar();
+        switch (input)
+        {
+        case 'y':
+        case 'Y':
+        {
+            auto defaultSettings = AppSettingsJson::GetDefaultSettings();
+            auto str = defaultSettings.toJsonString();
+            defaultSettings.saveToFile(configPath.string());
+        }
+            break;
+        default:
+            std::cout << "Ignored, please edit and fix " << configPath << std::endl;
+            break;
+        }
+
     }
 
     return AppSettingsInstance;
@@ -133,12 +157,12 @@ void AppSettingsJson::saveToFile(const std::string& filename) const {
 }
 
 // Load JSON from a file
-void AppSettingsJson::loadFromFile(const std::string& filename) {
+bool AppSettingsJson::loadFromFile(const std::string& filename) {
     
     std::ifstream ifs(filename);
     if (!ifs) {
         std::cerr << "Error: Cannot open file for reading: " << filename << std::endl;
-        return;
+        return false;
     }
 
     rapidjson::IStreamWrapper isw(ifs);
@@ -147,7 +171,7 @@ void AppSettingsJson::loadFromFile(const std::string& filename) {
 
     if (doc.HasParseError()) {
         std::cerr << "Error: Failed to parse JSON file." << std::endl;
-        return;
+        return false;
     }
 
     if (doc.HasMember("Version") && doc["Version"].IsString()) {
@@ -194,6 +218,8 @@ void AppSettingsJson::loadFromFile(const std::string& filename) {
     if (doc.HasMember("SizeMatchPercentageThreshold") && doc["SizeMatchPercentageThreshold"].IsInt()) {
         SizeMatchPercentageThreshold = doc["SizeMatchPercentageThreshold"].GetInt();
     }
+
+    return true;
 }
 
 
