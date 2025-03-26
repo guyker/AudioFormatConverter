@@ -45,8 +45,6 @@ using EntryFileTuple = std::tuple <std::filesystem::directory_entry, TrackInfoLi
 using DirectoryContentEntryList = std::vector<EntryFileTuple>;
 
 
-const std::string TMP_MEDIA_JSON_FILE_NAME{"media_info.json"};
-
 class AlbumCollection
 {
 public:

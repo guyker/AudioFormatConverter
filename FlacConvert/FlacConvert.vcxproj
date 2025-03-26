@@ -149,6 +149,7 @@
     <ClCompile Include="AppSettings.cpp" />
     <ClCompile Include="FlacConvertMain.cpp" />
     <ClCompile Include="FolderConvert.cpp" />
+    <ClCompile Include="JsonUtils.cpp" />
     <ClCompile Include="MediaConvertionAsyncTask.cpp" />
     <ClCompile Include="MediaConvertionTask.cpp" />
     <ClCompile Include="WindowsHelpers.cpp" />
@@ -157,6 +158,7 @@
     <ClInclude Include="AlbumCollection.h" />
     <ClInclude Include="AppSettings.h" />
     <ClInclude Include="FolderConvert.h" />
+    <ClInclude Include="JsonUtils.h" />
     <ClInclude Include="MediaConvertionAsyncTask.h" />
     <ClInclude Include="MediaConvertionTask.h" />
     <ClInclude Include="MediaInformation.h" />

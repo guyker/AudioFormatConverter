@@ -4,6 +4,8 @@
 
 #include "AlbumCollection.h"
 #include "FolderConvert.h"
+#include "JsonUtils.h"
+
 
 namespace fs = std::filesystem;
 using namespace rapidjson;
@@ -12,6 +14,7 @@ using namespace rapidjson;
 const std::vector<char> ProgressCircleChars { '|', '/', '-', '\\' };
 
 //constexpr auto CLEAR_LINE{ L"\x1b[H\x1b[J" };
+
 
 
 AlbumCollection::AlbumCollection(DirectoryContentEntryList const& albumList) : _AlbumList{ albumList }
@@ -66,7 +69,7 @@ TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path 
     //Empty list to store all potential tracks under the current directory (path)
     TrackInfoList currentDirTrackList;
 
-    if (depth == 0)
+    if (depth == 0) // reached max recursive depth
     {
         return currentDirTrackList;
     }
@@ -114,61 +117,14 @@ TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path 
             }
         }
     }
+    else
+    {
+     //   std::cout << std::format("***Error: Media library not found: : {}", path) << std::endl;
+    }
 
     return currentDirTrackList;
 }
 
-
-
-bool TryFindMemberTag(auto jsonObject, auto name)
-{
-    if (jsonObject.FindMember(name) != jsonObject.MemberEnd())
-    {
-        return true;
-    }
-
-    return false;
-}
-
-auto TryGetObjectMember(auto jsonObject, auto name)
-{
-    if (TryFindMemberTag(jsonObject, name))
-    {
-        return jsonObject[name].GetObj();
-    }
-
-    return  nullptr;
-}
-
-auto TryGetStringMember(auto jsonObject, auto name)
-{
-    if (TryFindMemberTag(jsonObject, name))
-    {
-        return jsonObject[name].GetString();
-    }
-
-    return  "***n/a***";
-}
-
-auto TryGetIntMember(auto jsonObject, auto name)
-{
-    if (TryFindMemberTag(jsonObject, name))
-    {
-        return jsonObject[name].GetInt();
-    }
-
-    return -1;
-}
-
-long TryGetLongMember(auto jsonObject, auto name)
-{
-    if (TryFindMemberTag(jsonObject, name))
-    {
-        return std::stol(jsonObject[name].GetString());
-    }
-
-    return -1;
-}
 
 MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::string jsonString)
 {
@@ -234,7 +190,7 @@ size_t AlbumCollection::ExportMediaInformationToDB(bool bAsync)
 
                 if (bAsync)
                 {
-                    fs::path outfilePath{ trackName / fs::path("_" + TMP_MEDIA_JSON_FILE_NAME) };
+                  //  fs::path outfilePath{ trackName / fs::path("_" + TMP_MEDIA_JSON_FILE_NAME) };
                     auto&& miFuture = std::async(std::launch::async, AlbumCollection::GetMediaInfoFromMediaFile, path2Fixed);
 
                     asyncFutureList.push_back({ std::move(miFuture), mediaInfo, mediaInfoString });
@@ -252,7 +208,7 @@ size_t AlbumCollection::ExportMediaInformationToDB(bool bAsync)
                 }
                 else
                 {
-                    fs::path outfilePath{ trackName / fs::path("_" + TMP_MEDIA_JSON_FILE_NAME) };
+                    //fs::path outfilePath{ trackName / fs::path("_" + TMP_MEDIA_JSON_FILE_NAME) };
                     auto [mi_ret, jsonString_ret] = AlbumCollection::GetMediaInfoFromMediaFile(path2Fixed);
                     mediaInfoString = jsonString_ret;
                     mediaInfo = mi_ret;
@@ -353,33 +309,52 @@ bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path path)
 }
 
 
+
 //ststic function that parses a json metadata JSON and returns an instance of MediaInformation 
 MediaInformation AlbumCollection::ParseMediaInformation(auto formatTag)
 {
     MediaInformation mi;
 
-    mi.filename = TryGetStringMember(formatTag, "filename");
-    mi.format_name = TryGetStringMember(formatTag, "format_name");
-    mi.format_long_name = TryGetStringMember(formatTag, "format_long_name");
-    mi.start_time = TryGetStringMember(formatTag, "start_time");
-    mi.duration = std::stol(TryGetStringMember(formatTag, "duration"));
-    mi.size = TryGetStringMember(formatTag, "size");
-    mi.bit_rate = TryGetStringMember(formatTag, "bit_rate");
-    mi.probe_score = TryGetIntMember(formatTag, "probe_score");
+    if (auto filename = JsonUtils::tryParseMember<std::string>(formatTag, "filename")) { mi.filename = *filename; }
+
+    if (auto nb_streams = JsonUtils::tryParseMember<int>(formatTag, "nb_streams")) { mi.nb_streams = *nb_streams; }
+    if (auto nb_programs = JsonUtils::tryParseMember<int>(formatTag, "nb_programs")) { mi.nb_programs = *nb_programs; }
+    if (auto nb_stream_groups = JsonUtils::tryParseMember<int>(formatTag, "nb_stream_groups")) { mi.nb_stream_groups = *nb_stream_groups; }
+
+    if (auto format_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_name")) { mi.format_name = *format_name; }
+    if (auto format_long_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_long_name")) { mi.format_long_name = *format_long_name; }
+    if (auto start_time = JsonUtils::tryParseMember<std::string>(formatTag, "start_time")) { mi.start_time = *start_time; }
+    if (auto size = JsonUtils::tryParseMember<std::string>(formatTag, "size")) { mi.size = *size; }
+    if (auto bit_rate = JsonUtils::tryParseMember<std::string>(formatTag, "bit_rate")) { mi.bit_rate = *bit_rate; }
+
+    if (auto duration = JsonUtils::tryParseMember<long>(formatTag, "duration")) { mi.duration = *duration; }
+    if (auto probe_score = JsonUtils::tryParseMember<int>(formatTag, "probe_score")) { mi.probe_score = *probe_score; }
+
 
     if (formatTag.FindMember("tags") != formatTag.MemberEnd())
     {
         auto tags = formatTag["tags"].GetObj();
 
-        mi.tags.album = TryGetStringMember(tags, "album");
-        mi.tags.artist = TryGetStringMember(tags, "artist");
-        mi.tags.album_artist = TryGetStringMember(tags, "album_artist");
-        mi.tags.comment = TryGetStringMember(tags, "comment");
-        mi.tags.genre = TryGetStringMember(tags, "genre");
-        mi.tags.publisher = TryGetStringMember(tags, "publisher");
-        mi.tags.title = TryGetStringMember(tags, "title");
-        mi.tags.track = TryGetStringMember(tags, "track");
-        mi.tags.date = TryGetStringMember(tags, "date");
+
+        if (auto album = JsonUtils::tryParseMember<std::string>(formatTag, "album")) { mi.tags.album = *album; }
+        if (auto album_dynamic_range = JsonUtils::tryParseMember<std::string>(formatTag, "album_dynamic_range")) { mi.tags.album_dynamic_range = *album_dynamic_range; }
+        if (auto dynamic_range = JsonUtils::tryParseMember<std::string>(formatTag, "dynamic_range")) { mi.tags.dynamic_range = *dynamic_range; }
+        if (auto artist = JsonUtils::tryParseMember<std::string>(formatTag, "artist")) { mi.tags.artist = *artist; }
+        if (auto album_artist = JsonUtils::tryParseMember<std::string>(formatTag, "album_artist")) { mi.tags.album_artist = *album_artist; }
+        if (auto composer = JsonUtils::tryParseMember<std::string>(formatTag, "composer")) { mi.tags.composer = *composer; }
+        if (auto copyright = JsonUtils::tryParseMember<std::string>(formatTag, "copyright")) { mi.tags.copyright = *copyright; }
+        if (auto label = JsonUtils::tryParseMember<std::string>(formatTag, "label")) { mi.tags.label = *label; }
+        if (auto year = JsonUtils::tryParseMember<std::string>(formatTag, "year")) { mi.tags.year = *year; }
+        if (auto comment = JsonUtils::tryParseMember<std::string>(formatTag, "comment")) { mi.tags.comment = *comment; }
+        if (auto genre = JsonUtils::tryParseMember<std::string>(formatTag, "genre")) { mi.tags.genre = *genre; }
+        if (auto publisher = JsonUtils::tryParseMember<std::string>(formatTag, "publisher")) { mi.tags.publisher = *publisher; }
+        if (auto title = JsonUtils::tryParseMember<std::string>(formatTag, "title")) { mi.tags.title = *title; }
+        if (auto track = JsonUtils::tryParseMember<std::string>(formatTag, "track")) { mi.tags.track = *track; }
+        if (auto track_total = JsonUtils::tryParseMember<std::string>(formatTag, "track_total")) { mi.tags.track_total = *track_total; }
+        if (auto date = JsonUtils::tryParseMember<std::string>(formatTag, "date")) { mi.tags.date = *date; }
+        if (auto encoder = JsonUtils::tryParseMember<std::string>(formatTag, "encoder")) { mi.tags.encoder = *encoder; }
+        if (auto encoded_by = JsonUtils::tryParseMember<std::string>(formatTag, "encoded_by")) { mi.tags.encoded_by = *encoded_by; }
+        if (auto organization = JsonUtils::tryParseMember<std::string>(formatTag, "organization")) { mi.tags.organization = *organization; }
     }
 
     return mi;
@@ -497,6 +472,9 @@ std::tuple<MediaInformation, std::string> AlbumCollection::GetMediaInfoFromMedia
 
     std::error_code ec;
     if (fs::exists(outPath)) {
+
+        fs::copy(outPath, "R:\\tmp\\24", fs::copy_options::overwrite_existing);
+
         bool bDeleted = false;
         int iRetry = 3;
         while (!bDeleted && iRetry > 0)
