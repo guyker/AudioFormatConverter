@@ -11,15 +11,16 @@ struct MediaInformation
 	std::string format_name;
 	std::string format_long_name;
 	std::string start_time;
+	long duration;
 	std::string size;
 	std::string bit_rate;
 
-	long duration;
 	int probe_score;
 
 	struct tags_t
 	{
 		std::string album;
+		std::string disc;
 		std::string album_dynamic_range;
 		std::string dynamic_range;
 		std::string artist;

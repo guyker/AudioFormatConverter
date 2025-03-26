@@ -337,6 +337,7 @@ MediaInformation AlbumCollection::ParseMediaInformation(auto formatTag)
 
 
         if (auto album = JsonUtils::tryParseMember<std::string>(formatTag, "album")) { mi.tags.album = *album; }
+        if (auto disc = JsonUtils::tryParseMember<std::string>(formatTag, "disc")) { mi.tags.disc = *disc; }
         if (auto album_dynamic_range = JsonUtils::tryParseMember<std::string>(formatTag, "album_dynamic_range")) { mi.tags.album_dynamic_range = *album_dynamic_range; }
         if (auto dynamic_range = JsonUtils::tryParseMember<std::string>(formatTag, "dynamic_range")) { mi.tags.dynamic_range = *dynamic_range; }
         if (auto artist = JsonUtils::tryParseMember<std::string>(formatTag, "artist")) { mi.tags.artist = *artist; }

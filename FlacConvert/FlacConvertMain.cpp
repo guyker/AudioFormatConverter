@@ -300,12 +300,19 @@ int main()
 		return -1;
     }
   
+	std::vector<MediaDirectoryElement> mediaList;
+
     std::cout << "App Settings: " << std::filesystem::path(AppSettingsJson::DefaultConfigDirectory) / AppSettingsJson::DefaultConfigFileName << std::endl;
     std::cout << "Working directory: " << appSettingPtr->WorkingDirectory << std::endl;
     std::cout << "Database file name: " << appSettingPtr->DatabaseFileName << std::endl;
 	for (auto& mediaEntry : appSettingPtr->MediaDirectoryList)
 	{
-		std::cout << "Media Path: " << mediaEntry.mediaPath << " - " << mediaEntry.resultPath << std::endl;
+		std::cout << mediaEntry.isActive  << " - Media Path: " << mediaEntry.mediaPath << " - " << mediaEntry.resultPath << std::endl;
+
+        if (mediaEntry.isActive)
+        {
+            mediaList.push_back(mediaEntry);
+        }
 	}
 
     std::cout << std::endl;
@@ -315,21 +322,21 @@ int main()
     switch (action)
     {
     case ConverEnum:
-        ConvertFLACToFLAC(appSettingPtr->MediaDirectoryList);
+        ConvertFLACToFLAC(mediaList);
         break;
     case CreateJSONEnum:
-        ScanFolderAndCreateJSON(appSettingPtr->MediaDirectoryList);
+        ScanFolderAndCreateJSON(mediaList);
         break;
     case CreateDBFromFolderEnum:
-        ScanFolderAndCreateDB(appSettingPtr->MediaDirectoryList);
+        ScanFolderAndCreateDB(mediaList);
         break;
     case ProcessJSONEnum:
-        ScanFolderProcessJSONAndFindDuplicates(appSettingPtr->MediaDirectoryList);
+        ScanFolderProcessJSONAndFindDuplicates(mediaList);
         break;
     case PopulateJsonToDBEnum:
     {
         fs::path databasePath = fs::path(appSettingPtr->WorkingDirectory) / fs::path(appSettingPtr->DatabaseFileName);
-        ExportJSONToDB(appSettingPtr->MediaDirectoryList, databasePath);
+        ExportJSONToDB(mediaList, databasePath);
     }
         break;
 

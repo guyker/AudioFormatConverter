@@ -37,12 +37,34 @@
 
 
 
+
+struct TrackInfo
+{
+	std::filesystem::path trackPath;
+	long long fileSize;
+	MediaInformation formatInfo;
+	std::string mediaInfoString;
+};
+
+struct AlbumInfo
+{
+	std::filesystem::directory_entry path;
+	std::vector<TrackInfo> trackList;
+};
+
+
 using SimilarDirectoryEntryList = std::vector<std::tuple <std::wstring, std::wstring>>;
 
 using MediaLoadingFuture = std::future<std::tuple<MediaInformation, std::string>>;
-using TrackInfoList = std::vector<std::tuple<std::filesystem::path, long long, MediaInformation, std::string>>;
-using EntryFileTuple = std::tuple <std::filesystem::directory_entry, TrackInfoList>;
-using DirectoryContentEntryList = std::vector<EntryFileTuple>;
+
+
+//using TrackInfoList = std::vector<std::tuple<std::filesystem::path, long long, MediaInformation, std::string>>;
+using TrackInfoList = std::vector<TrackInfo>;
+
+//using EntryFileTuple = std::tuple <std::filesystem::directory_entry, TrackInfoList>;
+//using EntryFileTuple = AlbumInfo;
+
+using DirectoryContentEntryList = std::vector<AlbumInfo>;
 
 
 class AlbumCollection
