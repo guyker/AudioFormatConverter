@@ -151,8 +151,10 @@
     <ClCompile Include="FlacConvertMain.cpp" />
     <ClCompile Include="FolderConvert.cpp" />
     <ClCompile Include="JsonUtils.cpp" />
+    <ClCompile Include="MediaAlbum.cpp" />
     <ClCompile Include="MediaConvertionAsyncTask.cpp" />
     <ClCompile Include="MediaConvertionTask.cpp" />
+    <ClCompile Include="MediaTrack.cpp" />
     <ClCompile Include="WindowsHelpers.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -161,9 +163,11 @@
     <ClInclude Include="CommonUtils.h" />
     <ClInclude Include="FolderConvert.h" />
     <ClInclude Include="JsonUtils.h" />
+    <ClInclude Include="MediaAlbum.h" />
     <ClInclude Include="MediaConvertionAsyncTask.h" />
     <ClInclude Include="MediaConvertionTask.h" />
     <ClInclude Include="MediaInformation.h" />
+    <ClInclude Include="MediaTrack.h" />
     <ClInclude Include="WindowsHelpers.h" />
   </ItemGroup>
   <ItemGroup>

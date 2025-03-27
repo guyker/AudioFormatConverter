@@ -37,7 +37,8 @@
 #include <set>
 #include <string>
 
-
+#include <filesystem>
+#include "MediaAlbum.h"
 
 class AlbumCollection
 {

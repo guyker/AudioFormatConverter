@@ -5,7 +5,7 @@
 #include "AlbumCollection.h"
 #include "FolderConvert.h"
 #include "JsonUtils.h"
-
+#include "MediaTrack.h"
 
 namespace fs = std::filesystem;
 using namespace rapidjson;
@@ -74,9 +74,6 @@ TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path 
         return currentDirTrackList;
     }
 
-    //Album tracks list holder 
- //   rapidjson::Value trackMediaArray(rapidjson::kArrayType);
-
     if (fs::exists(path)) {
         for (const fs::directory_entry& entry : fs::directory_iterator(path)) {
             if (entry.is_directory()) {
@@ -91,7 +88,7 @@ TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path 
                 }
             }
             else {
-                if (TrackInfo::IsFileAcceptedAudioFile(entry))
+                if (MediaTrack::IsFileAcceptedAudioFile(entry))
                 {
                     auto path2Fixed = entry.path().lexically_normal().native();
                     long long fileSize = fs::file_size(path2Fixed);
@@ -159,19 +156,15 @@ size_t AlbumCollection::ExportMediaInformationToDB(bool bAsync)
         progressIndex = (progressIndex + 1) % ProgressCircleChars.size();
 
         //Album tracks list holder 
-        rapidjson::Value trackMediaArray(rapidjson::kArrayType);
-
         std::vector<std::tuple<MediaLoadingFuture, MediaInformation&, std::string&>> asyncFutureList;
 
         for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
         {
             std::filesystem::path trackPath = albumPath.path() / std::filesystem::path(trackName);
 
-            auto hasExtension = trackPath.has_extension();
-            auto fileEextension = trackPath.extension();
-            if (trackPath.has_extension() && TrackInfo::IsFileAcceptedAudioFile(trackPath)) {
+            if (MediaTrack::IsValidMedia(trackPath)) {
                 auto path2Fixed = trackPath.lexically_normal().native();
-                long long fileSize = fs::file_size(path2Fixed);
+              //  long long fileSize = fs::file_size(path2Fixed);
 
                 if (bAsync)
                 {

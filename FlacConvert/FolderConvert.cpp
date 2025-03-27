@@ -7,7 +7,7 @@
 #include <set>
 #include "CommonUtils.h"
 #include "MediaInformation.h"
-
+#include "MediaTrack.h"
 
 using namespace std;
 
@@ -39,7 +39,7 @@ int FolderConvert::ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::pat
             else if (!entry.path().has_extension()) {
                 scanInfo.file_with_no_extension_count++;
             }
-            else if (!TrackInfo::IsFileConvertable(entry.path())) {
+            else if (!MediaTrack::IsFileConvertable(entry.path())) {
                 scanInfo.not_convertable_file_count++;
             }
             else
@@ -80,7 +80,7 @@ int FolderConvert::ConverAudioFolder(const std::filesystem::path& directory, con
 
         if (entry.is_regular_file() && entry.path().has_extension())
         {
-            if (entry.path().has_extension() && TrackInfo::IsFileConvertable(entry.path())) {
+            if (entry.path().has_extension() && MediaTrack::IsFileConvertable(entry.path())) {
 
                 fs::path targetPath = entry.path();
                 targetPath.replace_extension(GetTargetFileType());
