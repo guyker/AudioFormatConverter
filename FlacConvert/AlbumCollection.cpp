@@ -91,28 +91,13 @@ TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path 
                 }
             }
             else {
-                if (entry.is_regular_file() && entry.path().has_extension())
+                if (TrackInfo::IsFileAcceptedAudioFile(entry))
                 {
-                    auto fileEextension = entry.path().extension();
-                    if (FolderConvert::IsFileAcceptedAudioFile(entry.path()))
-                    {
-                        auto path2Fixed = entry.path().lexically_normal().native();
-                        long long fileSize = fs::file_size(path2Fixed);
+                    auto path2Fixed = entry.path().lexically_normal().native();
+                    long long fileSize = fs::file_size(path2Fixed);
 
-                        //auto mediaInfoFile = AlbumCollection::CreateMediaInfoFile(path2Fixed);
-                        //if (!mediaInfoFile.empty() && fs::exists(mediaInfoFile))
-                        //{
-                        //    std::ifstream file(mediaInfoFile);
-                        //    std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-
-                        //    //Add track to Album List
-                        //    currentDirTrackList.push_back({ name, fileSize, MediaInformation{}, json});
-                        //}
-
-
-                        auto fileName = entry.path().filename();
-                        currentDirTrackList.push_back({ fileName, fileSize, MediaInformation{}, std::string{} });
-                    }
+                    auto fileName = entry.path().filename();
+                    currentDirTrackList.push_back({ fileName, fileSize, MediaInformation{}, std::string{} });
                 }
             }
         }
@@ -184,7 +169,7 @@ size_t AlbumCollection::ExportMediaInformationToDB(bool bAsync)
 
             auto hasExtension = trackPath.has_extension();
             auto fileEextension = trackPath.extension();
-            if (trackPath.has_extension() && FolderConvert::IsFileAcceptedAudioFile(trackPath)) {
+            if (trackPath.has_extension() && TrackInfo::IsFileAcceptedAudioFile(trackPath)) {
                 auto path2Fixed = trackPath.lexically_normal().native();
                 long long fileSize = fs::file_size(path2Fixed);
 

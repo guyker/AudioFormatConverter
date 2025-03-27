@@ -29,14 +29,9 @@ public:
     //static int ConverAudioFolder(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync = false);
     static int ConverAudioFolder2(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync = false);
 
-    static bool IsFileConvertable(std::filesystem::path pathName);
-    static bool IsFileAcceptedAudioFile(std::filesystem::path filePath);
-
 private:
 
     static constexpr std::string_view GetTargetFileType() {
         return ".flac";
-    }
-   
-    static std::wstring ToLower(const std::wstring& str);
+    }   
 };

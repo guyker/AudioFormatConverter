@@ -20,7 +20,7 @@
 #include <fstream> 
 #include <iostream> 
 
-
+#include "CommonUtils.h"
 
 #include "rapidjson/rapidjson.h" 
 #include "rapidjson/document.h"
@@ -34,37 +34,9 @@
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
+#include <set>
+#include <string>
 
-
-
-
-struct TrackInfo
-{
-	std::filesystem::path trackPath;
-	long long fileSize;
-	MediaInformation formatInfo;
-	std::string mediaInfoString;
-};
-
-struct AlbumInfo
-{
-	std::filesystem::directory_entry path;
-	std::vector<TrackInfo> trackList;
-};
-
-
-using SimilarDirectoryEntryList = std::vector<std::tuple <std::wstring, std::wstring>>;
-
-using MediaLoadingFuture = std::future<std::tuple<MediaInformation, std::string>>;
-
-
-//using TrackInfoList = std::vector<std::tuple<std::filesystem::path, long long, MediaInformation, std::string>>;
-using TrackInfoList = std::vector<TrackInfo>;
-
-//using EntryFileTuple = std::tuple <std::filesystem::directory_entry, TrackInfoList>;
-//using EntryFileTuple = AlbumInfo;
-
-using DirectoryContentEntryList = std::vector<AlbumInfo>;
 
 
 class AlbumCollection

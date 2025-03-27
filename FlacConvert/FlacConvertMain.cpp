@@ -305,9 +305,11 @@ int main()
     std::cout << "App Settings: " << std::filesystem::path(AppSettingsJson::DefaultConfigDirectory) / AppSettingsJson::DefaultConfigFileName << std::endl;
     std::cout << "Working directory: " << appSettingPtr->WorkingDirectory << std::endl;
     std::cout << "Database file name: " << appSettingPtr->DatabaseFileName << std::endl;
+    std::cout << "Media Libraries: " << std::endl;
 	for (auto& mediaEntry : appSettingPtr->MediaDirectoryList)
 	{
-		std::cout << mediaEntry.isActive  << " - Media Path: " << mediaEntry.mediaPath << " - " << mediaEntry.resultPath << std::endl;
+		auto activeFlag = mediaEntry.isActive ? "Active" : "Inactive";
+		std::cout << activeFlag << " - Media Path: " << mediaEntry.mediaPath << " - " << mediaEntry.resultPath << std::endl;
 
         if (mediaEntry.isActive)
         {

@@ -5,6 +5,8 @@
 #include <iostream>
 #include <algorithm>
 #include <set>
+#include "CommonUtils.h"
+#include "MediaInformation.h"
 
 
 using namespace std;
@@ -12,30 +14,7 @@ using namespace std;
 namespace fs = std::filesystem;
 
 
-std::wstring FolderConvert::ToLower(const std::wstring& str) {
-    std::wstring lowerStr = str;
 
-    std::transform(lowerStr.begin(), lowerStr.end(), lowerStr.begin(), ::towlower);
-
-    return lowerStr;
-}
-
-bool FolderConvert::IsFileConvertable(std::filesystem::path filePath)
-{
-    //L".mp3", L".wav", L".flac", L".aac", L".ogg", L".wma", L".m4a"
-    static std::set<wstring> fileExtensionList = { L".flac", L".ape", L".dsf", L".dff", L".dsd", L".wv", L".wav", L".m2ts" , L".m4a" };
-    auto fileExtension = ToLower(filePath.extension().wstring());
-
-    return filePath.has_extension() && (fileExtensionList.find(filePath.extension().wstring()) != fileExtensionList.end());
-}
-
-bool FolderConvert::IsFileAcceptedAudioFile(std::filesystem::path filePath)
-{
-    static std::set<wstring> fileExtensionList = { L".flac", L".mp3" };
-    auto fileExtension = ToLower(filePath.extension().wstring());
-
-    return filePath.has_extension() && (fileExtensionList.find(filePath.extension().wstring()) != fileExtensionList.end());
-}
 
 int FolderConvert::ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::path& directory, bool bAsync)
 {
@@ -60,7 +39,7 @@ int FolderConvert::ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::pat
             else if (!entry.path().has_extension()) {
                 scanInfo.file_with_no_extension_count++;
             }
-            else if (!IsFileConvertable(entry.path())) {
+            else if (!TrackInfo::IsFileConvertable(entry.path())) {
                 scanInfo.not_convertable_file_count++;
             }
             else
@@ -82,7 +61,6 @@ int FolderConvert::ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::pat
 }
 
 
-
 int FolderConvert::ConverAudioFolder(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync)
 {
     std::vector<std::shared_ptr<MediaConvertionTask>> tasksVector;
@@ -102,7 +80,7 @@ int FolderConvert::ConverAudioFolder(const std::filesystem::path& directory, con
 
         if (entry.is_regular_file() && entry.path().has_extension())
         {
-            if (entry.path().has_extension() && IsFileConvertable(entry.path())) {
+            if (entry.path().has_extension() && TrackInfo::IsFileConvertable(entry.path())) {
 
                 fs::path targetPath = entry.path();
                 targetPath.replace_extension(GetTargetFileType());
