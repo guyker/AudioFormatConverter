@@ -31,6 +31,7 @@
 #include "MediaConvertionTask.h"
 #include "MediaConvertionAsyncTask.h"
 #include "AppSettings.h"
+#include "CommonUtils.h"
 
 //#include <iostream>
 //#include <fcntl.h>
@@ -295,7 +296,7 @@ int main()
     auto appSettingPtr = AppSettingsJson::AppSetting();
     if (appSettingPtr == nullptr)
     {
-        std::cout << "Failed to load Configuration File" << std::endl;
+        std::wcout << CommonUtils::getSymbolConstexpr("stop_sign") << "Failed to load Configuration File" << std::endl;
 
 		return -1;
     }

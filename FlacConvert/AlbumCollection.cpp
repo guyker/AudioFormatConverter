@@ -438,13 +438,12 @@ rapidjson::Document AlbumCollection::GetJSONDoc(std::filesystem::path mediaFileP
 std::tuple<MediaInformation, std::string> AlbumCollection::GetMediaInfoFromMediaFile(std::filesystem::path mediaFilePath)
 {
     std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
-    auto tmpFile = "tmp_json_media_" + std::to_string(hashNumber) + ".json";
+    auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
 
     auto outPath = AlbumCollection::CreateMediaInfoFile(mediaFilePath, tmpFile);
     auto mi = AlbumCollection::ParseMediaInfoFromJsonFile(outPath);
     
 
-    //std::string jsonString = "jsonString";
     std::ifstream file(outPath);
     std::string jsonString((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     file.close();
