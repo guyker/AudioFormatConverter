@@ -1,4 +1,4 @@
-
+﻿
 #include <ranges>
 #include <algorithm> 
 
@@ -134,6 +134,8 @@ MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::string jsonS
     return mediaInfo;
 }
 
+//std::mutex mtx;
+
 
 //Load all media media information from the preloaded album list (_AlbumList)
 size_t AlbumCollection::ExportMediaInformationToDB(bool bAsync)
@@ -169,7 +171,10 @@ size_t AlbumCollection::ExportMediaInformationToDB(bool bAsync)
                 if (bAsync)
                 {
                   //  fs::path outfilePath{ trackName / fs::path("_" + TMP_MEDIA_JSON_FILE_NAME) };
-                    auto&& miFuture = std::async(std::launch::async, AlbumCollection::GetMediaInfoFromMediaFile, path2Fixed);
+                    //std::lock_guard<std::mutex> lock(mtx);
+                    auto miFuture = std::async(std::launch::async, AlbumCollection::GetMediaInfoFromMediaFile, path2Fixed);
+
+                  //  miFuture.get();
 
                     asyncFutureList.push_back({ std::move(miFuture), mediaInfo, mediaInfoString });
 
@@ -440,52 +445,217 @@ std::tuple<MediaInformation, std::string> AlbumCollection::GetMediaInfoFromMedia
     std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
     auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
 
-    auto outPath = AlbumCollection::CreateMediaInfoFile(mediaFilePath, tmpFile);
-    auto mi = AlbumCollection::ParseMediaInfoFromJsonFile(outPath);
-    
-
-    std::ifstream file(outPath);
-    std::string jsonString((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    file.close();
-
-    std::error_code ec;
-    if (fs::exists(outPath)) {
-
-        fs::copy(outPath, "R:\\tmp\\24", fs::copy_options::overwrite_existing);
-
-        bool bDeleted = false;
-        int iRetry = 3;
-        while (!bDeleted && iRetry > 0)
-        {
-            if (fs::remove(outPath, ec)) {
-                bDeleted = true;
-            }
-            else
-            {
-                auto ms = ec.message();
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                iRetry--;
-            }
-        }
-        if (!bDeleted)
-        {
-            int i = 0;
-        }
-    }
-    else
+    try
     {
-        int i = 0;
+        auto jsonString = AlbumCollection::CreateMediaInfoFile(mediaFilePath, tmpFile);
+       
+        auto mi = ParseMediaInfoFromJsonString(jsonString);
+
+        //auto mi = AlbumCollection::ParseMediaInfoFromJsonFile(outPath);
+
+        //std::string jsonString((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+
+
+
+
+
+
+
+
+        //auto mi = AlbumCollection::ParseMediaInfoFromJsonFile(outPath);
+
+        //std::ifstream file(outPath);
+        //std::string jsonString((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        //file.close();
+
+        //std::error_code ec;
+        //if (fs::exists(outPath)) {
+
+        //    fs::copy(outPath, "m:\\tmp\\24_test", fs::copy_options::overwrite_existing);
+
+        //    bool bDeleted = false;
+        //    int iRetry = 3;
+        //    while (!bDeleted && iRetry > 0)
+        //    {
+        //        if (fs::remove(outPath, ec)) {
+        //            bDeleted = true;
+        //        }
+        //        else
+        //        {
+        //            auto ms = ec.message();
+        //            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        //            iRetry--;
+        //        }
+        //    }
+        //    if (!bDeleted)
+        //    {
+        //        int i = 0;
+        //    }
+        //}
+        //else
+        //{
+        //    int i = 0;
+        //}
+        
+        return std::make_tuple(mi, jsonString);
+    }    
+    catch (const std::exception& ex) {
+        std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << ex.what() << std::endl;
+
     }
 
-    return std::make_tuple(mi, jsonString);
+    return std::make_tuple(MediaInformation{}, "");
 }
 
 
-#include <locale>
-#include <codecvt>
-#include <windows.h>
-#include "AppSettings.h"
 
+
+
+#include <iostream>
+#include <cstdio>
+#include <stdexcept>
+#include <string>
+#include <array>
+#include <cstdlib>
+#include <cwchar>
+
+#ifdef _WIN32
+#include <windows.h>
+// On Windows, use _wpopen/_pclose which accept wide strings.
+#define popen _wpopen
+#define pclose _pclose
+
+// Convert a wide string (UTF‑16) to a UTF‑8 std::string using Windows API.
+std::string WideToUTF8_2(const std::wstring& wideStr) {
+    if (wideStr.empty())
+        return std::string();
+    int sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (sizeNeeded <= 0)
+        throw std::runtime_error("Error converting wide string to UTF-8");
+    std::string utf8Str(sizeNeeded, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, &utf8Str[0], sizeNeeded, nullptr, nullptr);
+    // Remove the trailing null character if present.
+    if (!utf8Str.empty() && utf8Str.back() == '\0')
+        utf8Str.pop_back();
+    return utf8Str;
+}
+
+// Run ffprobe using a wide-string command and capture its output as a wide string.
+std::string runFFprobe(const std::wstring& filename) {
+    // Build the command (including quoting the filename)
+    std::wstring command = L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"";
+    command += filename;
+    command += L"\"";
+
+    std::array<wchar_t, 1024> buffer;
+    std::wstring outputWide;
+    FILE* pipe = popen(command.c_str(), L"r");
+    if (!pipe)
+        throw std::runtime_error("Failed to open pipe");
+    while (fgetws(buffer.data(), static_cast<int>(buffer.size()), pipe))
+        outputWide += buffer.data();
+    pclose(pipe);
+    // Convert the wide-character output (assumed to be UTF‑16) to UTF‑8.
+    return WideToUTF8_2(outputWide);
+}
+
+#else  // Linux/Unix
+
+#include <clocale>
+#include <cwchar>
+
+// On Linux, set the locale to a UTF‑8–compatible one and convert the wide filename using wcstombs.
+std::string runFFprobe(const std::wstring& filename) {
+    // Ensure that the locale is set to UTF‑8.
+    std::setlocale(LC_CTYPE, "en_US.UTF-8");
+
+    // Convert the wide filename to a UTF‑8 encoded narrow string.
+    size_t len = std::wcstombs(nullptr, filename.c_str(), 0);
+    if (len == static_cast<size_t>(-1))
+        throw std::runtime_error("wcstombs conversion error");
+    std::string narrowFilename(len, '\0');
+    std::wcstombs(&narrowFilename[0], filename.c_str(), len);
+
+    // Build the command.
+    std::string command = "ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"";
+    command += narrowFilename;
+    command += "\"";
+
+    std::array<char, 1024> buffer;
+    std::string output;
+    FILE* pipe = popen(command.c_str(), "r");
+    if (!pipe)
+        throw std::runtime_error("Failed to open pipe");
+    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe))
+        output += buffer.data();
+    pclose(pipe);
+    return output;
+}
+
+#endif
+
+
+
+
+
+//create a media file (on filesystem) from a media track
+std::string AlbumCollection::CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
+{
+    using namespace std::string_literals;
+
+
+    int status = 0;
+
+    auto tmpPath = fs::temp_directory_path();
+    //fs::path tmpFilePath{ tmpPath.generic_wstring() + L"\\media_info.json"s };
+    fs::path tmpFilePath{ tmpPath / outFile };
+
+
+    std::wstring cmdExecNameW{ L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters "s };
+    std::wstring commandW{ cmdExecNameW + L"\""s + mediaFilePath.generic_wstring() + L"\""s + L" > \""s + tmpFilePath.generic_wstring() + L"\""s };
+
+    //std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + L"'" + _targetTMPPath.generic_wstring() + L"'" };
+
+
+    try
+    {
+        // Specify your file name as a wide string.
+        std::wstring filename = L"input.mp3";
+#ifdef _WIN32
+        std::wstring f = mediaFilePath.generic_wstring();
+
+        std::string wide_output = runFFprobe(f);
+        // Convert wide output to UTF-8 narrow string for printing.
+     //   std::cout << wide_output << std::endl;
+#else
+        std::string output = runFFprobe(filename);
+        std::cout << output << std::endl;
+#endif
+
+        if (status == 0)
+        {
+        //    jsonDoc = AlbumCollection::GetJSONDoc(tmpFilePath);
+
+            //if (fs::exists(tmpFilePath)) {
+            //    std::error_code ec;
+            //    if (fs::remove(tmpFilePath, ec)) {
+            //    }
+            //}
+
+            return wide_output;
+        }
+
+    }
+    catch (const std::exception& e) {
+        std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << e.what() << std::endl;
+        std::cerr << "Error: " << e.what() << std::endl;
+    }
+
+    return "**ERROR***";
+}
+
+#if 0
 //create a media file (on filesystem) from a media track
 std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
 {
@@ -499,7 +669,7 @@ std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path
     fs::path tmpFilePath{ tmpPath / outFile };
 
 
-    std::wstring cmdExecNameW{ L"ffprobe -v quiet -print_format json -show_format "s };
+    std::wstring cmdExecNameW{ L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters "s };
     std::wstring commandW{ cmdExecNameW + L"\""s + mediaFilePath.generic_wstring() + L"\""s + L" > \""s + tmpFilePath.generic_wstring() + L"\""s };
 
     //std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + L"'" + _targetTMPPath.generic_wstring() + L"'" };
@@ -516,23 +686,23 @@ std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path
         }
 
         status = _wsystem(commandW.c_str());
-      //  status = std::system(commandW.c_str());
+        //  status = std::system(commandW.c_str());
 
-        ////std::string narrowCommand(commandW.begin(), commandW.end());
-        //status = std::system(narrowCommand.c_str());
-            
+          ////std::string narrowCommand(commandW.begin(), commandW.end());
+          //status = std::system(narrowCommand.c_str());
+
 
 
 
         if (status == 0)
         {
-        //    jsonDoc = AlbumCollection::GetJSONDoc(tmpFilePath);
+            //    jsonDoc = AlbumCollection::GetJSONDoc(tmpFilePath);
 
-            //if (fs::exists(tmpFilePath)) {
-            //    std::error_code ec;
-            //    if (fs::remove(tmpFilePath, ec)) {
-            //    }
-            //}
+                //if (fs::exists(tmpFilePath)) {
+                //    std::error_code ec;
+                //    if (fs::remove(tmpFilePath, ec)) {
+                //    }
+                //}
 
             return tmpFilePath;
         }
@@ -569,7 +739,7 @@ std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path
             {
                 int i = 0;
             }
-          //  return tmpFilePath;
+            //  return tmpFilePath;
         }
     }
     catch (const std::exception& ex) {
@@ -579,6 +749,7 @@ std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path
 
     return std::filesystem::path{};;
 }
+#endif
 
 //parse jsonstring and return a media object
 MediaInformation AlbumCollection::ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath)
