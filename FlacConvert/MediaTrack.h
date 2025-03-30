@@ -31,7 +31,7 @@ struct MediaTrack
 	std::filesystem::path trackPath;
 	long long fileSize;
 	MediaInformation formatInfo;
-	std::string mediaInfoString;
+	std::wstring mediaInfoString;
 
 
 	static bool IsFileConvertable(std::filesystem::path filePath)

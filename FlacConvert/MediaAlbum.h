@@ -15,7 +15,7 @@ struct AlbumInfo
 
 using SimilarDirectoryEntryList = std::vector<std::tuple <std::wstring, std::wstring>>;
 
-using MediaLoadingFuture = std::future<std::tuple<MediaInformation, std::string>>;
+using MediaLoadingFuture = std::future<std::tuple<MediaInformation, std::wstring>>;
 
 
 //using TrackInfoList = std::vector<std::tuple<std::filesystem::path, long long, MediaInformation, std::string>>;

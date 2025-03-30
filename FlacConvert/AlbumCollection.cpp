@@ -94,7 +94,7 @@ TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path 
                     long long fileSize = fs::file_size(path2Fixed);
 
                     auto fileName = entry.path().filename();
-                    currentDirTrackList.push_back({ fileName, fileSize, MediaInformation{}, std::string{} });
+                    currentDirTrackList.push_back({ fileName, fileSize, MediaInformation{}, std::wstring{L"{}"}});
                 }
             }
         }
@@ -108,13 +108,14 @@ TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path 
 }
 
 
-MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::string jsonString)
+MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::wstring jsonString)
 {
 
     MediaInformation mediaInfo;
 
     rapidjson::Document doc;
-    doc.Parse(jsonString.c_str());
+    std::string utf8Json = CommonUtils::wstringToUtf8(jsonString);
+    doc.Parse(utf8Json.c_str());
 
     if (doc.HasParseError()) {
         std::cerr << "Error parsing JSON: " << doc.GetParseError() << std::endl;
@@ -158,7 +159,7 @@ size_t AlbumCollection::ExportMediaInformationToDB(bool bAsync)
         progressIndex = (progressIndex + 1) % ProgressCircleChars.size();
 
         //Album tracks list holder 
-        std::vector<std::tuple<MediaLoadingFuture, MediaInformation&, std::string&>> asyncFutureList;
+        std::vector<std::tuple<MediaLoadingFuture, MediaInformation&, std::wstring&>> asyncFutureList;
 
         for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
         {
@@ -213,7 +214,6 @@ size_t AlbumCollection::ExportMediaInformationToDB(bool bAsync)
 }
 
 
-
 bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path path)
 {
     rapidjson::Document mediaDoc;
@@ -234,7 +234,8 @@ bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path path)
             if (trackPath.has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
 
                 rapidjson::Document trackDoc;
-                trackDoc.Parse(mediaInfoString.c_str());
+                std::string utf8Json = CommonUtils::wstringToUtf8(mediaInfoString);
+                trackDoc.Parse(utf8Json.c_str());
                 if (trackDoc.HasParseError()) {
                     std::cerr << "Error parsing JSON: " << trackDoc.GetParseError() << std::endl;                    
                 }
@@ -251,10 +252,27 @@ bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path path)
         {
             try
             {
-                //track list exists add album
-                std::string name = albumPath.path().generic_string();
-                Value key(name.c_str(), mediaDoc.GetAllocator());
-                mediaDoc.AddMember(key, trackMediaArray, mediaDoc.GetAllocator());
+                ////track list exists add album
+                //std::string name = albumPath.path().generic_string();
+                //Value key(name.c_str(), mediaDoc.GetAllocator());
+                //mediaDoc.AddMember(key, trackMediaArray, mediaDoc.GetAllocator());
+
+
+
+                try
+                {
+                    //track list exists add album
+                    std::wstring name = albumPath.path().wstring();
+                    std::string utf8Key = CommonUtils::wstringToUtf8(name);
+                    
+
+                    Value key(utf8Key.c_str(), mediaDoc.GetAllocator());
+                    mediaDoc.AddMember(key, trackMediaArray, mediaDoc.GetAllocator());
+                }
+                catch (const std::exception& ex) {
+                    std::wcout << " ### EXCEOTION parsing json from ffmpeg: " << albumPath.path() << std::endl << ex.what() << std::endl;
+                }
+
             }
             catch (...)
             {
@@ -356,12 +374,13 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
 
     std::ifstream file(path);
     // Read the entire file into a string 
-    std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    std::wstring json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
     rapidjson::Document doc;
 
     // Parse the JSON data 
-    doc.Parse(json.c_str());
+    std::string utf8Json = CommonUtils::wstringToUtf8(json);
+    doc.Parse(utf8Json.c_str());
 
     // Check for parse errors 
     if (doc.HasParseError()) {
@@ -399,7 +418,7 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
                 MediaInformation mi{ AlbumCollection::ParseMediaInformation(mediaTrackList[i].GetObj()) };
                 if (bBasicDataOnly)
                 {
-                    trackList.push_back({ mi.filename, std::stol(mi.size), mi, std::string() });
+                    trackList.push_back({ mi.filename, std::stol(mi.size), mi, L"{}" });
                 }
                 else
                 {
@@ -440,7 +459,7 @@ rapidjson::Document AlbumCollection::GetJSONDoc(std::filesystem::path mediaFileP
 }
 
 //returns media information (json string and media objec) from a media file (on file system)
-std::tuple<MediaInformation, std::string> AlbumCollection::GetMediaInfoFromMediaFile(std::filesystem::path mediaFilePath)
+std::tuple<MediaInformation, std::wstring> AlbumCollection::GetMediaInfoFromMediaFile(std::filesystem::path mediaFilePath)
 {
     std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
     auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
@@ -505,7 +524,7 @@ std::tuple<MediaInformation, std::string> AlbumCollection::GetMediaInfoFromMedia
 
     }
 
-    return std::make_tuple(MediaInformation{}, "");
+    return std::make_tuple(MediaInformation{}, L"{}");
 }
 
 
@@ -541,23 +560,78 @@ std::string WideToUTF8_2(const std::wstring& wideStr) {
     return utf8Str;
 }
 
-// Run ffprobe using a wide-string command and capture its output as a wide string.
-std::string runFFprobe(const std::wstring& filename) {
-    // Build the command (including quoting the filename)
-    std::wstring command = L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"";
-    command += filename;
-    command += L"\"";
+//    // Function to convert UTF-8 string to wstring (cross-platform)
+//    std::wstring utf8ToWstring(const std::string& str) {
+//#ifdef _WIN32
+//        if (str.empty()) return {};
+//
+//        int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
+//        std::wstring wstr(size_needed - 1, 0);
+//        MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &wstr[0], size_needed);
+//
+//        return wstr;
+//#else
+//        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+//        return converter.from_bytes(str);
+//#endif
+//    }
 
-    std::array<wchar_t, 1024> buffer;
-    std::wstring outputWide;
-    FILE* pipe = popen(command.c_str(), L"r");
-    if (!pipe)
-        throw std::runtime_error("Failed to open pipe");
-    while (fgetws(buffer.data(), static_cast<int>(buffer.size()), pipe))
-        outputWide += buffer.data();
+std::wstring getAudioMetadataJSON(const std::wstring& filePath) {
+    std::wstring command = L"ffprobe -v quiet -print_format json -show_format \"" + filePath + L"\"";
+
+#ifdef _WIN32
+    command += L" 2>&1"; // Redirect stderr to stdout (Windows)
+    FILE* pipe = _wpopen(command.c_str(), L"r");
+#else
+    command += L" 2>&1"; // Redirect stderr to stdout (Linux/macOS)
+    FILE* pipe = popen(std::string(command.begin(), command.end()).c_str(), "r");
+#endif
+
+    if (!pipe) {
+        std::wcerr << L"Failed to run ffprobe!" << std::endl;
+        return L"";
+    }
+
+    std::ostringstream result;
+    char buffer[1024];
+
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        result << buffer;
+    }
+
+#ifdef _WIN32
+    _pclose(pipe);
+#else
     pclose(pipe);
-    // Convert the wide-character output (assumed to be UTF‑16) to UTF‑8.
-    return WideToUTF8_2(outputWide);
+#endif
+
+    // Convert UTF-8 JSON output to wstring
+    //return CommonUtils::utf8ToWstring(result.str());
+    return CommonUtils::utf8ToWstring(result.str());
+}
+
+// Run ffprobe using a wide-string command and capture its output as a wide string.
+std::wstring runFFprobe(const std::wstring& filename) {
+
+	auto ret = getAudioMetadataJSON(filename);
+
+    return ret;
+
+    //// Build the command (including quoting the filename)
+    //std::wstring command = L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"";
+    //command += filename;
+    //command += L"\"";
+
+    //std::array<wchar_t, 2024> buffer;
+    //std::wstring outputWide;
+    //FILE* pipe = popen(command.c_str(), L"r");
+    //if (!pipe)
+    //    throw std::runtime_error("Failed to open pipe");
+    //while (fgetws(buffer.data(), static_cast<int>(buffer.size()), pipe))
+    //    outputWide += buffer.data();
+    //pclose(pipe);
+    //// Convert the wide-character output (assumed to be UTF‑16) to UTF‑8.
+    //return WideToUTF8_2(outputWide);
 }
 
 #else  // Linux/Unix
@@ -600,7 +674,7 @@ std::string runFFprobe(const std::wstring& filename) {
 
 
 //create a media file (on filesystem) from a media track
-std::string AlbumCollection::CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
+std::wstring AlbumCollection::CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
 {
     using namespace std::string_literals;
 
@@ -621,11 +695,11 @@ std::string AlbumCollection::CreateMediaInfoFile(std::filesystem::path mediaFile
     try
     {
         // Specify your file name as a wide string.
-        std::wstring filename = L"input.mp3";
+   //     std::wstring filename = L"input.mp3";
 #ifdef _WIN32
         std::wstring f = mediaFilePath.generic_wstring();
 
-        std::string wide_output = runFFprobe(f);
+        std::wstring wide_output = runFFprobe(f);
         // Convert wide output to UTF-8 narrow string for printing.
      //   std::cout << wide_output << std::endl;
 #else
@@ -652,7 +726,7 @@ std::string AlbumCollection::CreateMediaInfoFile(std::filesystem::path mediaFile
         std::cerr << "Error: " << e.what() << std::endl;
     }
 
-    return "**ERROR***";
+    return L"**ERROR***";
 }
 
 #if 0
@@ -751,21 +825,21 @@ std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path
 }
 #endif
 
-//parse jsonstring and return a media object
-MediaInformation AlbumCollection::ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath)
-{
-    MediaInformation mediaInfo;
-
-    //auto mediaInfoFile = AlbumCollection::CreateMediaInfoFile(path2Fixed);
-    if (!jsonMediaInfoPath.empty() && fs::exists(jsonMediaInfoPath))
-    {
-        std::ifstream file(jsonMediaInfoPath);
-        std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        mediaInfo = ParseMediaInfoFromJsonString(json);
-    }
-
-    return mediaInfo;
-}
+////parse jsonstring and return a media object
+//MediaInformation AlbumCollection::ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath)
+//{
+//    MediaInformation mediaInfo;
+//
+//    //auto mediaInfoFile = AlbumCollection::CreateMediaInfoFile(path2Fixed);
+//    if (!jsonMediaInfoPath.empty() && fs::exists(jsonMediaInfoPath))
+//    {
+//        std::ifstream file(jsonMediaInfoPath);
+//        std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+//        mediaInfo = ParseMediaInfoFromJsonString(json);
+//    }
+//
+//    return mediaInfo;
+//}
 
 
 //-------------COMPARE

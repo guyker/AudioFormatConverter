@@ -80,13 +80,13 @@ private:
 
 	//uses: CreateMediaInfoFile - to create json file
 	//      ParseMediaInfoFromJsonFile - to convert json file to info object
-	static std::tuple<MediaInformation, std::string> GetMediaInfoFromMediaFile(std::filesystem::path mediaFilePath);
+	static std::tuple<MediaInformation, std::wstring> GetMediaInfoFromMediaFile(std::filesystem::path mediaFilePath);
 
-	static std::string CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
+	static std::wstring CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
 
 	//static std::string GetMediaInfoJsonString(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
-	static MediaInformation ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath);
-	static MediaInformation ParseMediaInfoFromJsonString(std::string jsonString);
+	//static MediaInformation ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath);
+	static MediaInformation ParseMediaInfoFromJsonString(std::wstring jsonString);
 
 
 	//sort and find duplications
