@@ -35,8 +35,8 @@ struct MediaInformation
 	int nb_programs;
 	int nb_stream_groups;
 
-	std::string codec_name;
-	std::string codec_long_name;
+	std::string format_name;
+	std::string format_long_name;
 	std::string codec_type;
 	std::string start_time;
 	long duration;

@@ -955,8 +955,8 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
         "ID INTEGER PRIMARY KEY, "
         "album_name TEXT, "
         "filename TEXT, "
-        "codec_name TEXT, "
-        "codec_long_name TEXT, "
+        "format_name TEXT, "
+        "format_long_name TEXT, "
         "codec_type TEXT, "
         "start_time TEXT, "
         "duration INTEGER, "
@@ -994,8 +994,8 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
                 CommonUtils::wstringToUtf8(albumPath),
                 CommonUtils::wstringToUtf8(trackName.wstring()),
 
-                mediaInfo.codec_name,
-                mediaInfo.codec_long_name,
+                mediaInfo.format_name,
+                mediaInfo.format_long_name,
                 mediaInfo.codec_type,
                 mediaInfo.start_time,
                 mediaInfo.duration,
