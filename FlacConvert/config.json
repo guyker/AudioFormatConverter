@@ -1,21 +1,31 @@
 {
-    "Version": "1.0.0",
-    "WorkingDirectory": "\\\\?\\R:\\tmp\\24",
-    "DatabaseFileName": "all_albums.db",
-    "FLACSettings": {
-        "ffmpeg_exe_name": "ffmpeg",
-        "ffmpeg_arguments": "-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats"
+  "Version": "1.0.0",
+  "WorkingDirectory": "\\\\?\\R:\\tmp\\24",
+  "DatabaseFileName": "all_albums.db",
+  "FLACSettings": {
+    "ffmpeg_exe_name": "ffmpeg",
+    "ffmpeg_arguments": "-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats"
+  },
+  "MediaDirectoryList": [
+    {
+      "isActive": true,
+      "mediaPath": "\\\\?\\R:\\tmp\\24\\flac",
+      "resultPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac_result1.json",
+      "dbPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac.db"
     },
-    "MediaDirectoryList": [
-        {
-            "isActive": true,
-            "mediaPath": "\\\\?\\R:\\tmp\\24\\flac_tracks1",
-            "resultPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac_result1.json"
-        },
-        {
-            "isActive": true,
-            "mediaPath": "\\\\?\\R:\\tmp\\24\\flac_tracks2",
-            "resultPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac_result2.json"
-        }
-    ]
+    {
+      "isActive": false,
+      "mediaPath": "\\\\?\\R:\\tmp\\24\\mp3",
+      "resultPath": "\\\\?\\R:\\tmp\\24\\MediaResult_mp3_result1.json",
+      "dbPath": "\\\\?\\R:\\tmp\\24\\MediaResult_mp3.db"
+    },
+    {
+      "isActive": false,
+      "mediaPath": "\\\\?\\R:\\tmp\\24\\flac_tracks2",
+      "resultPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac_result2.json",
+      "dbPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac2.db"
+    }
+  ],
+  "MinMatchingTracksForDuplicate": 1,
+  "SizeMatchPercentageThreshold": 3
 }

@@ -319,7 +319,7 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
     DirectoryContentEntryList albumList;
 
     if (!fs::exists(path)) {
-        std::cout << "**** no file - Error parsing JSON: " << std::endl;
+        std::cout << "**** no file - json file not found Error parsing JSON: " << std::endl;
         return albumList;
     }
 
@@ -965,12 +965,32 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
       
         for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
         {
-            //auto queryString = "INSERT INTO test1 VALUES (null, '" + std::string(albumPath) + std::string("', 'John', 25); ");
-            //auto queryString = std::format("INSERT INTO AlbumListA VALUES (null, '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');",
-
             std::wstring albumPath = dirPath.path().wstring();
             //std::string albumPath2{ dirPath.path().generic_string()};
             //auto trackName2 = trackName.generic_string();
+
+            std::string queryString = std::format(
+                "INSERT OR REPLACE INTO AlbumListA VALUES (null, \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\");",
+                CommonUtils::wstringToUtf8(albumPath),
+                CommonUtils::wstringToUtf8(trackName.wstring()),
+                mediaInfo.format_name,
+                mediaInfo.format_long_name,
+                mediaInfo.start_time,
+                mediaInfo.duration,
+                mediaInfo.size,
+                mediaInfo.bit_rate,
+                mediaInfo.probe_score,
+                CommonUtils::wstringToUtf8(mediaInfo.tags.album),
+                CommonUtils::wstringToUtf8(mediaInfo.tags.artist),
+                CommonUtils::wstringToUtf8(mediaInfo.tags.album_artist),
+                CommonUtils::wstringToUtf8(mediaInfo.tags.comment),
+                CommonUtils::wstringToUtf8(mediaInfo.tags.genre),
+                CommonUtils::wstringToUtf8(mediaInfo.tags.publisher),
+                CommonUtils::wstringToUtf8(mediaInfo.tags.title),
+                CommonUtils::wstringToUtf8(mediaInfo.tags.track),
+                CommonUtils::wstringToUtf8(mediaInfo.tags.date));
+
+
 
             //std::wstring queryString = std::format(
             //    L"INSERT OR REPLACE INTO AlbumListA VALUES (null, \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\");",
@@ -981,12 +1001,10 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
             //    mediaInfo.tags.comment, mediaInfo.tags.genre, mediaInfo.tags.publisher,
             //    mediaInfo.tags.title, mediaInfo.tags.track, mediaInfo.tags.date);
 
-            std::wstring queryString = L"INSERT OR REPLACE INTO AlbumListA VALUE";
+            
 
-
-            std::string query = CommonUtils::wstringToUtf8(queryString);
             char* error_report;
-            rc = sqlite3_exec(db, query.c_str(), 0, 0, &error_report);
+            rc = sqlite3_exec(db, queryString.c_str(), 0, 0, &error_report);
             if (rc)
             {
                 int iii = 0;

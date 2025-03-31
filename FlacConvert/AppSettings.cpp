@@ -1,6 +1,8 @@
+
+#include <format>
+
 #include "AppSettings.h"
 #include "AlbumCollection.h"
-
 
 std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSettingsInstance = nullptr;
 
@@ -63,8 +65,8 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting()
     }
 
 	if (!isAppSettingLoaded)
-    {
-        std::cout << std::endl << "Would you like to create a new configuration file with defaults? Y/N (" << configPath << ")" << std::endl;
+    {        
+        std::cout << std::endl << std::format("Would you like to create a new configuration file with defaults under {} ? Y/N ", configPath.generic_string()) << std::endl;
         char input = getchar();
         switch (input)
         {
@@ -121,6 +123,7 @@ std::string AppSettingsJson::toJsonString() const {
         mediaObj.AddMember("isActive", media.isActive, allocator);
         mediaObj.AddMember("mediaPath", rapidjson::Value(media.mediaPath.c_str(), allocator), allocator);
         mediaObj.AddMember("resultPath", rapidjson::Value(media.resultPath.c_str(), allocator), allocator);
+        mediaObj.AddMember("dbPath", rapidjson::Value(media.dbPath.c_str(), allocator), allocator);
         mediaArray.PushBack(mediaObj, allocator);
     }
     doc.AddMember("MediaDirectoryList", mediaArray, allocator);
@@ -207,6 +210,9 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
             }
             if (mediaObj.HasMember("resultPath") && mediaObj["resultPath"].IsString()) {
                 media.resultPath = mediaObj["resultPath"].GetString();
+            }
+            if (mediaObj.HasMember("dbPath") && mediaObj["dbPath"].IsString()) {
+                media.dbPath = mediaObj["dbPath"].GetString();
             }
             MediaDirectoryList.push_back(media);
         }

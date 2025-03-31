@@ -244,13 +244,16 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
     return 0;
 }
 
-int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList, fs::path databasePath)
+int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
 {
+    auto appSettingPtr = AppSettingsJson::AppSetting();
+    fs::path databasePath = fs::path(appSettingPtr->WorkingDirectory) / fs::path(appSettingPtr->DatabaseFileName);
 
     for (auto& mediaEntry : mediaDirectoryList)
     {
         AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(mediaEntry.resultPath));
-        ac.SaveMediaInfoDocumentToDB(databasePath);
+        //ac.SaveMediaInfoDocumentToDB(databasePath);
+        ac.SaveMediaInfoDocumentToDB(mediaEntry.dbPath);
     }
 
     return 0;
@@ -296,7 +299,7 @@ int main()
     auto appSettingPtr = AppSettingsJson::AppSetting();
     if (appSettingPtr == nullptr)
     {
-        std::wcout << CommonUtils::getSymbolConstexpr("stop_sign") << "Failed to load Configuration File" << std::endl;
+        std::cout << CommonUtils::getSymbolConstexpr("stop_sign") << "Failed to load Configuration File" << std::endl;
 
 		return -1;
     }
@@ -338,8 +341,7 @@ int main()
         break;
     case PopulateJsonToDBEnum:
     {
-        fs::path databasePath = fs::path(appSettingPtr->WorkingDirectory) / fs::path(appSettingPtr->DatabaseFileName);
-        ExportJSONToDB(mediaList, databasePath);
+        ExportJSONToDB(mediaList);
     }
         break;
 
