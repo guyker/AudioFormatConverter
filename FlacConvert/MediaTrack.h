@@ -191,8 +191,9 @@ struct MediaTrack
 		if (auto nb_programs = JsonUtils::tryParseMember<int>(formatTag, "nb_programs")) { mi.nb_programs = *nb_programs; }
 		if (auto nb_stream_groups = JsonUtils::tryParseMember<int>(formatTag, "nb_stream_groups")) { mi.nb_stream_groups = *nb_stream_groups; }
 
-		if (auto format_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_name")) { mi.format_name = *format_name; }
-		if (auto format_long_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_long_name")) { mi.format_long_name = *format_long_name; }
+		if (auto codec_name = JsonUtils::tryParseMember<std::string>(formatTag, "codec_name")) { mi.codec_name = *codec_name; }
+		if (auto codec_long_name = JsonUtils::tryParseMember<std::string>(formatTag, "codec_long_name")) { mi.codec_long_name = *codec_long_name; }
+		if (auto codec_type = JsonUtils::tryParseMember<std::string>(formatTag, "codec_type")) { mi.codec_type = *codec_type; }
 		if (auto start_time = JsonUtils::tryParseMember<std::string>(formatTag, "start_time")) { mi.start_time = *start_time; }
 		if (auto size = JsonUtils::tryParseMember<std::string>(formatTag, "size")) { mi.size = *size; }
 		if (auto bit_rate = JsonUtils::tryParseMember<std::string>(formatTag, "bit_rate")) { mi.bit_rate = *bit_rate; }

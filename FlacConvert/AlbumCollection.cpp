@@ -951,7 +951,27 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
 
     rc = sqlite3_exec(db, "DROP TABLE IF EXISTS AlbumListA;", 0, 0, 0);
 
-    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS AlbumListA (ID INTEGER PRIMARY KEY, album_name TEXT, filename TEXT, format_name TEXT, format_long_name TEXT, start_time TEXT, duration INTEGER, size TEXT, bit_rate TEXT, probe_score INTEGER, album TEXT, artist TEXT, album_artist TEXT, comment TEXT, genre TEXT, publisher TEXT, title TEXT, track TEXT, date TEXT);", 0, 0, 0);
+    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS AlbumListA ("
+        "ID INTEGER PRIMARY KEY, "
+        "album_name TEXT, "
+        "filename TEXT, "
+        "codec_name TEXT, "
+        "codec_long_name TEXT, "
+        "codec_type TEXT, "
+        "start_time TEXT, "
+        "duration INTEGER, "
+        "size TEXT, "
+        "bit_rate TEXT, "
+        "probe_score INTEGER, "
+        "album TEXT, "
+        "artist TEXT, "
+        "album_artist TEXT, "
+        "comment TEXT, "
+        "genre TEXT, "
+        "publisher TEXT, "
+        "title TEXT, "
+        "track TEXT, "
+        "date TEXT); ", 0, 0, 0);
 
     if (rc != SQLITE_OK) {
         std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
@@ -970,11 +990,13 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
             //auto trackName2 = trackName.generic_string();
 
             std::string queryString = std::format(
-                "INSERT OR REPLACE INTO AlbumListA VALUES (null, \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\");",
+                "INSERT OR REPLACE INTO AlbumListA VALUES (null, \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\");",
                 CommonUtils::wstringToUtf8(albumPath),
                 CommonUtils::wstringToUtf8(trackName.wstring()),
-                mediaInfo.format_name,
-                mediaInfo.format_long_name,
+
+                mediaInfo.codec_name,
+                mediaInfo.codec_long_name,
+                mediaInfo.codec_type,
                 mediaInfo.start_time,
                 mediaInfo.duration,
                 mediaInfo.size,
@@ -991,26 +1013,12 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
                 CommonUtils::wstringToUtf8(mediaInfo.tags.date));
 
 
-
-            //std::wstring queryString = std::format(
-            //    L"INSERT OR REPLACE INTO AlbumListA VALUES (null, \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\");",
-            //    albumPath, trackName.wstring(),
-            //    mediaInfo.format_name, mediaInfo.format_long_name,
-            //    mediaInfo.start_time, mediaInfo.duration, mediaInfo.size, mediaInfo.bit_rate, mediaInfo.probe_score,
-            //    mediaInfo.tags.album, mediaInfo.tags.artist, mediaInfo.tags.album_artist,
-            //    mediaInfo.tags.comment, mediaInfo.tags.genre, mediaInfo.tags.publisher,
-            //    mediaInfo.tags.title, mediaInfo.tags.track, mediaInfo.tags.date);
-
-            
-
             char* error_report;
             rc = sqlite3_exec(db, queryString.c_str(), 0, 0, &error_report);
             if (rc)
             {
-                int iii = 0;
+                std::cerr << "***ERROR - Database error: " << error_report << std::endl;
             }
-
-            int t = 0;
         }
     }
 
