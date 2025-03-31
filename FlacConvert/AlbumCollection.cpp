@@ -125,38 +125,9 @@ MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::wstring json
     }
 
 
-    if (doc.IsObject())
+    if (doc.IsObject() && doc.HasMember("format"))
     {
-//        auto docObject = doc.GetObj();
-//        auto formatTag = docObject["format"].GetObj();
-        auto& allocator = doc.GetAllocator();
-
-        Value newTagValue;
-        newTagValue.CopyFrom(doc, allocator); // Copy the parsed object
-        doc.AddMember("NEWTAG", newTagValue, allocator);
-        
-
-        if (doc.HasMember("NEWTAG") && doc["NEWTAG"].IsObject()) {
-            const Value& newTag = doc["NEWTAG"];
-            if (newTag.HasMember("format")) {
-                const Value& formatTag = newTag["format"];
-                //auto formatTag = newTag["format"].GetObj();
-
-				//auto ret_str = valueToString(formatTag);
-
-            //    auto str2 = formatTag.GetString();
-            //    auto str1 = doc["NEWTAG"]["format"].GetString();
-
-                return MediaInformation{ MediaTrack::ParseMediaInformation(formatTag) };
-            }
-        }
-
-        //auto docObject = doc.GetObj();
-        //auto formatTag = docObject["format"].GetObj();
-
-        //return MediaInformation { MediaTrack::ParseMediaInformation(formatTag) };
-
-        return MediaInformation{ };
+        return MediaInformation{ MediaTrack::ParseMediaInformation(doc["format"]) };
     }
 
     return mediaInfo;
