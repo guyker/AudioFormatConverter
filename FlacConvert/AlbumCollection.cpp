@@ -370,9 +370,10 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
 
         for (SizeType i = 0; i < mediaTrackList.Size(); i++)
         {
-            if (mediaTrackList[i].IsObject())
+			auto& mediaTags = mediaTrackList[i];
+            if (mediaTags.IsObject() && mediaTags.HasMember("format"))
             {
-                MediaInformation mi{ MediaTrack::ParseMediaInformation(mediaTrackList[i].GetObj()) };
+                MediaInformation mi{ MediaTrack::ParseMediaInformation(mediaTags["format"]) };
                 if (bBasicDataOnly)
                 {
                     trackList.push_back({ mi.filename, std::stol(mi.size), mi, L"{}" });
