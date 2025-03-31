@@ -75,7 +75,6 @@ public:
 	
 private:
 	//static Helpers
-	static MediaInformation ParseMediaInformation(auto formatTag);
 	static rapidjson::Document GetJSONDoc(std::filesystem::path path);
 
 	//uses: CreateMediaInfoFile - to create json file

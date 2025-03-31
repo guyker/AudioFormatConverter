@@ -181,11 +181,11 @@ struct MediaTrack
 
 	//ststic function that parses a json metadata JSON and returns an instance of MediaInformation 
 	//static MediaInformation ParseMediaInformation(GenericObject::Object formatTag)
-	static MediaInformation ParseMediaInformation(Value& formatTag)
+	static MediaInformation ParseMediaInformation(const Value& formatTag)
 	{
 		MediaInformation mi;
 
-		if (auto filename = JsonUtils::tryParseMember<std::string>(formatTag, "filename")) { mi.filename = *filename; }
+		if (auto filename = JsonUtils::tryParseMember<std::wstring>(formatTag, "filename")) { mi.filename = *filename; }
 
 		if (auto nb_streams = JsonUtils::tryParseMember<int>(formatTag, "nb_streams")) { mi.nb_streams = *nb_streams; }
 		if (auto nb_programs = JsonUtils::tryParseMember<int>(formatTag, "nb_programs")) { mi.nb_programs = *nb_programs; }
@@ -206,26 +206,26 @@ struct MediaTrack
 			auto tags = formatTag["tags"].GetObj();
 
 
-			if (auto album = JsonUtils::tryParseMember<std::string>(formatTag, "album")) { mi.tags.album = *album; }
-			if (auto disc = JsonUtils::tryParseMember<std::string>(formatTag, "disc")) { mi.tags.disc = *disc; }
-			if (auto album_dynamic_range = JsonUtils::tryParseMember<std::string>(formatTag, "album_dynamic_range")) { mi.tags.album_dynamic_range = *album_dynamic_range; }
-			if (auto dynamic_range = JsonUtils::tryParseMember<std::string>(formatTag, "dynamic_range")) { mi.tags.dynamic_range = *dynamic_range; }
-			if (auto artist = JsonUtils::tryParseMember<std::string>(formatTag, "artist")) { mi.tags.artist = *artist; }
-			if (auto album_artist = JsonUtils::tryParseMember<std::string>(formatTag, "album_artist")) { mi.tags.album_artist = *album_artist; }
-			if (auto composer = JsonUtils::tryParseMember<std::string>(formatTag, "composer")) { mi.tags.composer = *composer; }
-			if (auto copyright = JsonUtils::tryParseMember<std::string>(formatTag, "copyright")) { mi.tags.copyright = *copyright; }
-			if (auto label = JsonUtils::tryParseMember<std::string>(formatTag, "label")) { mi.tags.label = *label; }
-			if (auto year = JsonUtils::tryParseMember<std::string>(formatTag, "year")) { mi.tags.year = *year; }
-			if (auto comment = JsonUtils::tryParseMember<std::string>(formatTag, "comment")) { mi.tags.comment = *comment; }
-			if (auto genre = JsonUtils::tryParseMember<std::string>(formatTag, "genre")) { mi.tags.genre = *genre; }
-			if (auto publisher = JsonUtils::tryParseMember<std::string>(formatTag, "publisher")) { mi.tags.publisher = *publisher; }
-			if (auto title = JsonUtils::tryParseMember<std::string>(formatTag, "title")) { mi.tags.title = *title; }
-			if (auto track = JsonUtils::tryParseMember<std::string>(formatTag, "track")) { mi.tags.track = *track; }
-			if (auto track_total = JsonUtils::tryParseMember<std::string>(formatTag, "track_total")) { mi.tags.track_total = *track_total; }
-			if (auto date = JsonUtils::tryParseMember<std::string>(formatTag, "date")) { mi.tags.date = *date; }
-			if (auto encoder = JsonUtils::tryParseMember<std::string>(formatTag, "encoder")) { mi.tags.encoder = *encoder; }
-			if (auto encoded_by = JsonUtils::tryParseMember<std::string>(formatTag, "encoded_by")) { mi.tags.encoded_by = *encoded_by; }
-			if (auto organization = JsonUtils::tryParseMember<std::string>(formatTag, "organization")) { mi.tags.organization = *organization; }
+			if (auto album = JsonUtils::tryParseMember<std::wstring>(tags, "album")) { mi.tags.album = *album; }
+			if (auto disc = JsonUtils::tryParseMember<std::wstring>(tags, "disc")) { mi.tags.disc = *disc; }
+			if (auto album_dynamic_range = JsonUtils::tryParseMember<std::wstring>(tags, "album_dynamic_range")) { mi.tags.album_dynamic_range = *album_dynamic_range; }
+			if (auto dynamic_range = JsonUtils::tryParseMember<std::wstring>(tags, "dynamic_range")) { mi.tags.dynamic_range = *dynamic_range; }
+			if (auto artist = JsonUtils::tryParseMember<std::wstring>(tags, "artist")) { mi.tags.artist = *artist; }
+			if (auto album_artist = JsonUtils::tryParseMember<std::wstring>(tags, "album_artist")) { mi.tags.album_artist = *album_artist; }
+			if (auto composer = JsonUtils::tryParseMember<std::wstring>(tags, "composer")) { mi.tags.composer = *composer; }
+			if (auto copyright = JsonUtils::tryParseMember<std::wstring>(tags, "copyright")) { mi.tags.copyright = *copyright; }
+			if (auto label = JsonUtils::tryParseMember<std::wstring>(tags, "label")) { mi.tags.label = *label; }
+			if (auto year = JsonUtils::tryParseMember<std::wstring>(tags, "year")) { mi.tags.year = *year; }
+			if (auto comment = JsonUtils::tryParseMember<std::wstring>(tags, "comment")) { mi.tags.comment = *comment; }
+			if (auto genre = JsonUtils::tryParseMember<std::wstring>(tags, "genre")) { mi.tags.genre = *genre; }
+			if (auto publisher = JsonUtils::tryParseMember<std::wstring>(tags, "publisher")) { mi.tags.publisher = *publisher; }
+			if (auto title = JsonUtils::tryParseMember<std::wstring>(tags, "title")) { mi.tags.title = *title; }
+			if (auto track = JsonUtils::tryParseMember<std::wstring>(tags, "track")) { mi.tags.track = *track; }
+			if (auto track_total = JsonUtils::tryParseMember<std::wstring>(tags, "track_total")) { mi.tags.track_total = *track_total; }
+			if (auto date = JsonUtils::tryParseMember<std::wstring>(tags, "date")) { mi.tags.date = *date; }
+			if (auto encoder = JsonUtils::tryParseMember<std::wstring>(tags, "encoder")) { mi.tags.encoder = *encoder; }
+			if (auto encoded_by = JsonUtils::tryParseMember<std::wstring>(tags, "encoded_by")) { mi.tags.encoded_by = *encoded_by; }
+			if (auto organization = JsonUtils::tryParseMember<std::wstring>(tags, "organization")) { mi.tags.organization = *organization; }
 		}
 
 		return mi;

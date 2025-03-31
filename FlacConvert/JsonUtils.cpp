@@ -3,7 +3,7 @@
 #include <string>
 #include <optional>
 #include <type_traits>
-
+#include "CommonUtils.h"
 
 #include "rapidjson/rapidjson.h" 
 #include "rapidjson/document.h"
@@ -32,6 +32,11 @@ namespace JsonUtils {
                 return value.GetString();
             }
         }
+        else if constexpr (std::is_same_v<T, std::wstring>) {
+            if (value.IsString()) {
+                return CommonUtils::utf8ToWstring(value.GetString());
+            }
+        }        
         else if constexpr (std::is_same_v<T, int>) {
             if (value.IsInt()) {
                 return value.GetInt();
@@ -68,10 +73,19 @@ namespace JsonUtils {
 
     // Explicit template instantiations (optional, see notes)
     template std::optional<std::string> tryParseMember<std::string>(const rapidjson::Value&, const char*);
+    template std::optional<std::wstring> tryParseMember<std::wstring>(const rapidjson::Value&, const char*);
     template std::optional<int> tryParseMember<int>(const rapidjson::Value&, const char*);
     template std::optional<long> tryParseMember<long>(const rapidjson::Value&, const char*);
     template std::optional<double> tryParseMember<double>(const rapidjson::Value&, const char*);
     template std::optional<bool> tryParseMember<bool>(const rapidjson::Value&, const char*);
+
+
+    static std::string valueToString(const rapidjson::Value& value) {
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+        value.Accept(writer); // Serialize the Value into the buffer
+        return buffer.GetString();
+    }
 }
 
 

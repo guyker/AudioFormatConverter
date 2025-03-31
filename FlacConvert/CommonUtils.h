@@ -11,8 +11,8 @@
 
 namespace CommonUtils
 {
-	std::wstring ToLower(const std::wstring& str);
-	
+    std::wstring ToLower(const std::wstring& str);
+
     // Pair type for symbol name and UTF-8 string
     using SymbolPair = std::pair<const char*, const char*>;
 
@@ -61,7 +61,7 @@ namespace CommonUtils
 
         int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
         if (size_needed == 0) {
-          //  throw std::runtime_error("WideCharToMultiByte failed to determine size");
+            //  throw std::runtime_error("WideCharToMultiByte failed to determine size");
         }
         std::string utf8Str(size_needed - 1, 0); // -1 to exclude null terminator
         WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &utf8Str[0], size_needed, nullptr, nullptr);
@@ -87,6 +87,55 @@ namespace CommonUtils
 #else
         std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
         return converter.from_bytes(str);
+#endif
+    }
+
+
+    // Convert UTF-8 to wstring (cross-platform)
+    static std::wstring utf8ToWstring2_XXXXX(const std::string& utf8Str) {
+        if (utf8Str.empty()) {
+            return std::wstring();
+        }
+
+#ifdef _WIN32
+        // Windows: UTF-8 to UTF-16
+        int size_needed = MultiByteToWideChar(CP_UTF8, 0, utf8Str.c_str(),
+            static_cast<int>(utf8Str.length()),
+            nullptr, 0);
+        if (size_needed == 0) {
+            //  throw std::runtime_error("MultiByteToWideChar failed to determine size");
+        }
+
+        std::wstring wstr(size_needed, 0);
+        MultiByteToWideChar(CP_UTF8, 0, utf8Str.c_str(),
+            static_cast<int>(utf8Str.length()),
+            &wstr[0], size_needed);
+        return wstr;
+
+#else
+        // Linux: UTF-8 to UTF-32 (assuming wstring is UTF-32)
+        iconv_t cd = iconv_open("WCHAR_T", "UTF-8");
+        if (cd == (iconv_t)-1) {
+            throw std::runtime_error("iconv_open failed");
+        }
+
+        size_t inBytes = utf8Str.length();
+        size_t outBytes = inBytes * sizeof(wchar_t);
+        std::wstring wstr(outBytes / sizeof(wchar_t), 0);
+
+        char* inBuf = const_cast<char*>(utf8Str.c_str());
+        char* outBuf = reinterpret_cast<char*>(&wstr[0]);
+        size_t outBytesLeft = outBytes;
+
+        size_t result = iconv(cd, &inBuf, &inBytes, &outBuf, &outBytesLeft);
+        iconv_close(cd);
+
+        if (result == (size_t)-1) {
+            throw std::runtime_error("iconv conversion failed");
+        }
+
+        wstr.resize((outBytes - outBytesLeft) / sizeof(wchar_t));
+        return wstr;
 #endif
     }
 

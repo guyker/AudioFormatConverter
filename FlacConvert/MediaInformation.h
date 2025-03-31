@@ -30,7 +30,7 @@ struct MediaTrack;
 
 struct MediaInformation
 {
-	std::string filename;
+	std::wstring filename;
 	int nb_streams;
 	int nb_programs;
 	int nb_stream_groups;
@@ -46,28 +46,28 @@ struct MediaInformation
 
 	struct tags_t
 	{
-		std::string album;
-		std::string disc;
-		std::string album_dynamic_range;
-		std::string dynamic_range;
-		std::string artist;
-		std::string album_artist;
-		std::string composer;
-		std::string copyright;
+		std::wstring album;
+		std::wstring disc;
+		std::wstring album_dynamic_range;
+		std::wstring dynamic_range;
+		std::wstring artist;
+		std::wstring album_artist;
+		std::wstring composer;
+		std::wstring copyright;
 
-		std::string label;
-		std::string year;
+		std::wstring label;
+		std::wstring year;
 
-		std::string comment;
-		std::string genre;
-		std::string publisher;
-		std::string title;
-		std::string track;
-		std::string track_total;
-		std::string date;
-		std::string encoder;
-		std::string encoded_by;
-		std::string organization;
+		std::wstring comment;
+		std::wstring genre;
+		std::wstring publisher;
+		std::wstring title;
+		std::wstring track;
+		std::wstring track_total;
+		std::wstring date;
+		std::wstring encoder;
+		std::wstring encoded_by;
+		std::wstring organization;
 
 	} tags;
 };

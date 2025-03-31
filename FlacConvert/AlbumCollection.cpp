@@ -108,6 +108,7 @@ TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path 
 }
 
 
+
 MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::wstring jsonString)
 {
 
@@ -126,10 +127,36 @@ MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::wstring json
 
     if (doc.IsObject())
     {
-        auto docObject = doc.GetObj();
-        auto formatTag = docObject["format"].GetObj();
+//        auto docObject = doc.GetObj();
+//        auto formatTag = docObject["format"].GetObj();
+        auto& allocator = doc.GetAllocator();
 
-        return MediaInformation { AlbumCollection::ParseMediaInformation(formatTag) };        
+        Value newTagValue;
+        newTagValue.CopyFrom(doc, allocator); // Copy the parsed object
+        doc.AddMember("NEWTAG", newTagValue, allocator);
+        
+
+        if (doc.HasMember("NEWTAG") && doc["NEWTAG"].IsObject()) {
+            const Value& newTag = doc["NEWTAG"];
+            if (newTag.HasMember("format")) {
+                const Value& formatTag = newTag["format"];
+                //auto formatTag = newTag["format"].GetObj();
+
+				//auto ret_str = valueToString(formatTag);
+
+            //    auto str2 = formatTag.GetString();
+            //    auto str1 = doc["NEWTAG"]["format"].GetString();
+
+                return MediaInformation{ MediaTrack::ParseMediaInformation(formatTag) };
+            }
+        }
+
+        //auto docObject = doc.GetObj();
+        //auto formatTag = docObject["format"].GetObj();
+
+        //return MediaInformation { MediaTrack::ParseMediaInformation(formatTag) };
+
+        return MediaInformation{ };
     }
 
     return mediaInfo;
@@ -241,9 +268,10 @@ bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path path)
                 }
                 else
                 {
-                    Value valueCopy;
-                    valueCopy.CopyFrom(trackDoc["format"], mediaDoc.GetAllocator());
-                    trackMediaArray.PushBack(valueCopy, mediaDoc.GetAllocator());
+					//Add media information to the track list
+                    Value childValue;
+                    childValue.CopyFrom(trackDoc, mediaDoc.GetAllocator()); // Copy childDoc into childValue using the parent allocator
+                    trackMediaArray.PushBack(childValue, mediaDoc.GetAllocator());
                 }
             }
         }
@@ -311,56 +339,8 @@ bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path path)
 
 
 
-//ststic function that parses a json metadata JSON and returns an instance of MediaInformation 
-MediaInformation AlbumCollection::ParseMediaInformation(auto formatTag)
-{
-    MediaInformation mi;
-
-    if (auto filename = JsonUtils::tryParseMember<std::string>(formatTag, "filename")) { mi.filename = *filename; }
-
-    if (auto nb_streams = JsonUtils::tryParseMember<int>(formatTag, "nb_streams")) { mi.nb_streams = *nb_streams; }
-    if (auto nb_programs = JsonUtils::tryParseMember<int>(formatTag, "nb_programs")) { mi.nb_programs = *nb_programs; }
-    if (auto nb_stream_groups = JsonUtils::tryParseMember<int>(formatTag, "nb_stream_groups")) { mi.nb_stream_groups = *nb_stream_groups; }
-
-    if (auto format_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_name")) { mi.format_name = *format_name; }
-    if (auto format_long_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_long_name")) { mi.format_long_name = *format_long_name; }
-    if (auto start_time = JsonUtils::tryParseMember<std::string>(formatTag, "start_time")) { mi.start_time = *start_time; }
-    if (auto size = JsonUtils::tryParseMember<std::string>(formatTag, "size")) { mi.size = *size; }
-    if (auto bit_rate = JsonUtils::tryParseMember<std::string>(formatTag, "bit_rate")) { mi.bit_rate = *bit_rate; }
-
-    if (auto duration = JsonUtils::tryParseMember<long>(formatTag, "duration")) { mi.duration = *duration; }
-    if (auto probe_score = JsonUtils::tryParseMember<int>(formatTag, "probe_score")) { mi.probe_score = *probe_score; }
 
 
-    if (formatTag.FindMember("tags") != formatTag.MemberEnd())
-    {
-        auto tags = formatTag["tags"].GetObj();
-
-
-        if (auto album = JsonUtils::tryParseMember<std::string>(formatTag, "album")) { mi.tags.album = *album; }
-        if (auto disc = JsonUtils::tryParseMember<std::string>(formatTag, "disc")) { mi.tags.disc = *disc; }
-        if (auto album_dynamic_range = JsonUtils::tryParseMember<std::string>(formatTag, "album_dynamic_range")) { mi.tags.album_dynamic_range = *album_dynamic_range; }
-        if (auto dynamic_range = JsonUtils::tryParseMember<std::string>(formatTag, "dynamic_range")) { mi.tags.dynamic_range = *dynamic_range; }
-        if (auto artist = JsonUtils::tryParseMember<std::string>(formatTag, "artist")) { mi.tags.artist = *artist; }
-        if (auto album_artist = JsonUtils::tryParseMember<std::string>(formatTag, "album_artist")) { mi.tags.album_artist = *album_artist; }
-        if (auto composer = JsonUtils::tryParseMember<std::string>(formatTag, "composer")) { mi.tags.composer = *composer; }
-        if (auto copyright = JsonUtils::tryParseMember<std::string>(formatTag, "copyright")) { mi.tags.copyright = *copyright; }
-        if (auto label = JsonUtils::tryParseMember<std::string>(formatTag, "label")) { mi.tags.label = *label; }
-        if (auto year = JsonUtils::tryParseMember<std::string>(formatTag, "year")) { mi.tags.year = *year; }
-        if (auto comment = JsonUtils::tryParseMember<std::string>(formatTag, "comment")) { mi.tags.comment = *comment; }
-        if (auto genre = JsonUtils::tryParseMember<std::string>(formatTag, "genre")) { mi.tags.genre = *genre; }
-        if (auto publisher = JsonUtils::tryParseMember<std::string>(formatTag, "publisher")) { mi.tags.publisher = *publisher; }
-        if (auto title = JsonUtils::tryParseMember<std::string>(formatTag, "title")) { mi.tags.title = *title; }
-        if (auto track = JsonUtils::tryParseMember<std::string>(formatTag, "track")) { mi.tags.track = *track; }
-        if (auto track_total = JsonUtils::tryParseMember<std::string>(formatTag, "track_total")) { mi.tags.track_total = *track_total; }
-        if (auto date = JsonUtils::tryParseMember<std::string>(formatTag, "date")) { mi.tags.date = *date; }
-        if (auto encoder = JsonUtils::tryParseMember<std::string>(formatTag, "encoder")) { mi.tags.encoder = *encoder; }
-        if (auto encoded_by = JsonUtils::tryParseMember<std::string>(formatTag, "encoded_by")) { mi.tags.encoded_by = *encoded_by; }
-        if (auto organization = JsonUtils::tryParseMember<std::string>(formatTag, "organization")) { mi.tags.organization = *organization; }
-    }
-
-    return mi;
-}
 
 //ststic function that loads album list from a Json file and returns a DirectoryContentEntryList object
 DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::filesystem::path path, bool bBasicDataOnly)
@@ -368,13 +348,22 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
     DirectoryContentEntryList albumList;
 
     if (!fs::exists(path)) {
-
+        std::cout << "**** no file - Error parsing JSON: " << std::endl;
         return albumList;
     }
 
-    std::ifstream file(path);
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        std::cout << "****Error file=null - parsing JSON: " << std::endl;
+        return albumList;
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string utf8_data = buffer.str();
+	std::wstring json = CommonUtils::utf8ToWstring(utf8_data);
     // Read the entire file into a string 
-    std::wstring json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    //std::wstring json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
     rapidjson::Document doc;
 
@@ -399,23 +388,20 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
     for (auto itr = jsonObject.begin(); itr != jsonObject.end(); itr++)
     {
         TrackInfoList trackList;
-        //MediaInfoList mediaInfoList;
-        std::string albumName = itr->name.GetString();
+        std::wstring albumName = CommonUtils::utf8ToWstring(itr->name.GetString());
         auto mediaTrackList = itr->value.GetArray();
         
-        //std::string spacesString(80, ' ');
-        //std::cout << spacesString << 'r';
 
-        auto albumLogStr = std::format("Album [{}]: {}", ++iAlbumCount, albumName);
+        auto albumLogStr = std::format(L"Album [{}]: {}", ++iAlbumCount, albumName);
         //std::cout << albumLogStr << std::endl;
-        std::cout << albumLogStr << '\r';
+        std::wcout << albumLogStr << '\r';
 
 
         for (SizeType i = 0; i < mediaTrackList.Size(); i++)
         {
             if (mediaTrackList[i].IsObject())
             {
-                MediaInformation mi{ AlbumCollection::ParseMediaInformation(mediaTrackList[i].GetObj()) };
+                MediaInformation mi{ MediaTrack::ParseMediaInformation(mediaTrackList[i].GetObj()) };
                 if (bBasicDataOnly)
                 {
                     trackList.push_back({ mi.filename, std::stol(mi.size), mi, L"{}" });
@@ -577,7 +563,7 @@ std::string WideToUTF8_2(const std::wstring& wideStr) {
 //    }
 
 std::wstring getAudioMetadataJSON(const std::wstring& filePath) {
-    std::wstring command = L"ffprobe -v quiet -print_format json -show_format \"" + filePath + L"\"";
+    std::wstring command = L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"" + filePath + L"\"";
 
 #ifdef _WIN32
     command += L" 2>&1"; // Redirect stderr to stdout (Windows)
@@ -1010,21 +996,23 @@ bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
             //auto queryString = "INSERT INTO test1 VALUES (null, '" + std::string(albumPath) + std::string("', 'John', 25); ");
             //auto queryString = std::format("INSERT INTO AlbumListA VALUES (null, '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');",
 
-            auto albumPath = dirPath.path().generic_string();
+            std::wstring albumPath = dirPath.path().wstring();
             //std::string albumPath2{ dirPath.path().generic_string()};
             //auto trackName2 = trackName.generic_string();
 
-            auto queryString = std::format("INSERT OR REPLACE INTO AlbumListA VALUES (null, \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\");",
-                albumPath, trackName.generic_string(),
-                mediaInfo.format_name, mediaInfo.format_long_name,
-                mediaInfo.start_time, mediaInfo.duration, mediaInfo.size, mediaInfo.bit_rate, mediaInfo.probe_score,
-                mediaInfo.tags.album, mediaInfo.tags.artist, mediaInfo.tags.album_artist,
-                mediaInfo.tags.comment, mediaInfo.tags.genre, mediaInfo.tags.publisher,
-                mediaInfo.tags.title, mediaInfo.tags.track, mediaInfo.tags.date);
+            //std::wstring queryString = std::format(
+            //    L"INSERT OR REPLACE INTO AlbumListA VALUES (null, \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\");",
+            //    albumPath, trackName.wstring(),
+            //    mediaInfo.format_name, mediaInfo.format_long_name,
+            //    mediaInfo.start_time, mediaInfo.duration, mediaInfo.size, mediaInfo.bit_rate, mediaInfo.probe_score,
+            //    mediaInfo.tags.album, mediaInfo.tags.artist, mediaInfo.tags.album_artist,
+            //    mediaInfo.tags.comment, mediaInfo.tags.genre, mediaInfo.tags.publisher,
+            //    mediaInfo.tags.title, mediaInfo.tags.track, mediaInfo.tags.date);
+
+            std::wstring queryString = L"INSERT OR REPLACE INTO AlbumListA VALUE";
 
 
-
-            std::string query = queryString;
+            std::string query = CommonUtils::wstringToUtf8(queryString);
             char* error_report;
             rc = sqlite3_exec(db, query.c_str(), 0, 0, &error_report);
             if (rc)
