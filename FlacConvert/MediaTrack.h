@@ -28,10 +28,10 @@ namespace fs = std::filesystem;
 
 struct MediaTrack
 {
-	std::filesystem::path trackPath;
-	long long fileSize;
-	MediaInformation formatInfo;
-	std::wstring mediaInfoString;
+	std::filesystem::path trackPath; //media file path / location
+	long long fileSize;	//file size in bytes
+	MediaInformation formatInfo;	//media information / tags
+	std::wstring mediaInfoString;	//media information / tags in json string
 
 
 	static bool IsFileConvertable(std::filesystem::path filePath)
