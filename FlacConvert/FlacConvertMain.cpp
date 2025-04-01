@@ -203,23 +203,29 @@ int ScanFolderAndCreateDB(std::vector<MediaDirectoryElement> mediaDirectoryList)
 
 int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> mediaDirectoryList)
 {
-    DirectoryContentEntryList medialList;
+    //guyguyguy\
+    //verify this function after we changed the l;oading.......
+
+    //DirectoryContentEntryList medialList;
+	AlbumCollection albumCollection;
     for (auto& mediaEntry : mediaDirectoryList)
     {
         //std::wcout << std::format(L"Processing: {}", mediaEntry.resultPath) << std::endl;
         std::cout << "Processing: {}" << mediaEntry.resultPath << std::endl;
 
-        auto const& accumulatedList = AlbumCollection::LoadAlbumCollectionFromJSON(mediaEntry.resultPath, true);
-        medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
+
+        bool resul = albumCollection.LoadAlbumCollectionFromJSON(mediaEntry.resultPath, true);
+//        auto const& accumulatedList = AlbumCollection::LoadAlbumCollectionFromJSON(mediaEntry.resultPath, true);
+//        medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
     }
 
     //AlbumCollection ac(std::move(medialList));
-    AlbumCollection ac;
-	ac.LoadAlbumCollection(medialList);
+    //AlbumCollection ac;
+	//ac.LoadAlbumCollection(medialList);
     // ***by know medialList should contain an empty list***
 
-    ac.SortByNumberOfTracks();
-    auto dupList = ac.FindDuplicatedAlbums();
+    albumCollection.SortByNumberOfTracks();
+    auto dupList = albumCollection.FindDuplicatedAlbums();
 
     auto iCount = dupList.size();
     int iCurrent = 0;
@@ -248,20 +254,24 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
 
 int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
 {
+    //guyguy review after loading changes
+
     auto appSettingPtr = AppSettingsJson::AppSetting();
     fs::path databasePath = fs::path(appSettingPtr->WorkingDirectory) / fs::path(appSettingPtr->DatabaseFileName);
 
+    AlbumCollection albumCollection;
+
     for (auto& mediaEntry : mediaDirectoryList)
     {
-        auto albumList = AlbumCollection::LoadAlbumCollectionFromJSON(mediaEntry.resultPath);
+        auto result = albumCollection.LoadAlbumCollectionFromJSON(mediaEntry.resultPath);
         //AlbumCollection ac(albumList);
-        AlbumCollection ac;
-		ac.LoadAlbumCollection(albumList);
+  //      AlbumCollection ac;
+//		ac.LoadAlbumCollection(albumList);
 
 
 
         //ac.SaveMediaInfoDocumentToDB(databasePath);
-        ac.SaveMediaInfoDocumentToDB(mediaEntry.dbPath);
+        albumCollection.SaveMediaInfoDocumentToDB(mediaEntry.dbPath);
     }
 
     return 0;

@@ -49,12 +49,14 @@ public:
 	//AlbumCollection(DirectoryContentEntryList&& albumList);
 
 
-
-
-	bool LoadAlbumCollection(DirectoryContentEntryList& albumList);
+	//bool LoadAlbumCollection(DirectoryContentEntryList& albumList);
 	//Load album list or ddirectory structure of the albums from the file system
 	bool LoadAlbumCollection(std::filesystem::path albumCollectionDirPath);
-	bool LoadAlbumCollectionWithMetadata(std::filesystem::path albumCollectionDirPath, std::filesystem::path& outDirPath);
+	//bool LoadAlbumCollectionWithMetadata(std::filesystem::path albumCollectionDirPath, std::filesystem::path& outDirPath);
+
+	//static DirectoryContentEntryList LoadAlbumCollectionFromJSON(std::filesystem::path dirPath, bool bBasicDataOnly = false);
+	bool LoadAlbumCollectionFromJSON(std::filesystem::path dirPath, bool bBasicDataOnly = false);
+
 
 	//Load/Reload album tracks metadata information
 	size_t ExportMediaInformationToDB(bool bAsync = true);
@@ -65,7 +67,6 @@ public:
 
 	void Clear();
 
-	static DirectoryContentEntryList LoadAlbumCollectionFromJSON(std::filesystem::path dirPath, bool bBasicDataOnly = false);
 
 
 	//compare

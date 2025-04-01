@@ -31,12 +31,12 @@ void AlbumCollection::Clear()
     _AlbumList.clear();
 }
 
-bool AlbumCollection::LoadAlbumCollection(DirectoryContentEntryList& albumList)
-{
-	_AlbumList = albumList;
-    return true;
-
-}
+//bool AlbumCollection::LoadAlbumCollection(DirectoryContentEntryList& albumList)
+//{
+//	_AlbumList = albumList;
+//    return true;
+//
+//}
 
 bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath)
 {
@@ -53,20 +53,20 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
 }
 
 //Load all all albumes and tracks into _fileList
-bool AlbumCollection::LoadAlbumCollectionWithMetadata(std::filesystem::path albumCollectionDirPath, std::filesystem::path& outDirPath)
-{
-
-    //Scan directory and load all tracks location
-    LoadAlbumCollection(albumCollectionDirPath);
-
-    //For each loaded Albunm/Track, load/reload all media information 
-    ExportMediaInformationToDB();
-
-    //Save Media Information ingo a JSON file
-    SaveAlbumCollectionToJSONFile(outDirPath);
-
-    return _AlbumList.size() > 0;
-}
+//bool AlbumCollection::LoadAlbumCollectionWithMetadata(std::filesystem::path albumCollectionDirPath, std::filesystem::path& outDirPath)
+//{
+//
+//    //Scan directory and load all tracks location
+//    LoadAlbumCollection(albumCollectionDirPath);
+//
+//    //For each loaded Albunm/Track, load/reload all media information 
+//    ExportMediaInformationToDB();
+//
+//    //Save Media Information ingo a JSON file
+//    SaveAlbumCollectionToJSONFile(outDirPath);
+//
+//    return _AlbumList.size() > 0;
+//}
 
 
 
@@ -298,19 +298,19 @@ bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path path)
 
 
 //ststic function that loads album list from a Json file and returns a DirectoryContentEntryList object
-DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::filesystem::path path, bool bBasicDataOnly)
+bool AlbumCollection::LoadAlbumCollectionFromJSON(std::filesystem::path path, bool bBasicDataOnly)
 {
-    DirectoryContentEntryList albumList;
+  //  DirectoryContentEntryList albumList;
 
     if (!fs::exists(path)) {
         std::cout << "**** no file - json file not found Error parsing JSON: " << std::endl;
-        return albumList;
+        return false;
     }
 
     std::ifstream file(path, std::ios::binary);
     if (!file) {
         std::cout << "****Error file=null - parsing JSON: " << std::endl;
-        return albumList;
+        return false;
     }
 
     std::stringstream buffer;
@@ -331,7 +331,7 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
         std::cerr << "Error parsing JSON: "
             << doc.GetParseError() << std::endl;
 
-        return albumList;
+        return false;
     }
 
     bool isObject = doc.IsObject();
@@ -373,12 +373,12 @@ DirectoryContentEntryList AlbumCollection::LoadAlbumCollectionFromJSON(std::file
         {
             //_AlbumList.push_back({ entry, trackList });
             std::filesystem::directory_entry entry{ albumName };
-            albumList.push_back({ entry, trackList });
+            _AlbumList.push_back({ entry, trackList });
         }
 
     }
 
-    return albumList;
+    return true;
 }
 
 
