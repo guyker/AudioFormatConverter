@@ -86,7 +86,7 @@ struct MediaTrack
 	static MediaInformation ParseMediaTrack(std::wstring jsonString);
 
 	//create a media file (on filesystem) from a media track
-	static std::filesystem::path CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
+	static std::filesystem::path ExtractMediaInformationFromFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
 	{
 		using namespace std::string_literals;
 
@@ -124,9 +124,7 @@ struct MediaTrack
 
 
 			if (status == 0)
-			{
-				//    jsonDoc = AlbumCollection::GetJSONDoc(tmpFilePath);
-
+			{	
 					//if (fs::exists(tmpFilePath)) {
 					//    std::error_code ec;
 					//    if (fs::remove(tmpFilePath, ec)) {

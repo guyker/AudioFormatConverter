@@ -68,38 +68,23 @@ public:
 	//compare
 	void SortByNumberOfTracks();
 	SimilarDirectoryEntryList FindDuplicatedAlbums();
-	//SimilarDirectoryEntryList& GetDuplicatedAlbums();
 
 	
 private:
-	//static Helpers
-	static rapidjson::Document GetJSONDoc(std::filesystem::path path);
 
-	//uses: CreateMediaInfoFile - to create json file
-	//      ParseMediaInfoFromJsonFile - to convert json file to info object
-	static std::tuple<MediaInformation, std::wstring> GetMediaInfoFromMediaFile(std::filesystem::path mediaFilePath);
+	static std::tuple<MediaInformation, std::wstring> ReadMediaInfoFromFile(std::filesystem::path mediaFilePath);
 
-	static std::wstring CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
+	static std::wstring ExtractMediaInformationFromFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
 
-	//static std::string GetMediaInfoJsonString(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
-	//static MediaInformation ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath);
 	
-
 
 	//sort and find duplications
 	SimilarDirectoryEntryList FindDuplicationInGroup(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt);
-	//void OpenDirectoryInExplorer(std::wstring dirName);
-
 
 	//private Helpers
 	TrackInfoList LoadAlbumFromCurrentFolder(std::filesystem::path path, int depth);
 
-	 
-
-//	std::filesystem::path _AlbumCollectionDirPath;
-//	std::filesystem::path _OutDirPth;
-
+	
 	DirectoryContentEntryList _AlbumList;
-//	SimilarDirectoryEntryList _DuplicatedAlbumList;
 };
 
