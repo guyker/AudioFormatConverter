@@ -16,27 +16,6 @@ const std::vector<char> ProgressCircleChars { '|', '/', '-', '\\' };
 //constexpr auto CLEAR_LINE{ L"\x1b[H\x1b[J" };
 
 
-//
-//AlbumCollection::AlbumCollection(DirectoryContentEntryList const& albumList) : _AlbumList{ albumList }
-//{
-//}
-//
-//AlbumCollection::AlbumCollection(DirectoryContentEntryList && albumList) : _AlbumList{ albumList }
-//{
-//}
-
-
-void AlbumCollection::Clear()
-{
-    _AlbumList.clear();
-}
-
-//bool AlbumCollection::LoadAlbumCollection(DirectoryContentEntryList& albumList)
-//{
-//	_AlbumList = albumList;
-//    return true;
-//
-//}
 
 bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath)
 {
@@ -60,7 +39,7 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
 //    LoadAlbumCollection(albumCollectionDirPath);
 //
 //    //For each loaded Albunm/Track, load/reload all media information 
-//    ExportMediaInformationToDB();
+//    SaveToJson();
 //
 //    //Save Media Information ingo a JSON file
 //    SaveAlbumCollectionToJSONFile(outDirPath);
@@ -121,7 +100,7 @@ TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path 
 
 
 //Load all media media information from the preloaded album list (_AlbumList)
-size_t AlbumCollection::ExportMediaInformationToDB(bool bAsync)
+size_t AlbumCollection::SaveToJson(bool bAsync)
 {
     int albumCount = 0;
     int progressIndex = 0;
@@ -863,7 +842,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(DirectoryConte
 
 
 
-bool AlbumCollection::SaveMediaInfoDocumentToDB(std::filesystem::path path)
+bool AlbumCollection::SaveToDatabase(std::filesystem::path path)
 {
     const std::string dbPath{ path.generic_string() };
 

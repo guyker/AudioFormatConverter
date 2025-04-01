@@ -45,27 +45,23 @@ class AlbumCollection
 public:
 
 	AlbumCollection() = default;
-	//AlbumCollection(DirectoryContentEntryList const & albumList);
-	//AlbumCollection(DirectoryContentEntryList&& albumList);
 
-
-	//bool LoadAlbumCollection(DirectoryContentEntryList& albumList);
-	//Load album list or ddirectory structure of the albums from the file system
+	// load albums from directory
 	bool LoadAlbumCollection(std::filesystem::path albumCollectionDirPath);
-	//bool LoadAlbumCollectionWithMetadata(std::filesystem::path albumCollectionDirPath, std::filesystem::path& outDirPath);
 
-	//static DirectoryContentEntryList LoadAlbumCollectionFromJSON(std::filesystem::path dirPath, bool bBasicDataOnly = false);
+
+	// load albums from a Json file
 	bool LoadAlbumCollectionFromJSON(std::filesystem::path dirPath, bool bBasicDataOnly = false);
-
-
-	//Load/Reload album tracks metadata information
-	size_t ExportMediaInformationToDB(bool bAsync = true);
-
+	
 	//Save album list and metadata to JSON file1
 	bool SaveAlbumCollectionToJSONFile(std::filesystem::path path);
 
 
-	void Clear();
+	//Export albums tracks information to a JSON file
+	size_t SaveToJson(bool bAsync = true);
+	
+	//Export albums tracks information to a Database
+	bool SaveToDatabase(std::filesystem::path path);
 
 
 
@@ -74,8 +70,6 @@ public:
 	SimilarDirectoryEntryList FindDuplicatedAlbums();
 	//SimilarDirectoryEntryList& GetDuplicatedAlbums();
 
-	//DB
-	bool SaveMediaInfoDocumentToDB(std::filesystem::path path);
 	
 private:
 	//static Helpers

@@ -166,7 +166,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         AlbumCollection ac;
         ac.LoadAlbumCollection(mediaEntry.mediaPath); //load albume list from directory path
         ac.SortByNumberOfTracks();         // sort by album size - optional
-        auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
+        auto nAlbums = ac.SaveToJson(true); //load media metadate
         ac.SaveAlbumCollectionToJSONFile(mediaEntry.resultPath); // save to json
 
         auto endTime = std::chrono::steady_clock::now();
@@ -177,29 +177,6 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
     return 0;
 }
 
-int ScanFolderAndCreateDB(std::vector<MediaDirectoryElement> mediaDirectoryList)
-{
-    for (auto& mediaEntry : mediaDirectoryList)
-    {
-        auto startTime = std::chrono::steady_clock::now();
-        std::cout << std::format("===>Processing new collection (DB): {}...", mediaEntry.mediaPath) << std::endl;
-
-        AlbumCollection ac;
-        ac.LoadAlbumCollection(mediaEntry.mediaPath); //load albume list from directory path
-        ac.SortByNumberOfTracks();         // sort by album size - optional
-
-        //            auto nAlbums = ac.RefreshAlbumCollectionMediaInformation(true); //load media metadate
-        auto nAlbums = ac.ExportMediaInformationToDB(true); //load media metadate
-
-        ac.SaveAlbumCollectionToJSONFile(mediaEntry.resultPath); // save to json
-
-        auto endTime = std::chrono::steady_clock::now();
-        std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaEntry.mediaPath, nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
-        std::cout << std::endl;
-    }
-
-    return 0;
-}
 
 int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> mediaDirectoryList)
 {
@@ -264,14 +241,7 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
     for (auto& mediaEntry : mediaDirectoryList)
     {
         auto result = albumCollection.LoadAlbumCollectionFromJSON(mediaEntry.resultPath);
-        //AlbumCollection ac(albumList);
-  //      AlbumCollection ac;
-//		ac.LoadAlbumCollection(albumList);
-
-
-
-        //ac.SaveMediaInfoDocumentToDB(databasePath);
-        albumCollection.SaveMediaInfoDocumentToDB(mediaEntry.dbPath);
+        albumCollection.SaveToDatabase(mediaEntry.dbPath);
     }
 
     return 0;
@@ -345,22 +315,23 @@ int main()
     auto action = GetUserAction();
     switch (action)
     {
-    case ConverEnum:
+    case ConverEnum: //1
         ConvertFLACToFLAC(mediaList);
         break;
-    case CreateJSONEnum:
+
+    case CreateJSONEnum: //2
         ScanFolderAndCreateJSON(mediaList);
         break;
-    case CreateDBFromFolderEnum:
-        ScanFolderAndCreateDB(mediaList);
-        break;
-    case ProcessJSONEnum:
+
+	case ProcessJSONEnum: //3
         ScanFolderProcessJSONAndFindDuplicates(mediaList);
         break;
-    case PopulateJsonToDBEnum:
-    {
-        ExportJSONToDB(mediaList);
-    }
+
+	case PopulateJsonToDBEnum: //4    
+        ExportJSONToDB(mediaList);    
+        break;
+
+    case CreateDBFromFolderEnum: //5
         break;
 
     default:
