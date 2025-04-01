@@ -71,10 +71,9 @@ public:
 
 	
 private:
-
-	static std::tuple<MediaInformation, std::wstring> ReadMediaInfoFromFile(std::filesystem::path mediaFilePath);
-
+	
 	static std::wstring ExtractMediaInformationFromFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
+	static std::tuple<MediaInformation, std::wstring> ReadMediaInfoFromFile(std::filesystem::path mediaFilePath);
 
 	
 

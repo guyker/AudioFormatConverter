@@ -371,13 +371,8 @@ std::tuple<MediaInformation, std::wstring> AlbumCollection::ReadMediaInfoFromFil
 
     try
     {
-        auto jsonString = AlbumCollection::ExtractMediaInformationFromFile(mediaFilePath, tmpFile);
-       
+        auto jsonString = AlbumCollection::ExtractMediaInformationFromFile(mediaFilePath, tmpFile);       
         auto mi = MediaTrack::ParseMediaTrack(jsonString);
-
-        //auto mi = AlbumCollection::ParseMediaInfoFromJsonFile(outPath);
-
-        //std::string jsonString((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         
         return std::make_tuple(mi, jsonString);
     }    
@@ -407,36 +402,8 @@ std::tuple<MediaInformation, std::wstring> AlbumCollection::ReadMediaInfoFromFil
 #define popen _wpopen
 #define pclose _pclose
 
-// Convert a wide string (UTF‑16) to a UTF‑8 std::string using Windows API.
-std::string WideToUTF8_2(const std::wstring& wideStr) {
-    if (wideStr.empty())
-        return std::string();
-    int sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (sizeNeeded <= 0)
-        throw std::runtime_error("Error converting wide string to UTF-8");
-    std::string utf8Str(sizeNeeded, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, &utf8Str[0], sizeNeeded, nullptr, nullptr);
-    // Remove the trailing null character if present.
-    if (!utf8Str.empty() && utf8Str.back() == '\0')
-        utf8Str.pop_back();
-    return utf8Str;
-}
 
-//    // Function to convert UTF-8 string to wstring (cross-platform)
-//    std::wstring utf8ToWstring(const std::string& str) {
-//#ifdef _WIN32
-//        if (str.empty()) return {};
-//
-//        int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
-//        std::wstring wstr(size_needed - 1, 0);
-//        MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &wstr[0], size_needed);
-//
-//        return wstr;
-//#else
-//        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-//        return converter.from_bytes(str);
-//#endif
-//    }
+
 
 std::wstring getAudioMetadataJSON(const std::wstring& filePath) {
     std::wstring command = L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"" + filePath + L"\"";
