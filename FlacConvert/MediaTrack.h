@@ -83,7 +83,7 @@ struct MediaTrack
 		return false;
 	}
 
-
+	static MediaInformation ParseMediaTrack(std::wstring jsonString);
 
 	//create a media file (on filesystem) from a media track
 	static std::filesystem::path CreateMediaInfoFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
@@ -232,95 +232,6 @@ struct MediaTrack
 		return mi;
 	}
 
-	static MediaInformation ParseMediaInfoFromJsonString(std::string jsonString)
-	{
-
-		MediaInformation mediaInfo;
-
-		rapidjson::Document doc;
-		doc.Parse(jsonString.c_str());
-
-		if (doc.HasParseError()) {
-			std::cerr << "Error parsing JSON: " << doc.GetParseError() << std::endl;
-
-			return mediaInfo;
-		}
-
-
-		if (doc.IsObject())
-		{
-			auto docObject = doc.GetObj();
-			auto formatTag = docObject["format"].GetObj();
-
-			return MediaInformation{ ParseMediaInformation(formatTag) };
-		}
-
-		return mediaInfo;
-	}
-
-	//parse jsonstring and return a media object
-	static MediaInformation ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath)
-	{
-		MediaInformation mediaInfo;
-
-		//auto mediaInfoFile = AlbumCollection::CreateMediaInfoFile(path2Fixed);
-		if (!jsonMediaInfoPath.empty() && fs::exists(jsonMediaInfoPath))
-		{
-			std::ifstream file(jsonMediaInfoPath);
-			std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-			mediaInfo = ParseMediaInfoFromJsonString(json);
-		}
-
-		return mediaInfo;
-	}
-
-
-	//returns media information (json string and media objec) from a media file (on file system)
-	static std::tuple<MediaInformation, std::string> GetMediaInfoFromMediaFile(std::filesystem::path mediaFilePath)
-	{
-		std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
-		auto tmpFile = "tmp_json_media_" + std::to_string(hashNumber) + ".json";
-
-		auto outPath = CreateMediaInfoFile(mediaFilePath, tmpFile);
-		auto mi = ParseMediaInfoFromJsonFile(outPath);
-
-
-		//std::string jsonString = "jsonString";
-		std::ifstream file(outPath);
-		std::string jsonString((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-		file.close();
-
-		std::error_code ec;
-		if (fs::exists(outPath)) {
-
-			fs::copy(outPath, "R:\\tmp\\24", fs::copy_options::overwrite_existing);
-
-			bool bDeleted = false;
-			int iRetry = 3;
-			while (!bDeleted && iRetry > 0)
-			{
-				if (fs::remove(outPath, ec)) {
-					bDeleted = true;
-				}
-				else
-				{
-					auto ms = ec.message();
-					std::this_thread::sleep_for(std::chrono::milliseconds(500));
-					iRetry--;
-				}
-			}
-			if (!bDeleted)
-			{
-				int i = 0;
-			}
-		}
-		else
-		{
-			int i = 0;
-		}
-
-		return std::make_tuple(mi, jsonString);
-	}
 };
 
 

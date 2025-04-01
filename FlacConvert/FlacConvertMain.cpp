@@ -213,7 +213,9 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
         medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
     }
 
-    AlbumCollection ac(std::move(medialList));
+    //AlbumCollection ac(std::move(medialList));
+    AlbumCollection ac;
+	ac.LoadAlbumCollection(medialList);
     // ***by know medialList should contain an empty list***
 
     ac.SortByNumberOfTracks();
@@ -251,7 +253,13 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
 
     for (auto& mediaEntry : mediaDirectoryList)
     {
-        AlbumCollection ac(AlbumCollection::LoadAlbumCollectionFromJSON(mediaEntry.resultPath));
+        auto albumList = AlbumCollection::LoadAlbumCollectionFromJSON(mediaEntry.resultPath);
+        //AlbumCollection ac(albumList);
+        AlbumCollection ac;
+		ac.LoadAlbumCollection(albumList);
+
+
+
         //ac.SaveMediaInfoDocumentToDB(databasePath);
         ac.SaveMediaInfoDocumentToDB(mediaEntry.dbPath);
     }

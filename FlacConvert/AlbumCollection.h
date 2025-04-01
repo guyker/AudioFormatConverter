@@ -45,10 +45,13 @@ class AlbumCollection
 public:
 
 	AlbumCollection() = default;
-	AlbumCollection(DirectoryContentEntryList const & albumList);
-	AlbumCollection(DirectoryContentEntryList&& albumList);
+	//AlbumCollection(DirectoryContentEntryList const & albumList);
+	//AlbumCollection(DirectoryContentEntryList&& albumList);
 
 
+
+
+	bool LoadAlbumCollection(DirectoryContentEntryList& albumList);
 	//Load album list or ddirectory structure of the albums from the file system
 	bool LoadAlbumCollection(std::filesystem::path albumCollectionDirPath);
 	bool LoadAlbumCollectionWithMetadata(std::filesystem::path albumCollectionDirPath, std::filesystem::path& outDirPath);
@@ -85,7 +88,7 @@ private:
 
 	//static std::string GetMediaInfoJsonString(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
 	//static MediaInformation ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath);
-	static MediaInformation ParseMediaInfoFromJsonString(std::wstring jsonString);
+	
 
 
 	//sort and find duplications

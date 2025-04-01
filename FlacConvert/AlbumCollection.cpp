@@ -16,14 +16,14 @@ const std::vector<char> ProgressCircleChars { '|', '/', '-', '\\' };
 //constexpr auto CLEAR_LINE{ L"\x1b[H\x1b[J" };
 
 
-
-AlbumCollection::AlbumCollection(DirectoryContentEntryList const& albumList) : _AlbumList{ albumList }
-{
-}
-
-AlbumCollection::AlbumCollection(DirectoryContentEntryList && albumList) : _AlbumList{ albumList }
-{
-}
+//
+//AlbumCollection::AlbumCollection(DirectoryContentEntryList const& albumList) : _AlbumList{ albumList }
+//{
+//}
+//
+//AlbumCollection::AlbumCollection(DirectoryContentEntryList && albumList) : _AlbumList{ albumList }
+//{
+//}
 
 
 void AlbumCollection::Clear()
@@ -31,6 +31,12 @@ void AlbumCollection::Clear()
     _AlbumList.clear();
 }
 
+bool AlbumCollection::LoadAlbumCollection(DirectoryContentEntryList& albumList)
+{
+	_AlbumList = albumList;
+    return true;
+
+}
 
 bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath)
 {
@@ -109,29 +115,7 @@ TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path 
 
 
 
-MediaInformation AlbumCollection::ParseMediaInfoFromJsonString(std::wstring jsonString)
-{
 
-    MediaInformation mediaInfo;
-
-    rapidjson::Document doc;
-    std::string utf8Json = CommonUtils::wstringToUtf8(jsonString);
-    doc.Parse(utf8Json.c_str());
-
-    if (doc.HasParseError()) {
-        std::cerr << "Error parsing JSON: " << doc.GetParseError() << std::endl;
-
-        return mediaInfo;
-    }
-
-
-    if (doc.IsObject() && doc.HasMember("format"))
-    {
-        return MediaInformation{ MediaTrack::ParseMediaInformation(doc["format"]) };
-    }
-
-    return mediaInfo;
-}
 
 //std::mutex mtx;
 
@@ -416,6 +400,8 @@ rapidjson::Document AlbumCollection::GetJSONDoc(std::filesystem::path mediaFileP
     return doc;
 }
 
+ 
+ 
 //returns media information (json string and media objec) from a media file (on file system)
 std::tuple<MediaInformation, std::wstring> AlbumCollection::GetMediaInfoFromMediaFile(std::filesystem::path mediaFilePath)
 {
@@ -426,54 +412,11 @@ std::tuple<MediaInformation, std::wstring> AlbumCollection::GetMediaInfoFromMedi
     {
         auto jsonString = AlbumCollection::CreateMediaInfoFile(mediaFilePath, tmpFile);
        
-        auto mi = ParseMediaInfoFromJsonString(jsonString);
+        auto mi = MediaTrack::ParseMediaTrack(jsonString);
 
         //auto mi = AlbumCollection::ParseMediaInfoFromJsonFile(outPath);
 
         //std::string jsonString((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-
-
-
-
-
-
-
-
-
-        //auto mi = AlbumCollection::ParseMediaInfoFromJsonFile(outPath);
-
-        //std::ifstream file(outPath);
-        //std::string jsonString((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        //file.close();
-
-        //std::error_code ec;
-        //if (fs::exists(outPath)) {
-
-        //    fs::copy(outPath, "m:\\tmp\\24_test", fs::copy_options::overwrite_existing);
-
-        //    bool bDeleted = false;
-        //    int iRetry = 3;
-        //    while (!bDeleted && iRetry > 0)
-        //    {
-        //        if (fs::remove(outPath, ec)) {
-        //            bDeleted = true;
-        //        }
-        //        else
-        //        {
-        //            auto ms = ec.message();
-        //            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        //            iRetry--;
-        //        }
-        //    }
-        //    if (!bDeleted)
-        //    {
-        //        int i = 0;
-        //    }
-        //}
-        //else
-        //{
-        //    int i = 0;
-        //}
         
         return std::make_tuple(mi, jsonString);
     }    
@@ -783,21 +726,6 @@ std::filesystem::path AlbumCollection::CreateMediaInfoFile(std::filesystem::path
 }
 #endif
 
-////parse jsonstring and return a media object
-//MediaInformation AlbumCollection::ParseMediaInfoFromJsonFile(std::filesystem::path jsonMediaInfoPath)
-//{
-//    MediaInformation mediaInfo;
-//
-//    //auto mediaInfoFile = AlbumCollection::CreateMediaInfoFile(path2Fixed);
-//    if (!jsonMediaInfoPath.empty() && fs::exists(jsonMediaInfoPath))
-//    {
-//        std::ifstream file(jsonMediaInfoPath);
-//        std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-//        mediaInfo = ParseMediaInfoFromJsonString(json);
-//    }
-//
-//    return mediaInfo;
-//}
 
 
 //-------------COMPARE
