@@ -56,9 +56,10 @@ public:
 	bool SaveAlbumCollectionToJSONFile(std::filesystem::path path);
 
 
-	//Export albums tracks information to a JSON file
+	//Import Media Metadata from Album Collection (get JSON from media files)
 	size_t ImportMetadataFromMediaFiles(bool bAsync = true);
 	
+
 	//Export albums tracks information to a Database
 	bool SaveToDatabase(std::filesystem::path path);
 
@@ -71,11 +72,10 @@ public:
 	
 private:
 	
-	static std::wstring ExtractMediaInformationFromFile(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
+
 	static std::tuple<MediaInformation, std::wstring> ReadMediaInfoFromFile(std::filesystem::path mediaFilePath);
 
 	
-
 	//sort and find duplications
 	SimilarDirectoryEntryList FindDuplicationInGroup(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt);
 
