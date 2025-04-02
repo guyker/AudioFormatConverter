@@ -31,21 +31,6 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
     return true;
 }
 
-//Load all all albumes and tracks into _fileList
-//bool AlbumCollection::LoadAlbumCollectionWithMetadata(std::filesystem::path albumCollectionDirPath, std::filesystem::path& outDirPath)
-//{
-//
-//    //Scan directory and load all tracks location
-//    LoadAlbumCollection(albumCollectionDirPath);
-//
-//    //For each loaded Albunm/Track, load/reload all media information 
-//    SaveToJson();
-//
-//    //Save Media Information ingo a JSON file
-//    SaveAlbumCollectionToJSONFile(outDirPath);
-//
-//    return _AlbumList.size() > 0;
-//}
 
 
 
@@ -100,7 +85,7 @@ TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path 
 
 
 //Load all media media information from the preloaded album list (_AlbumList)
-size_t AlbumCollection::SaveToJson(bool bAsync)
+size_t AlbumCollection::ImportMetadataFromMediaFiles(bool bAsync)
 {
     int albumCount = 0;
     int progressIndex = 0;
@@ -422,7 +407,7 @@ std::wstring getAudioMetadataJSON(const std::wstring& filePath) {
     }
 
     std::ostringstream result;
-    char buffer[1024];
+    char buffer[2024];
 
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         result << buffer;

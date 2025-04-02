@@ -46,19 +46,18 @@ public:
 
 	AlbumCollection() = default;
 
-	// load albums from directory
+	// load albums from directory / Directly from media files FLAC/MP3
 	bool LoadAlbumCollection(std::filesystem::path albumCollectionDirPath);
 
 
 	// load albums from a Json file
-	bool LoadAlbumCollectionFromJSON(std::filesystem::path dirPath, bool bBasicDataOnly = false);
-	
-	//Save album list and metadata to JSON file1
+	bool LoadAlbumCollectionFromJSON(std::filesystem::path dirPath, bool bBasicDataOnly = false);	
+	//Save album list and metadata to JSON file
 	bool SaveAlbumCollectionToJSONFile(std::filesystem::path path);
 
 
 	//Export albums tracks information to a JSON file
-	size_t SaveToJson(bool bAsync = true);
+	size_t ImportMetadataFromMediaFiles(bool bAsync = true);
 	
 	//Export albums tracks information to a Database
 	bool SaveToDatabase(std::filesystem::path path);
