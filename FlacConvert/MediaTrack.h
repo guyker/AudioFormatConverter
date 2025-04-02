@@ -83,6 +83,7 @@ struct MediaTrack
 		return false;
 	}
 
+	static std::tuple<MediaInformation, std::wstring> ReadMediaInfoFromFile(std::filesystem::path mediaFilePath);
 	static std::wstring ExtractMetadataFromMediaTrack(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
 	static MediaInformation ParseMediaTrack(std::wstring jsonString);
 

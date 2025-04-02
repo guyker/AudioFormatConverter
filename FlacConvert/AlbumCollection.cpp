@@ -119,7 +119,7 @@ size_t AlbumCollection::ImportMetadataFromMediaFiles(bool bAsync)
                 {
                   //  fs::path outfilePath{ trackName / fs::path("_" + TMP_MEDIA_JSON_FILE_NAME) };
                     //std::lock_guard<std::mutex> lock(mtx);
-                    auto miFuture = std::async(std::launch::async, AlbumCollection::ReadMediaInfoFromFile, path2Fixed);
+                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMediaInfoFromFile, path2Fixed);
 
                   //  miFuture.get();
 
@@ -139,7 +139,7 @@ size_t AlbumCollection::ImportMetadataFromMediaFiles(bool bAsync)
                 else
                 {
                     //fs::path outfilePath{ trackName / fs::path("_" + TMP_MEDIA_JSON_FILE_NAME) };
-                    auto [mi_ret, jsonString_ret] = AlbumCollection::ReadMediaInfoFromFile(path2Fixed);
+                    auto [mi_ret, jsonString_ret] = MediaTrack::ReadMediaInfoFromFile(path2Fixed);
                     mediaInfoString = jsonString_ret;
                     mediaInfo = mi_ret;
                 }
@@ -160,7 +160,7 @@ size_t AlbumCollection::ImportMetadataFromMediaFiles(bool bAsync)
 }
 
 
-bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path path)
+bool AlbumCollection::ExportAlbumCollectionToJSONFile(std::filesystem::path path)
 {
     rapidjson::Document mediaDoc;
     mediaDoc.SetObject();
@@ -262,7 +262,7 @@ bool AlbumCollection::SaveAlbumCollectionToJSONFile(std::filesystem::path path)
 
 
 //ststic function that loads album list from a Json file and returns a DirectoryContentEntryList object
-bool AlbumCollection::LoadAlbumCollectionFromJSON(std::filesystem::path path, bool bBasicDataOnly)
+bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path, bool bBasicDataOnly)
 {
   //  DirectoryContentEntryList albumList;
 
@@ -347,27 +347,7 @@ bool AlbumCollection::LoadAlbumCollectionFromJSON(std::filesystem::path path, bo
 
 
 
- 
-//returns media information (json string and media objec) from a media file (on file system)
-std::tuple<MediaInformation, std::wstring> AlbumCollection::ReadMediaInfoFromFile(std::filesystem::path mediaFilePath)
-{
-    std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
-    auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
 
-    try
-    {
-        auto jsonString = MediaTrack::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
-        auto mi = MediaTrack::ParseMediaTrack(jsonString);
-        
-        return std::make_tuple(mi, jsonString);
-    }    
-    catch (const std::exception& ex) {
-        std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << ex.what() << std::endl;
-
-    }
-
-    return std::make_tuple(MediaInformation{}, L"{}");
-}
 
 
 

@@ -114,6 +114,29 @@ std::string runFFprobe(const std::wstring& filename) {
 #endif
 
 
+
+
+//returns media information (json string and media objec) from a media file (on file system)
+std::tuple<MediaInformation, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::filesystem::path mediaFilePath)
+{
+    std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
+    auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
+
+    try
+    {
+        auto jsonString = MediaTrack::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
+        auto mi = MediaTrack::ParseMediaTrack(jsonString);
+
+        return std::make_tuple(mi, jsonString);
+    }
+    catch (const std::exception& ex) {
+        std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << ex.what() << std::endl;
+
+    }
+
+    return std::make_tuple(MediaInformation{}, L"{}");
+}
+
 //create a media file (on filesystem) from a media track
 std::wstring MediaTrack::ExtractMetadataFromMediaTrack(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
 {

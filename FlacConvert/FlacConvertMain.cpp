@@ -169,7 +169,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 
         auto nAlbums = ac.ImportMetadataFromMediaFiles(true); //load media metadate
 
-        ac.SaveAlbumCollectionToJSONFile(mediaEntry.resultPath); // save to json
+        ac.ExportAlbumCollectionToJSONFile(mediaEntry.resultPath); // save to json
 
         auto endTime = std::chrono::steady_clock::now();
         std::cout << std::format("<===Processing time for {} [{} Albums] = {}ms", mediaEntry.mediaPath, nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
@@ -193,8 +193,8 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
         std::cout << "Processing: {}" << mediaEntry.resultPath << std::endl;
 
 
-        bool resul = albumCollection.LoadAlbumCollectionFromJSON(mediaEntry.resultPath, true);
-//        auto const& accumulatedList = AlbumCollection::LoadAlbumCollectionFromJSON(mediaEntry.resultPath, true);
+        bool resul = albumCollection.RestoreAlbumCollectionFromJSON(mediaEntry.resultPath, true);
+//        auto const& accumulatedList = AlbumCollection::RestoreAlbumCollectionFromJSON(mediaEntry.resultPath, true);
 //        medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
     }
 
@@ -242,7 +242,7 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
 
     for (auto& mediaEntry : mediaDirectoryList)
     {
-        auto result = albumCollection.LoadAlbumCollectionFromJSON(mediaEntry.resultPath);
+        auto result = albumCollection.RestoreAlbumCollectionFromJSON(mediaEntry.resultPath);
         albumCollection.SaveToDatabase(mediaEntry.dbPath);
     }
 

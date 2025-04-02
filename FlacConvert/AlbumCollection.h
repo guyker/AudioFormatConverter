@@ -49,19 +49,18 @@ public:
 	// load albums from directory / Directly from media files FLAC/MP3
 	bool LoadAlbumCollection(std::filesystem::path albumCollectionDirPath);
 
-
-	// load albums from a Json file
-	bool LoadAlbumCollectionFromJSON(std::filesystem::path dirPath, bool bBasicDataOnly = false);	
-	//Save album list and metadata to JSON file
-	bool SaveAlbumCollectionToJSONFile(std::filesystem::path path);
-
-
 	//Import Media Metadata from Album Collection (get JSON from media files)
 	size_t ImportMetadataFromMediaFiles(bool bAsync = true);
-	
+
 
 	//Export albums tracks information to a Database
 	bool SaveToDatabase(std::filesystem::path path);
+
+
+	// load albums from a Json file
+	bool RestoreAlbumCollectionFromJSON(std::filesystem::path dirPath, bool bBasicDataOnly = false);	
+	//Save album list and metadata to JSON file
+	bool ExportAlbumCollectionToJSONFile(std::filesystem::path path);
 
 
 
@@ -71,11 +70,7 @@ public:
 
 	
 private:
-	
-
-	static std::tuple<MediaInformation, std::wstring> ReadMediaInfoFromFile(std::filesystem::path mediaFilePath);
-
-	
+		
 	//sort and find duplications
 	SimilarDirectoryEntryList FindDuplicationInGroup(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt);
 
