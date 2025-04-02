@@ -49,13 +49,13 @@ public:
 	// load albums from directory / Directly from media files FLAC/MP3
 	bool LoadAlbumCollection(std::filesystem::path albumCollectionDirPath);
 
-	//Import Media Metadata from Album Collection (get JSON from media files)
+	//Import/update Media Metadata from the current loaded Album Collection (get JSON from media files)
+	//Normally this function should be called after LoadAlbumCollection
 	size_t ImportMetadataFromMediaFiles(bool bAsync = true);
 
 
 	//Export albums tracks information to a Database
 	bool SaveToDatabase(std::filesystem::path path);
-
 
 	// load albums from a Json file
 	bool RestoreAlbumCollectionFromJSON(std::filesystem::path dirPath, bool bBasicDataOnly = false);	
@@ -75,7 +75,7 @@ private:
 	SimilarDirectoryEntryList FindDuplicationInGroup(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt);
 
 	//private Helpers
-	TrackInfoList LoadAlbumFromCurrentFolder(std::filesystem::path path, int depth);
+	TrackInfoList LoadAlbumCollectionRecursively(std::filesystem::path path, int depth);
 
 	
 	DirectoryContentEntryList _AlbumList;

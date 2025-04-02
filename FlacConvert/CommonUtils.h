@@ -3,6 +3,7 @@
 #include <string>
 
 #include <array>
+#include <vector>
 #include <utility>
 #include <cstring>
 #ifdef _WIN32
@@ -11,6 +12,8 @@
 
 namespace CommonUtils
 {
+    constexpr std::array<char, 4> ProgressCircleChars = { '|', '/', '-', '\\' };
+
     std::wstring ToLower(const std::wstring& str);
 
     // Pair type for symbol name and UTF-8 string

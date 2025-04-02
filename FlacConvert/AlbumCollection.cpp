@@ -11,7 +11,7 @@ namespace fs = std::filesystem;
 using namespace rapidjson;
 
 
-const std::vector<char> ProgressCircleChars { '|', '/', '-', '\\' };
+
 
 //constexpr auto CLEAR_LINE{ L"\x1b[H\x1b[J" };
 
@@ -23,7 +23,7 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
     std::cout << "Scanning collection... ";
 
     //Scan directory and load all tracks location
-    LoadAlbumFromCurrentFolder(albumCollectionDirPath, 9);
+    LoadAlbumCollectionRecursively(albumCollectionDirPath, 9);
 
     auto endTime = std::chrono::steady_clock::now();
     std::cout << std::format("Completed, Albums: {} [{}ms]", _AlbumList.size(), std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
@@ -34,7 +34,7 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
 
 
 
-TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path path, int depth)
+TrackInfoList AlbumCollection::LoadAlbumCollectionRecursively(std::filesystem::path path, int depth)
 {
     //Empty list to store all potential tracks under the current directory (path)
     TrackInfoList currentDirTrackList;
@@ -49,7 +49,7 @@ TrackInfoList AlbumCollection::LoadAlbumFromCurrentFolder(std::filesystem::path 
             if (entry.is_directory()) {
                 //Scan directory and return the list of files under the directory entry (one level).
 
-                auto trackList = LoadAlbumFromCurrentFolder(entry.path(), depth - 1);
+                auto trackList = LoadAlbumCollectionRecursively(entry.path(), depth - 1);
 
                 //check if the current folder has at least one track and add it to a new Album
                 if (trackList.size() > 0)
@@ -101,8 +101,8 @@ size_t AlbumCollection::ImportMetadataFromMediaFiles(bool bAsync)
             str = albumPath.path().generic_string();
         }
         catch (...) {}
-        std::cout << std::format("{} Processing [{}/{}]: {}", ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), str);
-        progressIndex = (progressIndex + 1) % ProgressCircleChars.size();
+        std::cout << std::format("{} Processing [{}/{}]: {}", CommonUtils::ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), str);
+        progressIndex = (progressIndex + 1) % CommonUtils::ProgressCircleChars.size();
 
         //Album tracks list holder 
         std::vector<std::tuple<MediaLoadingFuture, MediaInformation&, std::wstring&>> asyncFutureList;
