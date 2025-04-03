@@ -17,16 +17,24 @@ using namespace rapidjson;
 
 
 
-bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath)
+bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata)
 {
     auto startTime = std::chrono::steady_clock::now();
-    std::cout << "Scanning collection... ";
+    std::cout << "Scanning collection... " << std::endl;
 
     //Scan directory and load all tracks location
     LoadAlbumCollectionRecursively(albumCollectionDirPath, 9);
 
     auto endTime = std::chrono::steady_clock::now();
     std::cout << std::format("Completed, Albums: {} [{}ms]", _AlbumList.size(), std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
+
+    if (bIncludeMetadata)
+    {
+        std::cout << "Loading Albums metadata... " << std::endl;
+        auto nAlbums = ImportMetadataFromMediaFiles(true); //load media metadate
+        std::cout << "Completed (Loading Albums metadata) Found " << nAlbums << " Albums" << std::endl;
+    }
+
 
     return true;
 }
@@ -259,8 +267,6 @@ bool AlbumCollection::ExportAlbumCollectionToJSONFile(std::filesystem::path path
 
 
 
-
-
 //ststic function that loads album list from a Json file and returns a DirectoryContentEntryList object
 bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path, bool bBasicDataOnly)
 {
@@ -324,11 +330,11 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path,
                 MediaInformation mi{ MediaTrack::ParseMediaInformation(mediaTags["format"]) };
                 if (bBasicDataOnly)
                 {
-                    trackList.push_back({ mi.filename, std::stol(mi.size), mi, L"{}" });
+                    trackList.push_back({ mi.format.filename, std::stol(mi.format.size), mi, L"{}" });
                 }
                 else
                 {
-                    trackList.push_back({ mi.filename, std::stol(mi.size), mi, json });
+                    trackList.push_back({ mi.format.filename, std::stol(mi.format.size), mi, json });
                 }
             }
         }
@@ -457,8 +463,8 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(DirectoryConte
                         auto& [trackName2, size2, mediaInfo2, mediaInfoString1] = trackList2[i];
 
 
-                        auto minSize = (std::min)(mediaInfo1.duration, mediaInfo2.duration);
-                        auto maxSize = (std::max)(mediaInfo1.duration, mediaInfo2.duration);
+                        auto minSize = (std::min)(mediaInfo1.format.duration, mediaInfo2.format.duration);
+                        auto maxSize = (std::max)(mediaInfo1.format.duration, mediaInfo2.format.duration);
 
                         long long diffPercentage = (long)100 * (maxSize - minSize) / maxSize;
 
@@ -551,23 +557,23 @@ bool AlbumCollection::SaveToDatabase(std::filesystem::path path)
                 CommonUtils::wstringToUtf8(albumPath),
                 CommonUtils::wstringToUtf8(trackName.wstring()),
 
-                mediaInfo.format_name,
-                mediaInfo.format_long_name,
-                mediaInfo.codec_type,
-                mediaInfo.start_time,
-                mediaInfo.duration,
-                mediaInfo.size,
-                mediaInfo.bit_rate,
-                mediaInfo.probe_score,
-                CommonUtils::wstringToUtf8(mediaInfo.tags.album),
-                CommonUtils::wstringToUtf8(mediaInfo.tags.artist),
-                CommonUtils::wstringToUtf8(mediaInfo.tags.album_artist),
-                CommonUtils::wstringToUtf8(mediaInfo.tags.comment),
-                CommonUtils::wstringToUtf8(mediaInfo.tags.genre),
-                CommonUtils::wstringToUtf8(mediaInfo.tags.publisher),
-                CommonUtils::wstringToUtf8(mediaInfo.tags.title),
-                CommonUtils::wstringToUtf8(mediaInfo.tags.track),
-                CommonUtils::wstringToUtf8(mediaInfo.tags.date));
+                mediaInfo.format.format_name,
+                mediaInfo.format.format_long_name,
+                mediaInfo.format.codec_type,
+                mediaInfo.format.start_time,
+                mediaInfo.format.duration,
+                mediaInfo.format.size,
+                mediaInfo.format.bit_rate,
+                mediaInfo.format.probe_score,
+                CommonUtils::wstringToUtf8(mediaInfo.format.tags.album),
+                CommonUtils::wstringToUtf8(mediaInfo.format.tags.artist),
+                CommonUtils::wstringToUtf8(mediaInfo.format.tags.album_artist),
+                CommonUtils::wstringToUtf8(mediaInfo.format.tags.comment),
+                CommonUtils::wstringToUtf8(mediaInfo.format.tags.genre),
+                CommonUtils::wstringToUtf8(mediaInfo.format.tags.publisher),
+                CommonUtils::wstringToUtf8(mediaInfo.format.tags.title),
+                CommonUtils::wstringToUtf8(mediaInfo.format.tags.track),
+                CommonUtils::wstringToUtf8(mediaInfo.format.tags.date));
 
 
             char* error_report;
@@ -589,52 +595,5 @@ bool AlbumCollection::SaveToDatabase(std::filesystem::path path)
 
     sqlite3_close(db);
 
-
-    return 0;
-
-
-    //const std::string dbPath{ path.generic_string() };
-
-    //sqlite3* db;
-    //int rc = sqlite3_open(dbPath.c_str(), &db);
-
-    //if (rc != SQLITE_OK) {
-    //    std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
-    //    return rc;
-    //}
-
-    //// Execute SQL statements
-    //rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY, name TEXT, age INTEGER);", 0, 0, 0);
-
-    //if (rc != SQLITE_OK) {
-    //    std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
-    //    sqlite3_close(db);
-    //    return rc;
-    //}
-
-    //// Insert data
-    //rc = sqlite3_exec(db, "INSERT INTO test VALUES (1, 'John', 25);", 0, 0, 0);
-
-    //if (rc != SQLITE_OK) {
-    //    std::cerr << "Cannot insert data: " << sqlite3_errmsg(db) << std::endl;
-    //    sqlite3_close(db);
-    //    return rc;
-    //}
-
-    //// Query data
-    //sqlite3_stmt* stmt;
-    //rc = sqlite3_prepare_v2(db, "SELECT id, name, age FROM test;", -1, &stmt, 0);
-
-    //while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-    //    int id = sqlite3_column_int(stmt, 0);
-    //    const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-    //    int age = sqlite3_column_int(stmt, 2);
-
-    //    std::cout << "ID: " << id << ", Name: " << name << ", Age: " << age << std::endl;
-    //}
-
-    //sqlite3_finalize(stmt);
-    //sqlite3_close(db);
-
-    return false;
+    return true;
 }

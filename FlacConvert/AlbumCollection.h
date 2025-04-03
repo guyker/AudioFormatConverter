@@ -47,7 +47,8 @@ public:
 	AlbumCollection() = default;
 
 	// load albums from directory / Directly from media files FLAC/MP3
-	bool LoadAlbumCollection(std::filesystem::path albumCollectionDirPath);
+	// bIncludeMetadata = true - load media metadata / Calling ImportMetadataFromMediaFiles
+	bool LoadAlbumCollection(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata = false);
 
 	//Import/update Media Metadata from the current loaded Album Collection (get JSON from media files)
 	//Normally this function should be called after LoadAlbumCollection
