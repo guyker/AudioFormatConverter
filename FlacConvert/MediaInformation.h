@@ -87,14 +87,16 @@ struct Disposition {
 
 // Represents the "format" section (-show_format)
 struct Format {
-	std::string filename; // File path/name, e.g., "/path/to/song.flac"
+	std::wstring filename; // File path/name, e.g., "/path/to/song.flac"
+
 	int nb_streams{ 0 }; // Number of streams, non-negative integer, e.g., 1
 	int nb_programs{ 0 }; // Number of programs, non-negative integer, e.g., 0
-//		int nb_stream_groups;
+	int nb_stream_groups; //OPTIONAL ????
+
 	std::string format_name; // Container format short name, e.g., "flac", "mp3"
 	std::string format_long_name; // Container format descriptive name, e.g., "raw FLAC"
 	std::optional<std::string> start_time; // Start time in seconds, string with decimal, e.g., "0.000000", optional
-	std::optional<std::string> duration; // Duration in seconds, string with decimal, e.g., "123.456789", optional
+	std::optional<double> duration; // Duration in seconds, string with decimal, e.g., "123.456789", optional
 	std::optional<std::string> size; // File size in bytes, string with integer, e.g., "12345678", optional
 	std::optional<std::string> bit_rate; // Overall bitrate in bits/s, string with integer, e.g., "960000", optional
 	int probe_score{ 0 }; // Format detection confidence, integer 0-100
@@ -111,18 +113,18 @@ struct MediaInformation
 	{
 		std::string codec_type; //XXXXXX
 
-		std::wstring filename;
-		int nb_streams;
-		int nb_programs;
-		int nb_stream_groups;
-		std::string format_name;
-		std::string format_long_name;
-		std::string start_time;
-		long duration;
-		std::string size;
-		std::string bit_rate;
+		//std::wstring filename;
+//		int nb_streams;
+//		int nb_programs;
+//		int nb_stream_groups;
+//		std::string format_name;
+	//	std::string format_long_name;
+	//	std::string start_time;
+		//long duration;
+		//std::string size;
+	//	std::string bit_rate;
 
-		int probe_score;
+		//int probe_score;
 
 		struct tags_t
 		{

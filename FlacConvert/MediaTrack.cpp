@@ -215,21 +215,20 @@ MediaInformation MediaTrack::ParseMediaInformation(const Value& formatTag)
 {
     MediaInformation mi;
 
-    if (auto filename = JsonUtils::tryParseMember<std::wstring>(formatTag, "filename")) { mi.format.filename = *filename; }
+    if (auto filename = JsonUtils::tryParseMember<std::wstring>(formatTag, "filename")) { mi.format2.filename = *filename; }
 
-    if (auto nb_streams = JsonUtils::tryParseMember<int>(formatTag, "nb_streams")) { mi.format.nb_streams = *nb_streams; }
-    if (auto nb_programs = JsonUtils::tryParseMember<int>(formatTag, "nb_programs")) { mi.format.nb_programs = *nb_programs; }
-    if (auto nb_stream_groups = JsonUtils::tryParseMember<int>(formatTag, "nb_stream_groups")) { mi.format.nb_stream_groups = *nb_stream_groups; }
+    if (auto nb_streams = JsonUtils::tryParseMember<int>(formatTag, "nb_streams")) { mi.format2.nb_streams = *nb_streams; }
+    if (auto nb_programs = JsonUtils::tryParseMember<int>(formatTag, "nb_programs")) { mi.format2.nb_programs = *nb_programs; }
+    if (auto nb_stream_groups = JsonUtils::tryParseMember<int>(formatTag, "nb_stream_groups")) { mi.format2.nb_stream_groups = *nb_stream_groups; }
 
-    if (auto format_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_name")) { mi.format.format_name = *format_name; }
-    if (auto format_long_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_long_name")) { mi.format.format_long_name = *format_long_name; }
+    if (auto format_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_name")) { mi.format2.format_name = *format_name; }
+    if (auto format_long_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_long_name")) { mi.format2.format_long_name = *format_long_name; }
     if (auto codec_type = JsonUtils::tryParseMember<std::string>(formatTag, "codec_type")) { mi.format.codec_type = *codec_type; }
-    //if (auto start_time = JsonUtils::tryParseMember<std::optional<std::string>>(formatTag, "start_time")) { mi.format2.start_time = *start_time; }
     if (auto start_time = JsonUtils::tryParseMember<std::optional<std::string>>(formatTag, "start_time")) { mi.format2.start_time = *start_time; }
-    if (auto duration = JsonUtils::tryParseMember<long>(formatTag, "duration")) { mi.format.duration = *duration; }
-    if (auto size = JsonUtils::tryParseMember<std::string>(formatTag, "size")) { mi.format.size = *size; }
-    if (auto bit_rate = JsonUtils::tryParseMember<std::string>(formatTag, "bit_rate")) { mi.format.bit_rate = *bit_rate; }
-    if (auto probe_score = JsonUtils::tryParseMember<int>(formatTag, "probe_score")) { mi.format.probe_score = *probe_score; }
+    if (auto duration = JsonUtils::tryParseMember<std::optional<double>>(formatTag, "duration")) { mi.format2.duration = *duration; }
+    if (auto size = JsonUtils::tryParseMember<std::string>(formatTag, "size")) { mi.format2.size = *size; }
+    if (auto bit_rate = JsonUtils::tryParseMember<std::string>(formatTag, "bit_rate")) { mi.format2.bit_rate = *bit_rate; }
+    if (auto probe_score = JsonUtils::tryParseMember<int>(formatTag, "probe_score")) { mi.format2.probe_score = *probe_score; }
 
 
     if (formatTag.FindMember("tags") != formatTag.MemberEnd())
