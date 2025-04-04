@@ -113,24 +113,9 @@ struct MediaInformation
 	{
 		std::string codec_type; //XXXXXX
 
-		//std::wstring filename;
-//		int nb_streams;
-//		int nb_programs;
-//		int nb_stream_groups;
-//		std::string format_name;
-	//	std::string format_long_name;
-	//	std::string start_time;
-		//long duration;
-		//std::string size;
-	//	std::string bit_rate;
-
-		//int probe_score;
 
 		struct tags_t
 		{
-
-
-
 
 			std::wstring album;
 			std::wstring artist;
