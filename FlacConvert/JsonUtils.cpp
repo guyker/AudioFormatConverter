@@ -27,7 +27,14 @@ namespace JsonUtils {
 
         const auto& value = obj[key];
 
-        if constexpr (std::is_same_v<T, std::string>) {
+     //   std::optional<std::string>
+
+        if constexpr (std::is_same_v<T, std::optional<std::string>>) {
+            if (value.IsString()) {
+                return value.GetString();
+            }
+        }
+        else if constexpr (std::is_same_v<T, std::string>) {
             if (value.IsString()) {
                 return value.GetString();
             }
@@ -71,13 +78,6 @@ namespace JsonUtils {
     }
 
 
-    // Explicit template instantiations (optional, see notes)
-    template std::optional<std::string> tryParseMember<std::string>(const rapidjson::Value&, const char*);
-    template std::optional<std::wstring> tryParseMember<std::wstring>(const rapidjson::Value&, const char*);
-    template std::optional<int> tryParseMember<int>(const rapidjson::Value&, const char*);
-    template std::optional<long> tryParseMember<long>(const rapidjson::Value&, const char*);
-    template std::optional<double> tryParseMember<double>(const rapidjson::Value&, const char*);
-    template std::optional<bool> tryParseMember<bool>(const rapidjson::Value&, const char*);
 
 
     static std::string valueToString(const rapidjson::Value& value) {

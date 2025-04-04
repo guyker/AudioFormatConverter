@@ -18,4 +18,19 @@ namespace JsonUtils {
     // Returns std::optional<T> with the value if successful, std::nullopt if not
     template <typename T>
     std::optional<T> tryParseMember(const rapidjson::Value& obj, const char* key);
+
+    // Explicit template instantiations (optional, see notes)
+    template std::optional<std::optional<std::string>> tryParseMember<std::optional<std::string>>(const rapidjson::Value&, const char*);
+
+    template std::optional<std::string> tryParseMember<std::string>(const rapidjson::Value&, const char*);
+    template std::optional<std::wstring> tryParseMember<std::wstring>(const rapidjson::Value&, const char*);
+
+    template std::optional<int> tryParseMember<int>(const rapidjson::Value&, const char*);
+    template std::optional<long> tryParseMember<long>(const rapidjson::Value&, const char*);
+    template std::optional<double> tryParseMember<double>(const rapidjson::Value&, const char*);
+    template std::optional<bool> tryParseMember<bool>(const rapidjson::Value&, const char*);
+
+
+
+    static std::string valueToString(const rapidjson::Value& value);
 }

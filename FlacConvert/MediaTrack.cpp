@@ -224,7 +224,8 @@ MediaInformation MediaTrack::ParseMediaInformation(const Value& formatTag)
     if (auto format_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_name")) { mi.format.format_name = *format_name; }
     if (auto format_long_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_long_name")) { mi.format.format_long_name = *format_long_name; }
     if (auto codec_type = JsonUtils::tryParseMember<std::string>(formatTag, "codec_type")) { mi.format.codec_type = *codec_type; }
-    if (auto start_time = JsonUtils::tryParseMember<std::string>(formatTag, "start_time")) { mi.format.start_time = *start_time; }
+    //if (auto start_time = JsonUtils::tryParseMember<std::optional<std::string>>(formatTag, "start_time")) { mi.format2.start_time = *start_time; }
+    if (auto start_time = JsonUtils::tryParseMember<std::optional<std::string>>(formatTag, "start_time")) { mi.format2.start_time = *start_time; }
     if (auto duration = JsonUtils::tryParseMember<long>(formatTag, "duration")) { mi.format.duration = *duration; }
     if (auto size = JsonUtils::tryParseMember<std::string>(formatTag, "size")) { mi.format.size = *size; }
     if (auto bit_rate = JsonUtils::tryParseMember<std::string>(formatTag, "bit_rate")) { mi.format.bit_rate = *bit_rate; }
