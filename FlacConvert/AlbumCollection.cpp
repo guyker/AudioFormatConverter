@@ -7,6 +7,8 @@
 #include "JsonUtils.h"
 #include "MediaTrack.h"
 
+#include "CommonUtils.h"
+
 namespace fs = std::filesystem;
 using namespace rapidjson;
 
@@ -508,6 +510,115 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(DirectoryConte
 
 
 
+bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
+{
+    const std::string dbPath{ path.generic_string() };
+
+    sqlite3* db;
+    int rc = sqlite3_open(dbPath.c_str(), &db);
+
+    if (rc != SQLITE_OK) {
+        std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
+        return rc;
+    }
+
+    // Execute SQL statements
+
+    rc = sqlite3_exec(db, "DROP TABLE IF EXISTS AlbumListA;", 0, 0, 0);
+
+    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS AlbumListA ("
+        "ID INTEGER PRIMARY KEY, "
+        "album_name TEXT, "
+        "filename TEXT, "
+        "format_name TEXT, "
+        "format_long_name TEXT, "
+        "codec_type TEXT, "
+        "start_time TEXT, "
+        "duration REAL, "
+        "size TEXT, "
+        "bit_rate TEXT, "
+        "probe_score INTEGER, "
+        "album TEXT, "
+        "artist TEXT, "
+        "album_artist TEXT, "
+        "comment TEXT, "
+        "genre TEXT, "
+        "publisher TEXT, "
+        "title TEXT, "
+        "track TEXT, "
+        "date TEXT); ", 0, 0, 0);
+
+    if (rc != SQLITE_OK) {
+        std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_close(db);
+        return rc;
+    }
+
+
+    for (auto [dirPath, trackList] : _AlbumList)
+    {
+
+        for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
+        {
+            std::wstring albumPath = dirPath.path().wstring();
+            //std::string albumPath2{ dirPath.path().generic_string()};
+            //auto trackName2 = trackName.generic_string();
+
+            auto jsonString = CommonUtils::wstringToUtf8(mediaInfoString);
+            std::string queryString = std::format(
+                "INSERT OR REPLACE INTO AlbumListA VALUES (null, \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\");",
+                CommonUtils::wstringToUtf8(albumPath),
+                CommonUtils::wstringToUtf8(trackName.wstring()),
+
+                jsonString,
+
+                mediaInfo.format2.nb_streams,
+                mediaInfo.format2.nb_programs,
+                mediaInfo.format2.nb_stream_groups,
+
+                mediaInfo.format2.format_name,
+                mediaInfo.format2.format_long_name,
+                "mediaInfo.format.codec_type",
+                mediaInfo.format2.start_time.value_or(""),
+                mediaInfo.format2.duration.value_or(0.0),
+                mediaInfo.format2.size.value_or(""),
+                mediaInfo.format2.bit_rate.value_or(""),
+                mediaInfo.format2.probe_score,
+
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.album),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.artist),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.album_artist),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.comment),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.genre),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.publisher),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.title),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.track),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.date));
+
+
+            char* error_report;
+            rc = sqlite3_exec(db, queryString.c_str(), 0, 0, &error_report);
+            if (rc)
+            {
+                std::cerr << "***ERROR - Database error: " << error_report << std::endl;
+            }
+        }
+    }
+
+
+    if (rc != SQLITE_OK) {
+        std::cerr << "Cannot insert data: " << sqlite3_errmsg(db) << std::endl;
+        sqlite3_close(db);
+        return rc;
+    }
+
+
+    sqlite3_close(db);
+
+    return true;
+}
+
+
 bool AlbumCollection::SaveToDatabase(std::filesystem::path path)
 {
     const std::string dbPath{ path.generic_string() };
@@ -573,21 +684,21 @@ bool AlbumCollection::SaveToDatabase(std::filesystem::path path)
 
                 mediaInfo.format2.format_name,
                 mediaInfo.format2.format_long_name,
-                mediaInfo.format.codec_type,
+                "mediaInfo.format.codec_type",
                 mediaInfo.format2.start_time.value_or(""),
                 mediaInfo.format2.duration.value_or(0.0),
                 mediaInfo.format2.size.value_or(""),
                 mediaInfo.format2.bit_rate.value_or(""),
                 mediaInfo.format2.probe_score,
-                CommonUtils::wstringToUtf8(mediaInfo.format.tags.album),
-                CommonUtils::wstringToUtf8(mediaInfo.format.tags.artist),
-                CommonUtils::wstringToUtf8(mediaInfo.format.tags.album_artist),
-                CommonUtils::wstringToUtf8(mediaInfo.format.tags.comment),
-                CommonUtils::wstringToUtf8(mediaInfo.format.tags.genre),
-                CommonUtils::wstringToUtf8(mediaInfo.format.tags.publisher),
-                CommonUtils::wstringToUtf8(mediaInfo.format.tags.title),
-                CommonUtils::wstringToUtf8(mediaInfo.format.tags.track),
-                CommonUtils::wstringToUtf8(mediaInfo.format.tags.date));
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.album),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.artist),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.album_artist),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.comment),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.genre),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.publisher),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.title),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.track),
+                CommonUtils::wstringToUtf8(mediaInfo.format_tags.date));
 
 
             char* error_report;

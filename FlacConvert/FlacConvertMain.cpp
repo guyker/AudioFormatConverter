@@ -241,7 +241,7 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
     for (auto& mediaEntry : mediaDirectoryList)
     {
         auto result = albumCollection.RestoreAlbumCollectionFromJSON(mediaEntry.resultPath);
-        albumCollection.SaveToDatabase(mediaEntry.dbPath);
+        albumCollection.SaveToSQLDatabase(mediaEntry.dbPath);
     }
 
     return 0;

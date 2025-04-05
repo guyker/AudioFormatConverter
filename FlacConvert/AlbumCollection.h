@@ -57,6 +57,7 @@ public:
 
 	//Export albums tracks information to a Database
 	bool SaveToDatabase(std::filesystem::path path);
+	bool SaveToSQLDatabase(std::filesystem::path path);
 
 	// load albums from a Json file
 	bool RestoreAlbumCollectionFromJSON(std::filesystem::path dirPath, bool bBasicDataOnly = false);	

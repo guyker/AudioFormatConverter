@@ -108,43 +108,35 @@ struct Format {
 struct MediaInformation
 {
 	Format format2;
-
-	struct format_t
-	{
-		std::string codec_type; //XXXXXX
-
-
-		struct tags_t
-		{
-
-			std::wstring album;
-			std::wstring artist;
-			std::wstring album_artist;
-			std::wstring genre;
-			std::wstring disc;
-			std::wstring title;
-			std::wstring track;
-			std::wstring track_total;
-			std::wstring date;
-			std::wstring comment;
-			std::wstring publisher;
-			std::wstring encoder;
-			std::wstring encoded_by;
-			std::wstring organization;
-			std::wstring composer;
-			std::wstring copyright;
-
-			std::wstring album_dynamic_range;
-			std::wstring dynamic_range;
-
-			std::wstring label;
-			std::wstring year;
-
-			std::wstring MusicBrainz_Album_Release_Country; //"MusicBrainz Album Release Country"
-		} tags;
-	} format;
-
 	std::vector<Stream> streams;
+
+
+	struct format_tags_debug
+	{
+		//for easy access and debugging
+		std::wstring album;
+		std::wstring artist;
+		std::wstring album_artist;
+		std::wstring genre;
+		std::wstring disc;
+		std::wstring title;
+		std::wstring track;
+		std::wstring track_total;
+		std::wstring date;
+		std::wstring comment;
+		std::wstring publisher;
+		std::wstring encoder;
+		std::wstring encoded_by;
+		std::wstring organization;
+		std::wstring composer;
+		std::wstring copyright;
+
+		std::wstring album_dynamic_range;
+		std::wstring dynamic_range;
+
+		std::wstring label;
+		std::wstring year;
+	} format_tags;
 };
 
 
