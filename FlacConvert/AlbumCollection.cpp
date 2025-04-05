@@ -326,20 +326,26 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path,
 
         for (SizeType i = 0; i < mediaTrackList.Size(); i++)
         {
-			auto& mediaTags = mediaTrackList[i];
-            if (mediaTags.IsObject() && mediaTags.HasMember("format"))
-            {
-                FFprobeOutput mi{ MediaTrack::ParseFFprobeOutput(mediaTags["format"]) };
+            auto mi = MediaTrack::ParseMediaTrack(mediaTrackList[i]);
 
-                if (bBasicDataOnly)
-                {
-                    trackList.push_back({ mi.format.filename, std::stol(mi.format.size.value_or("0")), mi, L"{}" });
-                }
-                else
-                {
-                    trackList.push_back({ mi.format.filename, std::stol(mi.format.size.value_or("0")), mi, json});
-                }
-            }
+            trackList.push_back({ mi.format.filename, std::stol(mi.format.size.value_or("0")), mi, L"{}" });
+
+			//auto& mediaTags = mediaTrackList[i];
+   //         auto jsonString = mediaTags.GetString();
+
+   //         if (mediaTags.IsObject() && mediaTags.HasMember("format"))
+   //         {
+   //             FFprobeOutput mi{ MediaTrack::ParseMediaTrack(mediaTags["format"]) };
+
+   //             if (bBasicDataOnly)
+   //             {
+   //                 trackList.push_back({ mi.format.filename, std::stol(mi.format.size.value_or("0")), mi, L"{}" });
+   //             }
+   //             else
+   //             {
+   //                 trackList.push_back({ mi.format.filename, std::stol(mi.format.size.value_or("0")), mi, json});
+   //             }
+   //         }
         }
 
         if (trackList.size() > 0)

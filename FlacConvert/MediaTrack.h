@@ -90,6 +90,7 @@ struct MediaTrack
 	static std::tuple<FFprobeOutput, std::wstring> ReadMediaInfoFromFile(std::filesystem::path mediaFilePath);
 
 	//parse media information from a json string
+	static FFprobeOutput ParseMediaTrack(const Value& formatTag);
 	static FFprobeOutput ParseMediaTrack(std::wstring jsonString);
 
 	//parse media information from a json object
