@@ -30,7 +30,7 @@ struct MediaTrack
 {
 	std::filesystem::path trackPath; //media file path / location
 	long long fileSize;	//file size in bytes
-	MediaInformation formatInfo;	//media information / tags
+	FFprobeOutput formatInfo;	//media information / tags
 	std::wstring mediaInfoString;	//media information / tags in json string
 
 
@@ -87,13 +87,13 @@ struct MediaTrack
 	static std::wstring ExtractMetadataFromMediaTrack(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
 
 	//returns media information (json string and media objec) from a media file (on file system)
-	static std::tuple<MediaInformation, std::wstring> ReadMediaInfoFromFile(std::filesystem::path mediaFilePath);
+	static std::tuple<FFprobeOutput, std::wstring> ReadMediaInfoFromFile(std::filesystem::path mediaFilePath);
 
 	//parse media information from a json string
-	static MediaInformation ParseMediaTrack(std::wstring jsonString);
+	static FFprobeOutput ParseMediaTrack(std::wstring jsonString);
 
 	//parse media information from a json object
-	static MediaInformation ParseMediaInformation(const Value& formatTag);
+	static FFprobeOutput ParseFFprobeOutput(const Value& formatTag);
 
 
 };

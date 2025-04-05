@@ -15,7 +15,7 @@ struct MediaAlbum
 
 using SimilarDirectoryEntryList = std::vector<std::tuple <std::wstring, std::wstring>>;
 
-using MediaLoadingFuture = std::future<std::tuple<MediaInformation, std::wstring>>;
+using MediaLoadingFuture = std::future<std::tuple<FFprobeOutput, std::wstring>>;
 
 
 using TrackInfoList = std::vector<MediaTrack>;

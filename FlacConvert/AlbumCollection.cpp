@@ -74,7 +74,7 @@ TrackInfoList AlbumCollection::LoadAlbumCollectionRecursively(std::filesystem::p
                     long long fileSize = fs::file_size(path2Fixed);
 
                     auto fileName = entry.path().filename();
-                    currentDirTrackList.push_back({ fileName, fileSize, MediaInformation{}, std::wstring{L"{}"}});
+                    currentDirTrackList.push_back({ fileName, fileSize, FFprobeOutput{}, std::wstring{L"{}"}});
                 }
             }
         }
@@ -115,7 +115,7 @@ size_t AlbumCollection::ImportMetadataFromMediaFiles(bool bAsync)
         progressIndex = (progressIndex + 1) % CommonUtils::ProgressCircleChars.size();
 
         //Album tracks list holder 
-        std::vector<std::tuple<MediaLoadingFuture, MediaInformation&, std::wstring&>> asyncFutureList;
+        std::vector<std::tuple<MediaLoadingFuture, FFprobeOutput&, std::wstring&>> asyncFutureList;
 
         for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
         {
@@ -329,15 +329,15 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path,
 			auto& mediaTags = mediaTrackList[i];
             if (mediaTags.IsObject() && mediaTags.HasMember("format"))
             {
-                MediaInformation mi{ MediaTrack::ParseMediaInformation(mediaTags["format"]) };
+                FFprobeOutput mi{ MediaTrack::ParseFFprobeOutput(mediaTags["format"]) };
 
                 if (bBasicDataOnly)
                 {
-                    trackList.push_back({ mi.format2.filename, std::stol(mi.format2.size.value_or("0")), mi, L"{}" });
+                    trackList.push_back({ mi.format.filename, std::stol(mi.format.size.value_or("0")), mi, L"{}" });
                 }
                 else
                 {
-                    trackList.push_back({ mi.format2.filename, std::stol(mi.format2.size.value_or("0")), mi, json});
+                    trackList.push_back({ mi.format.filename, std::stol(mi.format.size.value_or("0")), mi, json});
                 }
             }
         }
@@ -465,10 +465,10 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(DirectoryConte
                         auto& [trackName1, size1, mediaInfo1, mediaInfoString2] = trackList1[i];
                         auto& [trackName2, size2, mediaInfo2, mediaInfoString1] = trackList2[i];
 
-                        if (mediaInfo1.format2.duration.has_value() && mediaInfo2.format2.duration.has_value())
+                        if (mediaInfo1.format.duration.has_value() && mediaInfo2.format.duration.has_value())
                         {
-                            auto minSize = (std::min)(mediaInfo1.format2.duration.value(), mediaInfo2.format2.duration.value());
-                            auto maxSize = (std::max)(mediaInfo1.format2.duration.value(), mediaInfo2.format2.duration.value());
+                            auto minSize = (std::min)(mediaInfo1.format.duration.value(), mediaInfo2.format.duration.value());
+                            auto maxSize = (std::max)(mediaInfo1.format.duration.value(), mediaInfo2.format.duration.value());
 
                             double diffPercentage = 100 * (maxSize - minSize) / maxSize;
 
@@ -479,7 +479,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(DirectoryConte
                         }
                         else
                         {
-                            if (!mediaInfo1.format2.duration.has_value() && !mediaInfo2.format2.duration.has_value())
+                            if (!mediaInfo1.format.duration.has_value() && !mediaInfo2.format.duration.has_value())
                             {
                                 bPotentialSimilar = false;
                             }
@@ -572,18 +572,18 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
 
                 jsonString,
 
-                mediaInfo.format2.nb_streams,
-                mediaInfo.format2.nb_programs,
-                mediaInfo.format2.nb_stream_groups,
+                mediaInfo.format.nb_streams,
+                mediaInfo.format.nb_programs,
+                mediaInfo.format.nb_stream_groups,
 
-                mediaInfo.format2.format_name,
-                mediaInfo.format2.format_long_name,
+                mediaInfo.format.format_name,
+                mediaInfo.format.format_long_name,
                 "mediaInfo.format.codec_type",
-                mediaInfo.format2.start_time.value_or(""),
-                mediaInfo.format2.duration.value_or(0.0),
-                mediaInfo.format2.size.value_or(""),
-                mediaInfo.format2.bit_rate.value_or(""),
-                mediaInfo.format2.probe_score,
+                mediaInfo.format.start_time.value_or(""),
+                mediaInfo.format.duration.value_or(0.0),
+                mediaInfo.format.size.value_or(""),
+                mediaInfo.format.bit_rate.value_or(""),
+                mediaInfo.format.probe_score,
 
                 CommonUtils::wstringToUtf8(mediaInfo.format_tags.album),
                 CommonUtils::wstringToUtf8(mediaInfo.format_tags.artist),
@@ -678,18 +678,18 @@ bool AlbumCollection::SaveToDatabase(std::filesystem::path path)
                 CommonUtils::wstringToUtf8(albumPath),
                 CommonUtils::wstringToUtf8(trackName.wstring()),
 
-                mediaInfo.format2.nb_streams,
-                mediaInfo.format2.nb_programs,
-                mediaInfo.format2.nb_stream_groups,
+                mediaInfo.format.nb_streams,
+                mediaInfo.format.nb_programs,
+                mediaInfo.format.nb_stream_groups,
 
-                mediaInfo.format2.format_name,
-                mediaInfo.format2.format_long_name,
+                mediaInfo.format.format_name,
+                mediaInfo.format.format_long_name,
                 "mediaInfo.format.codec_type",
-                mediaInfo.format2.start_time.value_or(""),
-                mediaInfo.format2.duration.value_or(0.0),
-                mediaInfo.format2.size.value_or(""),
-                mediaInfo.format2.bit_rate.value_or(""),
-                mediaInfo.format2.probe_score,
+                mediaInfo.format.start_time.value_or(""),
+                mediaInfo.format.duration.value_or(0.0),
+                mediaInfo.format.size.value_or(""),
+                mediaInfo.format.bit_rate.value_or(""),
+                mediaInfo.format.probe_score,
                 CommonUtils::wstringToUtf8(mediaInfo.format_tags.album),
                 CommonUtils::wstringToUtf8(mediaInfo.format_tags.artist),
                 CommonUtils::wstringToUtf8(mediaInfo.format_tags.album_artist),
