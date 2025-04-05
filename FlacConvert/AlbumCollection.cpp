@@ -515,6 +515,74 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(DirectoryConte
 #include "SQLite/sqlite-amalgamation/sqlite3.h"
 
 
+//CREATE TABLE albums(
+//    id INTEGER PRIMARY KEY AUTOINCREMENT,
+//    filename TEXT NOT NULL, --From Format.filename
+//    duration TEXT, --From Format.duration
+//    bit_rate TEXT, --From Format.bit_rate
+//    format_name TEXT        -- From Format.format_name
+//);
+//
+//CREATE TABLE tags(
+//    id INTEGER PRIMARY KEY AUTOINCREMENT,
+//    album_id INTEGER, --Foreign key to albums
+//    key TEXT NOT NULL, --Tag name(e.g., "artist", "title")
+//    value TEXT NOT NULL, --Tag value(e.g., "The Beatles", "Hey Jude")
+//    FOREIGN KEY(album_id) REFERENCES albums(id)
+//);
+//
+//CREATE TABLE streams(
+//    id INTEGER PRIMARY KEY AUTOINCREMENT,
+//    album_id INTEGER, --Foreign key to albums
+//    index INTEGER, --From Stream.index
+//    codec_name TEXT, --From Stream.codec_name
+//    sample_rate TEXT, --From Stream.sample_rate
+//    channels INTEGER, --From Stream.channels
+//    FOREIGN KEY(album_id) REFERENCES albums(id)
+//);
+
+void saveToSQLite(const FFprobeOutput& output, const std::string& dbPath) {
+    sqlite3* db;
+    int rc = sqlite3_open(dbPath.c_str(), &db);
+    if (rc) {
+        std::cerr << "Can't open database: " << sqlite3_errmsg(db) << "\n";
+        return;
+    }
+
+    // Create tables
+    const char* createAlbums = "CREATE TABLE IF NOT EXISTS albums (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL, duration TEXT)";
+    const char* createTags = "CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, album_id INTEGER, key TEXT NOT NULL, value TEXT NOT NULL, FOREIGN KEY (album_id) REFERENCES albums(id))";
+    sqlite3_exec(db, createAlbums, nullptr, nullptr, nullptr);
+    sqlite3_exec(db, createTags, nullptr, nullptr, nullptr);
+
+    if (true) {
+        // Insert album
+        sqlite3_stmt* stmt;
+        const char* insertAlbum = "INSERT INTO albums (filename, duration) VALUES (?, ?)";
+        sqlite3_prepare_v2(db, insertAlbum, -1, &stmt, nullptr);
+        sqlite3_bind_text(stmt, 1, CommonUtils::wstringToUtf8(output.format.filename).c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, std::to_string(output.format.duration.value_or(0)).c_str(), -1, SQLITE_STATIC);
+        sqlite3_step(stmt);
+        sqlite3_int64 albumId = sqlite3_last_insert_rowid(db);
+        sqlite3_finalize(stmt);
+
+        // Insert tags
+        if (output.format.tags && output.format.tags.has_value()) {
+            const char* insertTag = "INSERT INTO tags (album_id, key, value) VALUES (?, ?, ?)";
+            sqlite3_prepare_v2(db, insertTag, -1, &stmt, nullptr);
+            for (const auto& [key, value] : output.format.tags.value()) {
+                sqlite3_bind_int64(stmt, 1, albumId);
+                sqlite3_bind_text(stmt, 2, key.c_str(), -1, SQLITE_STATIC);
+                sqlite3_bind_text(stmt, 3, value.c_str(), -1, SQLITE_STATIC);
+                sqlite3_step(stmt);
+                sqlite3_reset(stmt);
+            }
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    sqlite3_close(db);
+}
 
 bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
 {
