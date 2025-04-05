@@ -197,13 +197,13 @@ Tags parseTags(const rapidjson::Value& jsonValue)
 
         // Get the value, ensure it's a string, and add to the map
         if (itr->value.IsString()) {
-            resultTags.tags[key] = itr->value.GetString();
+            resultTags[key] = itr->value.GetString();
         }
         else {
             // Handle non-string values (e.g., convert numbers to strings)
             // For ffprobe, tags are typically strings, but this is a fallback
             if (itr->value.IsNumber()) {
-                resultTags.tags[key] = std::to_string(itr->value.GetDouble());
+                resultTags[key] = std::to_string(itr->value.GetDouble());
             }
             else
             {
@@ -340,13 +340,13 @@ FFprobeOutput MediaTrack::ParseFFprobeOutput(const Value& formatTag)
 
                 // Get the value, ensure it's a string, and add to the map
                 if (itr->value.IsString()) {
-                    result.tags[key] = itr->value.GetString();
+                    result[key] = itr->value.GetString();
                 }
                 else {
                     // Handle non-string values (e.g., convert numbers to strings)
                     // For ffprobe, tags are typically strings, but this is a fallback
                     if (itr->value.IsNumber()) {
-                        result.tags[key] = std::to_string(itr->value.GetDouble());
+                        result[key] = std::to_string(itr->value.GetDouble());
                     }
                     else
                     {

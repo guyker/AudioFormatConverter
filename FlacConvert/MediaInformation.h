@@ -29,15 +29,15 @@
 
 namespace fs = std::filesystem;
 
-struct MediaTrack;
-
-
+//struct MediaTrack;
 
 
 	// Represents dynamic metadata tags (key-value pairs)
-struct Tags {
-	std::map<std::string, std::string> tags; // Key-value map, keys lowercase (e.g., "artist"), values strings (e.g., "The Beatles"), from file metadata
-};
+//struct Tags {
+//	std::map<std::string, std::string> tags; // Key-value map, keys lowercase (e.g., "artist"), values strings (e.g., "The Beatles"), from file metadata
+//};
+
+using Tags = std::map<std::string, std::string>;
 
 // Represents the "disposition" object for streams/frames
 struct Disposition {
