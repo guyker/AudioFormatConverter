@@ -18,16 +18,38 @@
 
 
 namespace JsonUtils {
+
     // Generic function to parse a RapidJSON member into a specified type
     template <typename T>
-    std::optional<T> tryParseMember(const rapidjson::Value& obj, const char* key) {
-        if (!obj.HasMember(key)) {
-            return std::nullopt; // Member doesn’t exist
+    std::optional<T> tryParseMember(const rapidjson::Value& obj, const char* key_) {
+
+        if (!obj.IsObject())
+        {
+            return std::nullopt;
         }
 
-        const auto& value = obj[key];
+        const rapidjson::Value* valuePtr = nullptr;
 
-     //   std::optional<std::string>
+        // Try case-sensitive lookup first
+        if (obj.HasMember(key_)) {
+            valuePtr = &obj[key_];
+        }
+        else {
+            // Try case-insensitive lookup
+            for (auto it = obj.MemberBegin(); it != obj.MemberEnd(); ++it) {
+                if (it->name.IsString() && _stricmp(it->name.GetString(), key_) == 0) {
+                    valuePtr = &it->value;
+                    break;
+                }
+            }
+        }
+
+        if (!valuePtr)
+        {
+            return std::nullopt;
+        }
+
+        const auto& value = *valuePtr;
 
         if constexpr (std::is_same_v<T, std::optional<std::string>>) {
             if (value.IsString()) {

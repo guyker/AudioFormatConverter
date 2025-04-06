@@ -92,10 +92,6 @@ struct MediaTrack
 	//parse media information from a json string
 	static FFprobeOutput ParseMediaTrack(const Value& formatTag);
 	static FFprobeOutput ParseMediaTrack(std::wstring jsonString);
-	//parse media information from a json object
-	static FFprobeOutput ParseFFprobeOutput(const Value& formatTag);
-
-
 };
 
 
