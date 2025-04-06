@@ -196,9 +196,10 @@ struct FFprobeOutput {
 	struct format_tags_debug
 	{
 		//for easy access and debugging
-		std::wstring album;
+	    std::wstring album;
 		std::wstring artist;
 		std::wstring album_artist;
+
 		std::wstring genre;
 		std::wstring disc;
 		std::wstring title;
