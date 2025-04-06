@@ -216,10 +216,8 @@ Tags parseTags(const rapidjson::Value& jsonValue)
     return resultTags;
 }
 
-FFprobeOutput MediaTrack::ParseMediaTrack(const Value& doc)
+bool TryParseFFprobeFormat(const Value& doc, FFprobeOutput &mediaInfo)
 {
-    FFprobeOutput mediaInfo;
-
     if (doc.HasMember("format") && doc["format"].IsObject()) {
         Format& format = mediaInfo.format;
 
@@ -269,8 +267,15 @@ FFprobeOutput MediaTrack::ParseMediaTrack(const Value& doc)
                 if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "year")) { mediaInfo.format_tags.year = *val; }
             }
         }
+
+        return true;
     }
 
+    return false;
+}
+
+bool TryParseFFprobeStreams(const Value& doc, FFprobeOutput& mediaInfo)
+{
     if (doc.HasMember("streams") && doc["streams"].IsArray()) {
         for (const auto& s : doc["streams"].GetArray()) {
             Stream stream;
@@ -286,6 +291,16 @@ FFprobeOutput MediaTrack::ParseMediaTrack(const Value& doc)
             mediaInfo.streams.push_back(stream);
         }
     }
+
+    return false;
+}
+
+FFprobeOutput MediaTrack::ParseMediaTrack(const Value& doc)
+{
+    FFprobeOutput mediaInfo;
+
+    TryParseFFprobeFormat(doc, mediaInfo);
+    TryParseFFprobeStreams(doc, mediaInfo);
 
     return mediaInfo;
 }
