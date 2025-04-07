@@ -71,10 +71,10 @@ struct MediaTrack
 		{
 			auto fileEextension = path.extension();
 			if (IsFileAcceptedAudioFile(path))
-                #include <thread> // Add this include at the top of the file
+              //  #include <thread> // Add this include at the top of the file
 
                 // Replace the problematic line with the following code
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+              //  std::this_thread::sleep_for(std::chrono::milliseconds(500));
 			{
 				return true;
 			}
