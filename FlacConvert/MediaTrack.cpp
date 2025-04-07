@@ -115,15 +115,168 @@ std::string runFFprobe(const std::wstring& filename) {
 
 
 
+#include <iostream>
+#include <string>
+#include <map>
+extern "C" {
+#include <libavformat/avformat.h>
+}
+
+//std::tuple<FFprobeOutput, std::wstring> ReadMediaInfoFromFile(std::filesystem::path mediaFilePath)
+//{
+//
+//}
+
+// Function to extract ffprobe-like data using libavformat
+FFprobeOutput extractMetadata(const std::string& filename) {
+    FFprobeOutput output;
+
+    // Initialize FFmpeg (optional in newer versions, but safe)
+  //  av_register_all();
+     
+    // Open the input file
+    AVFormatContext* fmt_ctx = nullptr;
+    if (avformat_open_input(&fmt_ctx, filename.c_str(), nullptr, nullptr) < 0) {
+        std::cerr << "Could not open file: " << filename << "\n";
+        return output;
+    }
+
+    // Find stream info (populates metadata and stream details)
+    if (avformat_find_stream_info(fmt_ctx, nullptr) < 0) {
+        std::cerr << "Could not find stream info\n";
+        avformat_close_input(&fmt_ctx);
+        return output;
+    }
+
+    // Populate Format section
+    Format fmt;
+    fmt.filename = CommonUtils::utf8ToWstring(filename);
+    fmt.nb_streams = fmt_ctx->nb_streams;
+    fmt.format_name = fmt_ctx->iformat->name ? fmt_ctx->iformat->name : "";
+
+    // Convert duration from microseconds to seconds
+    if (fmt_ctx->duration != AV_NOPTS_VALUE) {
+        double duration_sec = static_cast<double>(fmt_ctx->duration) / AV_TIME_BASE;
+        //fmt.duration = std::to_string(duration_sec);
+        fmt.duration = duration_sec;
+    }
+
+    // Extract format tags
+    if (fmt_ctx->metadata) {
+        Tags format_tags;
+        AVDictionaryEntry* tag = nullptr;
+        while ((tag = av_dict_get(fmt_ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
+            format_tags[tag->key] = tag->value;
+        }
+        fmt.tags = format_tags;
+    }
+    output.format = fmt;
+
+    // Populate Streams section
+    for (unsigned int i = 0; i < fmt_ctx->nb_streams; ++i) {
+        AVStream* stream = fmt_ctx->streams[i];
+        Stream s;
+        s.index = stream->index;
+
+        // Codec name and type
+        AVCodecParameters* codecpar = stream->codecpar;
+        s.codec_name = avcodec_get_name(codecpar->codec_id);
+        switch (codecpar->codec_type) {
+        case AVMEDIA_TYPE_AUDIO: s.codec_type = "audio"; break;
+        case AVMEDIA_TYPE_VIDEO: s.codec_type = "video"; break;
+        case AVMEDIA_TYPE_SUBTITLE: s.codec_type = "subtitle"; break;
+        default: s.codec_type = "unknown"; break;
+        }
+
+        // Audio-specific fields
+        if (codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            if (codecpar->sample_rate > 0) {
+                s.sample_rate = std::to_string(codecpar->sample_rate);
+            }
+            //if (codecpar->channels > 0) {
+            //    s.channels = codecpar->channels;
+            //}
+            if (codecpar->ch_layout.nb_channels > 0) {
+                s.channels = codecpar->ch_layout.nb_channels;
+            }
+        }
+
+        // Stream duration (convert from stream time base to seconds)
+        if (stream->duration != AV_NOPTS_VALUE) {
+            double duration_sec = static_cast<double>(stream->duration) * av_q2d(stream->time_base);
+            s.duration = std::to_string(duration_sec);
+        }
+
+        // Extract stream tags
+        if (stream->metadata) {
+            Tags stream_tags;
+            AVDictionaryEntry* tag = nullptr;
+            while ((tag = av_dict_get(stream->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
+                stream_tags[tag->key] = tag->value;
+            }
+            s.tags = stream_tags;
+        }
+
+        output.streams.push_back(s);
+    }
+
+    // Clean up
+    avformat_close_input(&fmt_ctx);
+    return output;
+}
+
+std::map<std::string, std::string> extractTags(const std::string& filename) {
+    std::map<std::string, std::string> tags;
+
+    // Initialize FFmpeg (not needed in newer versions, but safe to call)
+   // av_register_all();
+
+    // Open the file
+    AVFormatContext* fmt_ctx = nullptr;
+    if (avformat_open_input(&fmt_ctx, filename.c_str(), nullptr, nullptr) < 0) {
+        std::cerr << "Could not open file: " << filename << "\n";
+        return tags;
+    }
+
+    // Find stream info (populates metadata)
+    if (avformat_find_stream_info(fmt_ctx, nullptr) < 0) {
+        std::cerr << "Could not find stream info\n";
+        avformat_close_input(&fmt_ctx);
+        return tags;
+    }
+
+    // Extract metadata tags
+    AVDictionaryEntry* tag = nullptr;
+    while ((tag = av_dict_get(fmt_ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
+        tags[tag->key] = tag->value;
+    }
+
+    // Clean up
+    avformat_close_input(&fmt_ctx);
+    return tags;
+}
+//std::map<std::string, std::string> returnVal = extractTags(mediaFilePath);
+
 
 //returns media information (json string and media objec) from a media file (on file system)
 std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::filesystem::path mediaFilePath)
 {
-    std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
-    auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
 
     try
-    {
+    {        
+        return std::make_tuple(FFprobeOutput{}, L"{}");
+        
+
+
+        //std::map<std::string, std::string> returnVal = extractTags(mediaFilePath.generic_string());
+
+        auto data = extractMetadata(mediaFilePath.generic_string());
+
+        return std::make_tuple(data, L"{}");
+
+        std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
+        auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
+
         auto jsonString = MediaTrack::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
         auto mi = MediaTrack::ParseMediaTrack(jsonString);
 
