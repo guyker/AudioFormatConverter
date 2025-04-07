@@ -264,15 +264,15 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
 
     try
     {        
-        return std::make_tuple(FFprobeOutput{}, L"{}");
-        
+        //return std::make_tuple(FFprobeOutput{}, L"{}");
+        //
 
 
-        //std::map<std::string, std::string> returnVal = extractTags(mediaFilePath.generic_string());
+        ////std::map<std::string, std::string> returnVal = extractTags(mediaFilePath.generic_string());
 
-        auto data = extractMetadata(mediaFilePath.generic_string());
+        //auto data = extractMetadata(mediaFilePath.generic_string());
 
-        return std::make_tuple(data, L"{}");
+        //return std::make_tuple(data, L"{}");
 
         std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
         auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
