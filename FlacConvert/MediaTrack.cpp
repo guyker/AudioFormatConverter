@@ -127,18 +127,182 @@ extern "C" {
 //
 //}
 
-// Function to extract ffprobe-like data using libavformat
+std::string escapePath(const std::string& path) {
+    std::string result;
+    for (char c : path) {
+        if (c == ' ') result += "%20";
+        else if (c == '\'') result += "%27"; // Standard single quote
+        else if (c == '’') result += "%E2%80%99"; // Smart quote (UTF-8: E2 80 99)
+        else result += c;
+    }
+    return result;
+}
+
+std::string normalizePath(const std::string& path) {
+    std::string result = path;
+    std::replace(result.begin(), result.end(), '\\', '/');
+    return result;
+}
+
+#include <string>
+#include <iostream>
+#include <filesystem>
+#include <fstream>
+#include <windows.h> // For Windows path handling
+extern "C" {
+#include <libavformat/avformat.h>
+#include <libavutil/error.h>
+}
+
+std::string fixPathForFFmpeg(const std::string& filename) {
+    std::string path = std::filesystem::path(filename).generic_string();
+    if (path.find("//?/") == 0) {
+        path = path.substr(4); // Strip "//?/"
+    }
+    return path;
+}
+
 FFprobeOutput extractMetadata(const std::string& filename) {
     FFprobeOutput output;
+
+    std::string absPath = fixPathForFFmpeg(filename);
+
+    AVFormatContext* fmt_ctx = nullptr;
+    int ret = avformat_open_input(&fmt_ctx, absPath.c_str(), nullptr, nullptr);
+    if (ret < 0) {
+        char errbuf[128];
+        av_strerror(ret, errbuf, sizeof(errbuf));
+        std::cerr << "Failed to open " << absPath << ": " << errbuf << " (" << ret << ")\n";
+        return output;
+    }
+
+    if (avformat_find_stream_info(fmt_ctx, nullptr) < 0) {
+        std::cerr << "Could not find stream info\n";
+        avformat_close_input(&fmt_ctx);
+        return output;
+    }
+
+    // Format section
+    Format fmt;
+    fmt.filename = std::wstring(filename.begin(), filename.end()); // Assuming CommonUtils::utf8ToWstring
+    fmt.nb_streams = fmt_ctx->nb_streams;
+    fmt.format_name = fmt_ctx->iformat->name ? fmt_ctx->iformat->name : "";
+    fmt.format_long_name = fmt_ctx->iformat->long_name ? fmt_ctx->iformat->long_name : "";
+    if (fmt_ctx->duration != AV_NOPTS_VALUE) {
+        fmt.duration = static_cast<double>(fmt_ctx->duration) / AV_TIME_BASE;
+    }
+    if (fmt_ctx->bit_rate > 0) {
+        fmt.bit_rate = fmt_ctx->bit_rate;
+    }
+    if (fmt_ctx->start_time != AV_NOPTS_VALUE) {
+        fmt.start_time = fmt_ctx->start_time;
+    }
+    fmt.probe_score = fmt_ctx->probe_score;
+
+    // Optional: Get file size from filesystem
+    try {
+        fmt.file_size = std::filesystem::file_size(std::filesystem::path(filename));
+    }
+    catch (const std::filesystem::filesystem_error& e) {
+        std::cerr << "Failed to get file size: " << e.what() << "\n";
+    }
+
+    if (fmt_ctx->metadata) {
+        Tags format_tags;
+        AVDictionaryEntry* tag = nullptr;
+        while ((tag = av_dict_get(fmt_ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
+            format_tags[tag->key] = tag->value;
+        }
+        fmt.tags = format_tags;
+    }
+    output.format = fmt;
+
+    // Streams section
+    for (unsigned int i = 0; i < fmt_ctx->nb_streams; ++i) {
+        AVStream* stream = fmt_ctx->streams[i];
+        Stream s;
+        s.index = stream->index;
+        AVCodecParameters* codecpar = stream->codecpar;
+        s.codec_name = avcodec_get_name(codecpar->codec_id);
+        switch (codecpar->codec_type) {
+        case AVMEDIA_TYPE_AUDIO: s.codec_type = "audio"; break;
+        case AVMEDIA_TYPE_VIDEO: s.codec_type = "video"; break;
+        case AVMEDIA_TYPE_SUBTITLE: s.codec_type = "subtitle"; break;
+        default: s.codec_type = "unknown"; break;
+        }
+
+        if (codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            if (codecpar->sample_rate > 0) {
+                s.sample_rate = std::to_string(codecpar->sample_rate);
+            }
+            if (codecpar->ch_layout.nb_channels > 0) {
+                s.channels = codecpar->ch_layout.nb_channels;
+                char layout[64];
+                av_channel_layout_describe(&codecpar->ch_layout, layout, sizeof(layout));
+                s.channel_layout = layout;
+            }
+            if (codecpar->bit_rate > 0) {
+                s.bit_rate = codecpar->bit_rate;
+            }
+            if (codecpar->bits_per_raw_sample > 0) {
+                s.bits_per_sample = codecpar->bits_per_raw_sample;
+            }
+            if (codecpar->frame_size > 0) {
+                s.frame_size = codecpar->frame_size;
+            }
+        }
+
+        if (stream->duration != AV_NOPTS_VALUE) {
+            s.duration = std::to_string(static_cast<double>(stream->duration) * av_q2d(stream->time_base));
+        }
+        if (stream->start_time != AV_NOPTS_VALUE) {
+            s.start_time = stream->start_time;
+        }
+        if (stream->nb_frames > 0) {
+            s.nb_frames = stream->nb_frames;
+        }
+
+        if (stream->metadata) {
+            Tags stream_tags;
+            AVDictionaryEntry* tag = nullptr;
+            while ((tag = av_dict_get(stream->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
+                stream_tags[tag->key] = tag->value;
+            }
+            s.tags = stream_tags;
+        }
+
+        output.streams.push_back(s);
+    }
+
+    avformat_close_input(&fmt_ctx);
+    return output;
+}
+
+// Function to extract ffprobe-like data using libavformat
+FFprobeOutput extractMetadata_XXX(const std::string& filename) {
+    FFprobeOutput output;
+
+    std::string absPath = fixPathForFFmpeg(filename);
 
     // Initialize FFmpeg (optional in newer versions, but safe)
   //  av_register_all();
      
     // Open the input file
     AVFormatContext* fmt_ctx = nullptr;
-    if (avformat_open_input(&fmt_ctx, filename.c_str(), nullptr, nullptr) < 0) {
-        std::cerr << "Could not open file: " << filename << "\n";
-        return output;
+    int ret = avformat_open_input(&fmt_ctx, absPath.c_str(), nullptr, nullptr);
+    if (ret < 0) {
+        char errbuf[128];
+        av_strerror(ret, errbuf, sizeof(errbuf));
+        std::cerr << "Failed to open " << absPath << ": " << errbuf << " (" << ret << ")\n";
+
+
+        std::cout << "Path hex: ";
+        for (char c : absPath) {
+            std::cout << std::hex << (int)(unsigned char)c << " ";
+        }
+
+
+        return output; // Return empty output on failure
     }
 
     // Find stream info (populates metadata and stream details)
@@ -268,11 +432,11 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
         //
 
 
-        ////std::map<std::string, std::string> returnVal = extractTags(mediaFilePath.generic_string());
+        //std::map<std::string, std::string> returnVal = extractTags(mediaFilePath.generic_string());
 
-        //auto data = extractMetadata(mediaFilePath.generic_string());
+        auto data = extractMetadata(mediaFilePath.generic_string());
 
-        //return std::make_tuple(data, L"{}");
+        return std::make_tuple(data, L"{}");
 
         std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
         auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
@@ -384,10 +548,10 @@ bool TryParseFFprobeFormat(const Value& doc, FFprobeOutput &mediaInfo)
 
         if (auto format_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_name")) { format.format_name = *format_name; }
         if (auto format_long_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_long_name")) { format.format_long_name = *format_long_name; }
-        if (auto start_time = JsonUtils::tryParseMember<std::optional<std::string>>(formatTag, "start_time")) { format.start_time = *start_time; }
+        if (auto start_time = JsonUtils::tryParseMember<std::optional<std::string>>(formatTag, "start_time")) { format.start_time = std::stoll(*start_time.value_or("0")); }
         if (auto duration = JsonUtils::tryParseMember<std::optional<std::string>>(formatTag, "duration")) { format.duration = std::stod(*duration.value_or("0")); }
         if (auto size = JsonUtils::tryParseMember<std::string>(formatTag, "size")) { format.size = *size; }
-        if (auto bit_rate = JsonUtils::tryParseMember<std::string>(formatTag, "bit_rate")) { format.bit_rate = *bit_rate; }
+        if (auto bit_rate = JsonUtils::tryParseMember<std::string>(formatTag, "bit_rate")) { format.bit_rate = std::stoll(bit_rate.value_or("0")); }
         if (auto probe_score = JsonUtils::tryParseMember<int>(formatTag, "probe_score")) { format.probe_score = *probe_score; }
 
         if (formatTag.HasMember("tags") && formatTag["tags"].IsObject()) {

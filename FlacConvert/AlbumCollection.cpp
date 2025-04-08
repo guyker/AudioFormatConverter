@@ -608,10 +608,10 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
         "nb_stream_groups INTEGER, "
         "format_name TEXT, "
         "format_long_name TEXT, "
-        "start_time TEXT, "
+        "start_time INTEGER, "
         "duration REAL, "
         "size TEXT, "
-        "bit_rate TEXT, "
+        "bit_rate INTEGER, "
         "probe_score INTEGER, "
 
         "album TEXT, "
@@ -651,24 +651,20 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
             //std::string albumPath2{ dirPath.path().generic_string()};
             //auto trackName2 = trackName.generic_string();
 
-            auto jsonString = CommonUtils::wstringToUtf8(mediaInfoString);
+            auto jsonString__ = CommonUtils::wstringToUtf8(mediaInfoString);
             std::string queryString = std::format(
                 "INSERT OR REPLACE INTO TracksDB VALUES (null, \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\");",
 
                 CommonUtils::wstringToUtf8(albumPath),
-               // CommonUtils::wstringToUtf8(mediaInfo.format.filename),
-
                 mediaInfo.format.nb_streams,
                 mediaInfo.format.nb_programs,
                 mediaInfo.format.nb_stream_groups,
-
                 mediaInfo.format.format_name,
                 mediaInfo.format.format_long_name,
-
-                mediaInfo.format.start_time.value_or(""),
+                mediaInfo.format.start_time.value_or(0),
                 mediaInfo.format.duration.value_or(0.0),
                 mediaInfo.format.size.value_or(""),
-                mediaInfo.format.bit_rate.value_or(""),
+                mediaInfo.format.bit_rate.value_or(0),
                 mediaInfo.format.probe_score,
 
                 CommonUtils::wstringToUtf8(mediaInfo.format_tags.album),
@@ -721,10 +717,10 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
         sqlite3_bind_int(stmt, bindIndex++, mediaInfo.format.nb_stream_groups);
         sqlite3_bind_text(stmt, bindIndex++, mediaInfo.format.format_name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, bindIndex++, mediaInfo.format.format_long_name.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, mediaInfo.format.start_time.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, bindIndex++, mediaInfo.format.start_time.value_or(0));
         sqlite3_bind_double(stmt, bindIndex++, mediaInfo.format.duration.value_or(0.0));
         sqlite3_bind_text(stmt, bindIndex++, mediaInfo.format.size.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, mediaInfo.format.bit_rate.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, bindIndex++, mediaInfo.format.bit_rate.value_or(0));
         sqlite3_bind_int(stmt, bindIndex++, mediaInfo.format.probe_score);
 
         // Bind tags
@@ -781,136 +777,3 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
 }
 
 
-
-
-bool AlbumCollection::SaveToSQLDatabase_PRE(std::filesystem::path path)
-{
-    const std::string dbPath{ path.generic_string() };
-
-    sqlite3* db;
-    int rc = sqlite3_open(dbPath.c_str(), &db);
-
-    if (rc != SQLITE_OK) {
-        std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
-        return rc;
-    }
-
-    // Execute SQL statements
-
-    rc = sqlite3_exec(db, "DROP TABLE IF EXISTS TracksDB;", 0, 0, 0);
-
-    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS TracksDB ("
-        "ID INTEGER PRIMARY KEY, "
-        "album_path TEXT, "
-        "nb_streams INTEGER, "
-        "nb_programs INTEGER, "
-        "nb_stream_groups INTEGER, "
-        "format_name TEXT, "
-        "format_long_name TEXT, "
-        "start_time TEXT, "
-        "duration REAL, "
-        "size TEXT, "
-        "bit_rate TEXT, "
-        "probe_score INTEGER, "
-
-        "album TEXT, "
-        "artist TEXT, "
-        "album_artist TEXT, "
-        "genre TEXT, "
-        "disc TEXT, "
-        "title TEXT, "
-        "track TEXT, "
-        "track_total TEXT, "
-        "date TEXT, "
-        "comment TEXT, "
-        "publisher TEXT, "
-        "encoder TEXT, "
-        "encoded_by TEXT, "
-        "organization TEXT, "
-        "composer TEXT, "
-        "copyright TEXT, "
-        "album_dynamic_range TEXT, "
-        "dynamic_range TEXT, "
-        "label TEXT, "
-        "year TEXT); ",
-        0, 0, 0);
-
-    if (rc != SQLITE_OK) {
-        std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
-        sqlite3_close(db);
-        return rc;
-    }
-
-
-    for (auto [dirPath, trackList] : _AlbumList)
-    {
-        for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
-        {
-            std::wstring albumPath = dirPath.path().wstring();
-            //std::string albumPath2{ dirPath.path().generic_string()};
-            //auto trackName2 = trackName.generic_string();
-
-            auto jsonString = CommonUtils::wstringToUtf8(mediaInfoString);
-            std::string queryString = std::format(
-                "INSERT OR REPLACE INTO TracksDB VALUES (null, \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\");",
-
-                CommonUtils::wstringToUtf8(albumPath),
-                // CommonUtils::wstringToUtf8(mediaInfo.format.filename),
-
-                mediaInfo.format.nb_streams,
-                mediaInfo.format.nb_programs,
-                mediaInfo.format.nb_stream_groups,
-
-                mediaInfo.format.format_name,
-                mediaInfo.format.format_long_name,
-
-                mediaInfo.format.start_time.value_or(""),
-                mediaInfo.format.duration.value_or(0.0),
-                mediaInfo.format.size.value_or(""),
-                mediaInfo.format.bit_rate.value_or(""),
-                mediaInfo.format.probe_score,
-
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.album),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.artist),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.album_artist),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.genre),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.disc),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.title),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.track),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.track_total),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.date),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.comment),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.publisher),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.encoder),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.encoded_by),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.organization),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.composer),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.copyright),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.album_dynamic_range),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.dynamic_range),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.label),
-                CommonUtils::wstringToUtf8(mediaInfo.format_tags.year)
-            );
-
-
-            char* error_report;
-            rc = sqlite3_exec(db, queryString.c_str(), 0, 0, &error_report);
-            if (rc)
-            {
-                std::cerr << "***ERROR - Database error: " << error_report << std::endl;
-            }
-        }
-    }
-
-
-    if (rc != SQLITE_OK) {
-        std::cerr << "Cannot insert data: " << sqlite3_errmsg(db) << std::endl;
-        sqlite3_close(db);
-        return rc;
-    }
-
-
-    sqlite3_close(db);
-
-    return true;
-}

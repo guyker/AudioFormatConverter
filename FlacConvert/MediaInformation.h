@@ -58,6 +58,8 @@ struct Disposition {
 // Represents the "format" section (-show_format)
 struct Format {
 	std::wstring filename; // File path/name, e.g., "/path/to/song.flac"
+    
+    std::optional<uint64_t> file_size;
 
 	int nb_streams{ 0 }; // Number of streams, non-negative integer, e.g., 1
 	int nb_programs{ 0 }; // Number of programs, non-negative integer, e.g., 0
@@ -65,10 +67,11 @@ struct Format {
 
 	std::string format_name; // Container format short name, e.g., "flac", "mp3"
 	std::string format_long_name; // Container format descriptive name, e.g., "raw FLAC"
-	std::optional<std::string> start_time; // Start time in seconds, string with decimal, e.g., "0.000000", optional
+	std::optional<int64_t> start_time; // Start time in seconds, string with decimal, e.g., "0.000000", optional
 	std::optional<double> duration; // Duration in seconds, string with decimal, e.g., "123.456789", optional
 	std::optional<std::string> size; // File size in bytes, string with integer, e.g., "12345678", optional
-	std::optional<std::string> bit_rate; // Overall bitrate in bits/s, string with integer, e.g., "960000", optional
+	//std::optional<std::string> bit_rate; // Overall bitrate in bits/s, string with integer, e.g., "960000", optional
+	std::optional<long long> bit_rate; // Overall bitrate in bits/s, string with integer, e.g., "960000", optional
 	int probe_score{ 0 }; // Format detection confidence, integer 0-100
 
 	std::optional<Tags> tags; // Container metadata tags, e.g., "artist": "The Beatles", optional
@@ -76,6 +79,9 @@ struct Format {
 
 // Represents an entry in the "streams" array (-show_streams)
 struct Stream {
+    std::optional<int> frame_size; // Added to fix the error
+    std::optional<int64_t> nb_frames;
+
     int index{ 0 }; // Stream index, non-negative integer, e.g., 0
     std::optional<std::string> codec_name; // Codec name, e.g., "flac", "mp3", optional
     std::optional<std::string> codec_long_name; // Codec descriptive name, e.g., "FLAC (Free Lossless Audio Codec)", optional
@@ -92,10 +98,10 @@ struct Stream {
     std::optional<std::string> avg_frame_rate; // Average frame rate, e.g., "0/0" (audio), optional
     std::optional<std::string> time_base; // Stream time base, e.g., "1/44100", optional
     std::optional<int64_t> start_pts; // First frame PTS, integer, e.g., 0, optional
-    std::optional<std::string> start_time; // Start time in seconds, e.g., "0.000000", optional
+    std::optional<int64_t> start_time; // Start time in seconds, e.g., "0.000000", optional
     std::optional<int64_t> duration_ts; // Duration in time base units, integer, e.g., 5432100, optional
     std::optional<std::string> duration; // Duration in seconds, e.g., "123.456789", optional
-    std::optional<std::string> bit_rate; // Stream bitrate in bits/s, e.g., "960000", optional
+    std::optional<long long> bit_rate; // Stream bitrate in bits/s, e.g., "960000", optional
     std::optional<Disposition> disposition; // Stream disposition flags, optional
     std::optional<Tags> tags; // Stream-specific tags, e.g., "language": "eng", optional
 };
