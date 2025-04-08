@@ -278,115 +278,134 @@ FFprobeOutput extractMetadata(const std::string& filename) {
     return output;
 }
 
-// Function to extract ffprobe-like data using libavformat
-FFprobeOutput extractMetadata_XXX(const std::string& filename) {
-    FFprobeOutput output;
-
-    std::string absPath = fixPathForFFmpeg(filename);
-
-    // Initialize FFmpeg (optional in newer versions, but safe)
-  //  av_register_all();
-     
-    // Open the input file
-    AVFormatContext* fmt_ctx = nullptr;
-    int ret = avformat_open_input(&fmt_ctx, absPath.c_str(), nullptr, nullptr);
-    if (ret < 0) {
-        char errbuf[128];
-        av_strerror(ret, errbuf, sizeof(errbuf));
-        std::cerr << "Failed to open " << absPath << ": " << errbuf << " (" << ret << ")\n";
 
 
-        std::cout << "Path hex: ";
-        for (char c : absPath) {
-            std::cout << std::hex << (int)(unsigned char)c << " ";
+// Helper to escape JSON strings (basic version)
+std::string escapeJsonString(const std::string& input) {
+    std::ostringstream oss;
+    for (char c : input) {
+        switch (c) {
+        case '"': oss << "\\\""; break;
+        case '\\': oss << "\\\\"; break;
+        case '\n': oss << "\\n"; break;
+        case '\r': oss << "\\r"; break;
+        case '\t': oss << "\\t"; break;
+        default: oss << c; break;
         }
-
-
-        return output; // Return empty output on failure
     }
+    return oss.str();
+}
 
-    // Find stream info (populates metadata and stream details)
-    if (avformat_find_stream_info(fmt_ctx, nullptr) < 0) {
-        std::cerr << "Could not find stream info\n";
-        avformat_close_input(&fmt_ctx);
-        return output;
-    }
+// Convert wstring to string (assuming UTF-8)
+std::string wstringToString(const std::wstring& wstr) {
+    // Simple conversion; replace with proper UTF-8 conversion if needed
+    return std::string(wstr.begin(), wstr.end());
+}
 
-    // Populate Format section
-    Format fmt;
-    fmt.filename = CommonUtils::utf8ToWstring(filename);
-    fmt.nb_streams = fmt_ctx->nb_streams;
-    fmt.format_name = fmt_ctx->iformat->name ? fmt_ctx->iformat->name : "";
+std::string toJson(const FFprobeOutput& output) {
+    std::ostringstream json;
 
-    // Convert duration from microseconds to seconds
-    if (fmt_ctx->duration != AV_NOPTS_VALUE) {
-        double duration_sec = static_cast<double>(fmt_ctx->duration) / AV_TIME_BASE;
-        //fmt.duration = std::to_string(duration_sec);
-        fmt.duration = duration_sec;
-    }
+    json << "{\n";
 
-    // Extract format tags
-    if (fmt_ctx->metadata) {
-        Tags format_tags;
-        AVDictionaryEntry* tag = nullptr;
-        while ((tag = av_dict_get(fmt_ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
-            format_tags[tag->key] = tag->value;
+    // Format section
+    //if (output.format)
+    {
+        json << "  \"format\": {\n";
+        const Format& fmt = output.format;
+
+        json << "    \"filename\": \"" << escapeJsonString(wstringToString(fmt.filename)) << "\",\n";
+        json << "    \"nb_streams\": " << fmt.nb_streams << ",\n";
+        json << "    \"format_name\": \"" << escapeJsonString(fmt.format_name) << "\",\n";
+        json << "    \"format_long_name\": \"" << escapeJsonString(fmt.format_long_name) << "\"";
+
+        if (fmt.duration) {
+            json << ",\n    \"duration\": \"" << std::fixed << std::setprecision(3) << *fmt.duration << "\"";
         }
-        fmt.tags = format_tags;
-    }
-    output.format = fmt;
-
-    // Populate Streams section
-    for (unsigned int i = 0; i < fmt_ctx->nb_streams; ++i) {
-        AVStream* stream = fmt_ctx->streams[i];
-        Stream s;
-        s.index = stream->index;
-
-        // Codec name and type
-        AVCodecParameters* codecpar = stream->codecpar;
-        s.codec_name = avcodec_get_name(codecpar->codec_id);
-        switch (codecpar->codec_type) {
-        case AVMEDIA_TYPE_AUDIO: s.codec_type = "audio"; break;
-        case AVMEDIA_TYPE_VIDEO: s.codec_type = "video"; break;
-        case AVMEDIA_TYPE_SUBTITLE: s.codec_type = "subtitle"; break;
-        default: s.codec_type = "unknown"; break;
+        if (fmt.bit_rate) {
+            json << ",\n    \"bit_rate\": \"" << *fmt.bit_rate << "\"";
         }
-
-        // Audio-specific fields
-        if (codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-            if (codecpar->sample_rate > 0) {
-                s.sample_rate = std::to_string(codecpar->sample_rate);
+        if (fmt.start_time) {
+            json << ",\n    \"start_time\": \"" << *fmt.start_time << "\"";
+        }
+        if (fmt.probe_score) {
+            json << ",\n    \"probe_score\": " << fmt.probe_score;
+        }
+        if (fmt.file_size) {
+            json << ",\n    \"size\": \"" << *fmt.file_size << "\"";
+        }
+        if (fmt.tags) {
+            json << ",\n    \"tags\": {\n";
+            bool first = true;
+            for (const auto& [key, value] : fmt.tags.value()) {
+                if (!first) json << ",\n";
+                json << "      \"" << escapeJsonString(key) << "\": \"" << escapeJsonString(value) << "\"";
+                first = false;
             }
-            //if (codecpar->channels > 0) {
-            //    s.channels = codecpar->channels;
-            //}
-            if (codecpar->ch_layout.nb_channels > 0) {
-                s.channels = codecpar->ch_layout.nb_channels;
-            }
+            json << "\n    }";
         }
-
-        // Stream duration (convert from stream time base to seconds)
-        if (stream->duration != AV_NOPTS_VALUE) {
-            double duration_sec = static_cast<double>(stream->duration) * av_q2d(stream->time_base);
-            s.duration = std::to_string(duration_sec);
-        }
-
-        // Extract stream tags
-        if (stream->metadata) {
-            Tags stream_tags;
-            AVDictionaryEntry* tag = nullptr;
-            while ((tag = av_dict_get(stream->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
-                stream_tags[tag->key] = tag->value;
-            }
-            s.tags = stream_tags;
-        }
-
-        output.streams.push_back(s);
+        json << "\n  }";
     }
 
-    // Clean up
-    avformat_close_input(&fmt_ctx);
-    return output;
+    // Streams section
+    if (!output.streams.empty()) {
+        json << ",\n";
+        json << "  \"streams\": [\n";
+        for (size_t i = 0; i < output.streams.size(); ++i) {
+            const Stream& s = output.streams[i];
+            json << "    {\n";
+            json << "      \"index\": " << s.index;
+            if (s.codec_name) {
+                json << ",\n      \"codec_name\": \"" << escapeJsonString(*s.codec_name) << "\"";
+            }
+            if (s.codec_type) {
+                json << ",\n      \"codec_type\": \"" << escapeJsonString(*s.codec_type) << "\"";
+            }
+            if (s.sample_rate) {
+                json << ",\n      \"sample_rate\": \"" << escapeJsonString(*s.sample_rate) << "\"";
+            }
+            if (s.channels) {
+                json << ",\n      \"channels\": " << *s.channels;
+            }
+            if (s.channel_layout) {
+                json << ",\n      \"channel_layout\": \"" << escapeJsonString(*s.channel_layout) << "\"";
+            }
+            if (s.bit_rate) {
+                json << ",\n      \"bit_rate\": \"" << *s.bit_rate << "\"";
+            }
+            if (s.bits_per_sample) {
+                json << ",\n      \"bits_per_sample\": " << *s.bits_per_sample;
+            }
+            if (s.frame_size) {
+                json << ",\n      \"frame_size\": " << *s.frame_size;
+            }
+            if (s.duration) {
+                json << ",\n      \"duration\": \"" << escapeJsonString(*s.duration) << "\"";
+            }
+            if (s.start_time) {
+                json << ",\n      \"start_time\": \"" << *s.start_time << "\"";
+            }
+            if (s.nb_frames) {
+                json << ",\n      \"nb_frames\": \"" << *s.nb_frames << "\"";
+            }
+            if (s.tags) {
+                json << ",\n      \"tags\": {\n";
+                bool first = true;
+                for (const auto& [key, value] : s.tags.value()) {
+                    if (!first) json << ",\n";
+                    json << "        \"" << escapeJsonString(key) << "\": \"" << escapeJsonString(value) << "\"";
+                    first = false;
+                }
+                json << "\n      }";
+            }
+            json << "\n    }";
+            if (i < output.streams.size() - 1) json << ",";
+            json << "\n";
+        }
+        json << "  ]";
+    }
+
+    json << "\n}";
+    return json.str();
 }
 
 std::map<std::string, std::string> extractTags(const std::string& filename) {
@@ -434,9 +453,11 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
 
         //std::map<std::string, std::string> returnVal = extractTags(mediaFilePath.generic_string());
 
-        auto data = extractMetadata(mediaFilePath.generic_string());
+        auto mediaInfo = extractMetadata(mediaFilePath.generic_string());
+        auto jsonString2 = toJson(mediaInfo);
+        //auto jsonString2 = MediaTrack::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
 
-        return std::make_tuple(data, L"{}");
+        return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(jsonString2));
 
         std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
         auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
@@ -453,6 +474,8 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
 
     return std::make_tuple(FFprobeOutput{}, L"{}");
 }
+
+
 
 //create a media file (on filesystem) from a media track
 std::wstring MediaTrack::ExtractMetadataFromMediaTrack(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
