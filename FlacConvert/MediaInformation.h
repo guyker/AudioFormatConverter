@@ -70,8 +70,7 @@ struct Format {
 	std::optional<int64_t> start_time; // Start time in seconds, string with decimal, e.g., "0.000000", optional
 	std::optional<double> duration; // Duration in seconds, string with decimal, e.g., "123.456789", optional
 	std::optional<std::string> size; // File size in bytes, string with integer, e.g., "12345678", optional
-	//std::optional<std::string> bit_rate; // Overall bitrate in bits/s, string with integer, e.g., "960000", optional
-	std::optional<long long> bit_rate; // Overall bitrate in bits/s, string with integer, e.g., "960000", optional
+	std::optional<int64_t> bit_rate; // Overall bitrate in bits/s, string with integer, e.g., "960000", optional
 	int probe_score{ 0 }; // Format detection confidence, integer 0-100
 
 	std::optional<Tags> tags; // Container metadata tags, e.g., "artist": "The Beatles", optional
@@ -101,7 +100,7 @@ struct Stream {
     std::optional<int64_t> start_time; // Start time in seconds, e.g., "0.000000", optional
     std::optional<int64_t> duration_ts; // Duration in time base units, integer, e.g., 5432100, optional
     std::optional<std::string> duration; // Duration in seconds, e.g., "123.456789", optional
-    std::optional<long long> bit_rate; // Stream bitrate in bits/s, e.g., "960000", optional
+    std::optional<int64_t> bit_rate; // Stream bitrate in bits/s, e.g., "960000", optional
     std::optional<Disposition> disposition; // Stream disposition flags, optional
     std::optional<Tags> tags; // Stream-specific tags, e.g., "language": "eng", optional
 };

@@ -127,12 +127,9 @@ size_t AlbumCollection::ImportMetadataFromMediaFiles(bool bAsync)
 
                 if (bAsync)
                 {
-                  //  fs::path outfilePath{ trackName / fs::path("_" + TMP_MEDIA_JSON_FILE_NAME) };
-                    //std::lock_guard<std::mutex> lock(mtx);
                     auto miFuture = std::async(std::launch::async, MediaTrack::ReadMediaInfoFromFile, path2Fixed);
 
-                  //  miFuture.get();
-
+                    miFuture.get();
                     asyncFutureList.push_back({ std::move(miFuture), mediaInfo, mediaInfoString });
 
                     //if (asyncFutureList.size() > 4)
