@@ -296,11 +296,79 @@ std::string escapeJsonString(const std::string& input) {
     return oss.str();
 }
 
-// Convert wstring to string (assuming UTF-8)
-std::string wstringToString(const std::wstring& wstr) {
-    // Simple conversion; replace with proper UTF-8 conversion if needed
-    return std::string(wstr.begin(), wstr.end());
+
+
+#include <string>
+#include <stdexcept>
+#include <cstdint>
+
+std::string wstringToStringUtf8(const std::wstring& wstr) {
+    if (wstr.empty()) {
+        return std::string();
+    }
+
+    std::string utf8;
+    utf8.reserve(wstr.size() * 2); // Rough estimate for UTF-8 size
+
+    for (size_t i = 0; i < wstr.size(); ++i) {
+        uint32_t codepoint;
+#if defined(_WIN32)
+        // Windows: wchar_t is UTF-16 (2 bytes)
+        wchar_t wc = wstr[i];
+        if (wc >= 0xD800 && wc <= 0xDBFF) {
+            // High surrogate
+            if (i + 1 >= wstr.size()) {
+                throw std::runtime_error("Incomplete UTF-16 surrogate pair");
+            }
+            wchar_t wc2 = wstr[++i];
+            if (wc2 < 0xDC00 || wc2 > 0xDFFF) {
+                throw std::runtime_error("Invalid UTF-16 surrogate pair");
+            }
+            codepoint = 0x10000 + ((wc - 0xD800) << 10) + (wc2 - 0xDC00);
+        }
+        else if (wc >= 0xDC00 && wc <= 0xDFFF) {
+            throw std::runtime_error("Unexpected UTF-16 low surrogate");
+        }
+        else {
+            codepoint = static_cast<uint32_t>(wc);
+        }
+#else
+        // Linux/macOS: wchar_t is UTF-32 (4 bytes)
+        codepoint = static_cast<uint32_t>(wstr[i]);
+#endif
+
+        // Convert codepoint to UTF-8
+        if (codepoint <= 0x7F) {
+            utf8 += static_cast<char>(codepoint);
+        }
+        else if (codepoint <= 0x7FF) {
+            utf8 += static_cast<char>(0xC0 | ((codepoint >> 6) & 0x1F));
+            utf8 += static_cast<char>(0x80 | (codepoint & 0x3F));
+        }
+        else if (codepoint <= 0xFFFF) {
+            utf8 += static_cast<char>(0xE0 | ((codepoint >> 12) & 0x0F));
+            utf8 += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+            utf8 += static_cast<char>(0x80 | (codepoint & 0x3F));
+        }
+        else if (codepoint <= 0x10FFFF) {
+            utf8 += static_cast<char>(0xF0 | ((codepoint >> 18) & 0x07));
+            utf8 += static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+            utf8 += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+            utf8 += static_cast<char>(0x80 | (codepoint & 0x3F));
+        }
+        else {
+            throw std::runtime_error("Invalid Unicode codepoint");
+        }
+    }
+
+    return utf8;
 }
+
+//// Convert wstring to string (assuming UTF-8)
+//std::string wstringToString(const std::wstring& wstr) {
+//    // Simple conversion; replace with proper UTF-8 conversion if needed
+//    return std::string(wstr.begin(), wstr.end());
+//}
 
 std::string toJson(const FFprobeOutput& output) {
     std::ostringstream json;
@@ -313,7 +381,7 @@ std::string toJson(const FFprobeOutput& output) {
         json << "  \"format\": {\n";
         const Format& fmt = output.format;
 
-        json << "    \"filename\": \"" << escapeJsonString(wstringToString(fmt.filename)) << "\",\n";
+        json << "    \"filename\": \"" << escapeJsonString(wstringToStringUtf8(fmt.filename)) << "\",\n";
         json << "    \"nb_streams\": " << fmt.nb_streams << ",\n";
         json << "    \"format_name\": \"" << escapeJsonString(fmt.format_name) << "\",\n";
         json << "    \"format_long_name\": \"" << escapeJsonString(fmt.format_long_name) << "\"";

@@ -89,11 +89,67 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting()
 }
 
 
-// Convert wide string to UTF-8 for JSON compatibility
 std::string WideToUTF8(const std::wstring& wstr) {
-    std::string str(wstr.begin(), wstr.end());
-    return str;
+    if (wstr.empty()) {
+        return std::string();
+    }
+
+    std::string utf8;
+    utf8.reserve(wstr.size() * 2); // Rough estimate for UTF-8 size
+
+    for (wchar_t wc : wstr) {
+#if defined(_WIN32)
+        // Windows: wchar_t is UTF-16 (2 bytes)
+        uint32_t codepoint;
+        if (wc >= 0xD800 && wc <= 0xDBFF) {
+            // High surrogate; need the next wchar_t
+            throw std::runtime_error("Incomplete UTF-16 surrogate pair (not yet fully implemented)");
+            // Note: Full surrogate pair handling requires peeking at the next character
+        }
+        else if (wc >= 0xDC00 && wc <= 0xDFFF) {
+            throw std::runtime_error("Unexpected UTF-16 low surrogate");
+        }
+        else {
+            codepoint = static_cast<uint32_t>(wc);
+        }
+#else
+        // Linux/macOS: wchar_t is UTF-32 (4 bytes)
+        uint32_t codepoint = static_cast<uint32_t>(wc);
+#endif
+
+        // Convert codepoint to UTF-8
+        if (codepoint <= 0x7F) {
+            utf8 += static_cast<char>(codepoint);
+        }
+        else if (codepoint <= 0x7FF) {
+            utf8 += static_cast<char>(0xC0 | ((codepoint >> 6) & 0x1F));
+            utf8 += static_cast<char>(0x80 | (codepoint & 0x3F));
+        }
+        else if (codepoint <= 0xFFFF) {
+            utf8 += static_cast<char>(0xE0 | ((codepoint >> 12) & 0x0F));
+            utf8 += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+            utf8 += static_cast<char>(0x80 | (codepoint & 0x3F));
+        }
+        else if (codepoint <= 0x10FFFF) {
+            utf8 += static_cast<char>(0xF0 | ((codepoint >> 18) & 0x07));
+            utf8 += static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+            utf8 += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+            utf8 += static_cast<char>(0x80 | (codepoint & 0x3F));
+        }
+        else {
+            throw std::runtime_error("Invalid Unicode codepoint");
+        }
+    }
+
+    return utf8;
 }
+
+
+// Convert wide string to UTF-8 for JSON compatibility
+//std::string WideToUTF8(const std::wstring& wstr) {
+//    std::string str(wstr.begin(), wstr.end());
+//    return str;
+//}
 
 // Convert UTF-8 string to wide string
 std::wstring UTF8ToWide(const std::string& str) {
