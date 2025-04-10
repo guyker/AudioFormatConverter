@@ -33,7 +33,7 @@
     <ClCompile Include="AlbumCollection.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="WindowsHelpers.cpp">
+    <ClCompile Include="PlatformUtils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="AppSettings.cpp">
@@ -68,7 +68,7 @@
     <ClInclude Include="AlbumCollection.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="WindowsHelpers.h">
+    <ClInclude Include="PlatformUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="AppSettings.h">

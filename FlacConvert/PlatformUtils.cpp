@@ -1,13 +1,11 @@
 
-
-
-#include "WindowsHelpers.h"
+#include "PlatformUtils.h"
 #include <filesystem>
 #include <Windows.h>
 
 //namespace fs = std::filesystem;
 
-void WindowsHelpers::OpenDirectoryInExplorer(std::wstring dirName)
+void PlatformUtils::OpenDirectoryInExplorer(std::wstring dirName)
 {
     auto pathSeperator = std::filesystem::path::preferred_separator;
     //using namespace std::string_literals;

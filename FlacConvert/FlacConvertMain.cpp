@@ -73,7 +73,7 @@ void waitForKeyPress() {
 #ifdef _WIN32
 #include <windows.h>
 #include <shellapi.h>
-#include "WindowsHelpers.h"
+#include "PlatformUtils.h"
 #else
 #include <cstdlib>
 #endif
@@ -215,8 +215,8 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
         std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir2) << std::endl << std::endl;
 
         waitForKeyPress();
-        WindowsHelpers::OpenDirectoryInExplorer(dir1);
-        WindowsHelpers::OpenDirectoryInExplorer(dir2);
+        PlatformUtils::OpenDirectoryInExplorer(dir1);
+        PlatformUtils::OpenDirectoryInExplorer(dir2);
 //        FileExplorer::openDirectory(dir1);
 //        FileExplorer::openDirectory(dir2);
 

@@ -160,7 +160,7 @@
     <ClCompile Include="MediaConvertionAsyncTask.cpp" />
     <ClCompile Include="MediaConvertionTask.cpp" />
     <ClCompile Include="MediaTrack.cpp" />
-    <ClCompile Include="WindowsHelpers.cpp" />
+    <ClCompile Include="PlatformUtils.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AlbumCollection.h" />
@@ -173,7 +173,7 @@
     <ClInclude Include="MediaConvertionTask.h" />
     <ClInclude Include="MediaInformation.h" />
     <ClInclude Include="MediaTrack.h" />
-    <ClInclude Include="WindowsHelpers.h" />
+    <ClInclude Include="PlatformUtils.h" />
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="config.json">

@@ -3,7 +3,7 @@
 #include <string>
 
 
-class WindowsHelpers
+class PlatformUtils
 {
 public:
 
