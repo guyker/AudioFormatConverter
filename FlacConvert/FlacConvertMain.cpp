@@ -33,10 +33,9 @@
 #include "AppSettings.h"
 #include "CommonUtils.h"
 
-//#include <iostream>
-//#include <fcntl.h>
-//#include <io.h>
-//#include "WindowsHelpers.h"
+#include <spdlog/spdlog.h>
+
+
 
 #ifdef _WIN32
 #include <conio.h>
@@ -281,9 +280,10 @@ ConvertActionEnum GetUserAction()
 
 
 
-
 int main()
 {
+    spdlog::info("Hello, world!");
+
     auto appSettingPtr = AppSettingsJson::AppSetting();
     if (appSettingPtr == nullptr)
     {
