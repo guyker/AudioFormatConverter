@@ -1,6 +1,7 @@
 ﻿
 #include <ranges>
 #include <algorithm> 
+#include <format>
 
 #include "AlbumCollection.h"
 #include "FolderConvert.h"
@@ -16,9 +17,11 @@ using namespace rapidjson;
 
 
 //constexpr auto CLEAR_LINE{ L"\x1b[H\x1b[J" };
+//std::vector<std::wstring> CommonUtils::ProgressCircleChars = { L"⏳", L"⏰", L"⏱️", L"⏲️", L"⏳", L"⏰", L"⏱️", L"⏲️" };
 
-
-
+//Load album collection from a directory into _AlbumList
+// 1. loads album and media tracs
+// 2. [Optionally] load metadat for individual tracks
 bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata)
 {
     auto startTime = std::chrono::steady_clock::now();
@@ -33,7 +36,7 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
     if (bIncludeMetadata)
     {
         std::cout << "Loading Albums metadata... " << std::endl;
-        auto nAlbums = ImportMetadataFromMediaFiles(true); //load media metadate
+        auto nAlbums = LoadAllMetadata(true); //load media metadate
         std::cout << "Completed (Loading Albums metadata) Found " << nAlbums << " Albums" << std::endl;
     }
 
@@ -81,7 +84,7 @@ TrackInfoList AlbumCollection::LoadAlbumCollectionRecursively(std::filesystem::p
     }
     else
     {
-     //   std::cout << std::format("***Error: Media library not found: : {}", path) << std::endl;
+        std::cout << std::format("***Error: Media library not found: : {}", path.string()) << std::endl;
     }
 
     return currentDirTrackList;
@@ -89,13 +92,8 @@ TrackInfoList AlbumCollection::LoadAlbumCollectionRecursively(std::filesystem::p
 
 
 
-
-
-//std::mutex mtx;
-
-
 //Load all media media information from the preloaded album list (_AlbumList)
-size_t AlbumCollection::ImportMetadataFromMediaFiles(bool bAsync)
+size_t AlbumCollection::LoadAllMetadata(bool bAsync)
 {
     int albumCount = 0;
     int progressIndex = 0;
@@ -167,7 +165,7 @@ size_t AlbumCollection::ImportMetadataFromMediaFiles(bool bAsync)
 }
 
 
-bool AlbumCollection::ExportAlbumCollectionToJSONFile(std::filesystem::path path)
+bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
 {
     rapidjson::Document mediaDoc;
     mediaDoc.SetObject();

@@ -167,7 +167,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         ac.LoadAlbumCollection(mediaEntry.mediaPath, true); //load albume list from directory path
         ac.SortByNumberOfTracks();         // sort by album size - optional
 
-        ac.ExportAlbumCollectionToJSONFile(mediaEntry.resultPath); // save to json
+        ac.SaveAlbumsAsJSON(mediaEntry.resultPath); // save to json
 
         auto endTime = std::chrono::steady_clock::now();
         std::cout << std::format("<===Processing time for {} = {}ms", mediaEntry.mediaPath, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
