@@ -1,12 +1,14 @@
 #pragma once
 
 #include <string>
+#include <stdexcept>
+#include <filesystem>
 
 
-class PlatformUtils
-{
-public:
 
-	static void OpenDirectoryInExplorer(std::wstring dirName);
-};
+namespace PlatformUtils {
+	void OpenDirectoryInExplorer(std::wstring dirName);
+	void OpenDirectory(const std::filesystem::path& path);
 
+	void waitForKeyPress();
+}
