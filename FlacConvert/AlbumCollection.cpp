@@ -602,6 +602,7 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
             int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
             if (rc != SQLITE_OK) {
                 std::cerr << "Prepare failed: " << sqlite3_errmsg(db) << "\n";
+                sqlite3_close(db);
                 return rc;
             }
 
@@ -653,6 +654,8 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
             rc = sqlite3_step(stmt);
             if (rc != SQLITE_DONE) {
                 std::cerr << "***ERROR - Database error: " << sqlite3_errmsg(db) << "\n";
+                sqlite3_close(db);
+                return false;
             }
 
             // Clean up
