@@ -527,51 +527,74 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
 
     rc = sqlite3_exec(db, "DROP TABLE IF EXISTS TracksDB;", 0, 0, 0);
 
-    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS TracksDB ("
-        "ID INTEGER PRIMARY KEY, "
-        "album_path TEXT, "
-        "nb_streams INTEGER, "
-        "nb_programs INTEGER, "
-        "nb_stream_groups INTEGER, "
-        "format_name TEXT, "
-        "format_long_name TEXT, "
-        "start_time INTEGER, "
-        "duration REAL, "
-        "size TEXT, "
-        "bit_rate INTEGER, "
-        "probe_score INTEGER, "
+    const char* sql = R"(
+        CREATE TABLE IF NOT EXISTS TracksDB (
+            ID INTEGER PRIMARY KEY,
+            album_path TEXT NOT NULL,
+            nb_streams INTEGER,
+            nb_programs INTEGER,
+            nb_stream_groups INTEGER,
+            format_name TEXT,
+            format_long_name TEXT,
+            start_time INTEGER,
+            duration REAL,
+            size INTEGER,
+            bit_rate INTEGER,
+            probe_score INTEGER,
+            album TEXT,
+            artist TEXT,
+            album_artist TEXT,
+            genre TEXT,
+            disc TEXT,
+            title TEXT,
+            track TEXT,
+            track_total TEXT,
+            date TEXT,
+            comment TEXT,
+            publisher TEXT,
+            encoder TEXT,
+            encoded_by TEXT,
+            organization TEXT,
+            composer TEXT,
+            copyright TEXT,
+            album_dynamic_range TEXT,
+            dynamic_range TEXT,
+            label TEXT,
+            year TEXT,
+            stream1_index INTEGER,
+            stream1_codec_name TEXT,
+            stream1_codec_type TEXT,
+            stream1_sample_rate TEXT,
+            stream1_channels INTEGER,
+            stream1_channel_layout TEXT,
+            stream1_bit_rate INTEGER,
+            stream1_frame_size INTEGER,
+            stream1_duration REAL,
+            stream1_start_time INTEGER,
+            stream1_tag1 TEXT,
+            stream2_index INTEGER,
+            stream2_codec_name TEXT,
+            stream2_codec_type TEXT,
+            stream2_sample_rate TEXT,
+            stream2_channels INTEGER,
+            stream2_channel_layout TEXT,
+            stream2_bit_rate INTEGER,
+            stream2_frame_size INTEGER,
+            stream2_duration REAL,
+            stream2_start_time INTEGER,
+            stream2_tag1 TEXT
+        )
+    )";
 
-        "album TEXT, "
-        "artist TEXT, "
-        "album_artist TEXT, "
-        "genre TEXT, "
-        "disc TEXT, "
-        "title TEXT, "
-        "track TEXT, "
-        "track_total TEXT, "
-        "date TEXT, "
-        "comment TEXT, "
-        "publisher TEXT, "
-        "encoder TEXT, "
-        "encoded_by TEXT, "
-        "organization TEXT, "
-        "composer TEXT, "
-        "copyright TEXT, "
-        "album_dynamic_range TEXT, "
-        "dynamic_range TEXT, "
-        "label TEXT, "
-        "year TEXT, "
-        //stream
-        "stream1_index INTEGER, stream1_codec_name TEXT, stream1_sample_rate TEXT, stream1_channels INTEGER, "
-        "stream2_index INTEGER, stream2_codec_name TEXT, stream2_sample_rate TEXT, stream2_channels INTEGER"
-        ");",
-        //stream
+    rc = sqlite3_exec(db, sql, nullptr, nullptr, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to create TracksDB table: " << sqlite3_errmsg(db) << std::endl;
+        return rc;
+    }
+  
 
-        0, 0, 0);
-
-
-
-
+    //constexpr int NUM_FIELDS = 47;
+    //static_assert(sizeof("?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,") - 1 == NUM_FIELDS, "Placeholder count mismatch");
 
 
     if (rc != SQLITE_OK) {
@@ -588,24 +611,43 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
             std::wstring albumPath = dirPath.path().wstring();
 
             std::optional<Stream> stream1 = mediaInfo.streams.size() > 0 ? std::optional<Stream>{ mediaInfo.streams[0] } : std::nullopt;
+            std::optional<std::string> stream1Tag1;
+			//if (stream1.has_value() && stream1->tags.has_value())
+			//{
+			//	auto tags = stream1->tags.value();
+			//	//if (tags.HasMember("language"))
+			//	//{
+			//	//	stream1Tag2 = tags["language"].GetString();
+			//	//}
+
+
+			//	auto tags2222  = tags[0];
+   //             stream1Tag1 = std::optional<std::string>{ tags[0] };
+			//}
+
             std::optional<Stream> stream2 = mediaInfo.streams.size() > 1 ? std::optional<Stream>{ mediaInfo.streams[1] } : std::nullopt;
+            std::optional<std::string> stream2Tag1;
+            //if (stream2.has_value() && stream2->tags.has_value())
+            //{
+            //    stream2Tag1 = std::optional<std::string>{ stream2->tags.value()[0] };
+            //}
 
             const char* sql = R"(
-            INSERT OR REPLACE INTO TracksDB (
-                id, album_path, nb_streams, nb_programs, nb_stream_groups, format_name, format_long_name,
-                start_time, duration, size, bit_rate, probe_score,
-                album, artist, album_artist, genre, disc, title, track, track_total, date, comment,
-                publisher, encoder, encoded_by, organization, composer, copyright,
-                album_dynamic_range, dynamic_range, label, year,
-                stream1_index, stream1_codec_name, stream1_sample_rate, stream1_channels,
-                stream2_index, stream2_codec_name, stream2_sample_rate, stream2_channels
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        )";
+        INSERT OR REPLACE INTO TracksDB (
+            id, album_path, nb_streams, nb_programs, nb_stream_groups, format_name, format_long_name,
+            start_time, duration, size, bit_rate, probe_score,
+            album, artist, album_artist, genre, disc, title, track, track_total, date, comment,
+            publisher, encoder, encoded_by, organization, composer, copyright,
+            album_dynamic_range, dynamic_range, label, year,
+            stream1_index, stream1_codec_name, stream1_codec_type, stream1_sample_rate, stream1_channels, stream1_channel_layout, stream1_bit_rate, stream1_frame_size, stream1_duration, stream1_start_time, stream1_tag1,
+            stream2_index, stream2_codec_name, stream2_codec_type, stream2_sample_rate, stream2_channels, stream2_channel_layout, stream2_bit_rate, stream2_frame_size, stream2_duration, stream2_start_time, stream2_tag1
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    )";
 
             sqlite3_stmt* stmt;
             int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
             if (rc != SQLITE_OK) {
-                std::cerr << "Prepare failed: " << sqlite3_errmsg(db) << "\n";
+                std::cout << "Prepare failed: " << sqlite3_errmsg(db) << "\n";
                 sqlite3_close(db);
                 return rc;
             }
@@ -652,15 +694,29 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
             {
                 sqlite3_bind_int(stmt, bindIndex++, stream1.value().index);
                 sqlite3_bind_text(stmt, bindIndex++, stream1.value().codec_name.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmt, bindIndex++, stream1.value().codec_type.value_or("").c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(stmt, bindIndex++, stream1.value().sample_rate.value_or("").c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_int(stmt, bindIndex++, stream1.value().channels.value_or(0));
+                sqlite3_bind_text(stmt, bindIndex++, stream1.value().channel_layout.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int(stmt, bindIndex++, stream1.value().bit_rate.value_or(0));
+                sqlite3_bind_int(stmt, bindIndex++, stream1.value().frame_size.value_or(0));
+                sqlite3_bind_text(stmt, bindIndex++, stream1.value().duration.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int(stmt, bindIndex++, stream1.value().start_time.value_or(0));
+                sqlite3_bind_text(stmt, bindIndex++, stream1Tag1.value_or("").c_str(), -1, SQLITE_TRANSIENT);
             }
             if (stream2.has_value())
             {
                 sqlite3_bind_int(stmt, bindIndex++, stream2.value().index);
                 sqlite3_bind_text(stmt, bindIndex++, stream2.value().codec_name.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmt, bindIndex++, stream2.value().codec_type.value_or("").c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(stmt, bindIndex++, stream2.value().sample_rate.value_or("").c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_int(stmt, bindIndex++, stream2.value().channels.value_or(0));
+                sqlite3_bind_text(stmt, bindIndex++, stream2.value().channel_layout.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int(stmt, bindIndex++, stream2.value().bit_rate.value_or(0));
+                sqlite3_bind_int(stmt, bindIndex++, stream2.value().frame_size.value_or(0));
+                sqlite3_bind_text(stmt, bindIndex++, stream2.value().duration.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int(stmt, bindIndex++, stream2.value().start_time.value_or(0));
+                sqlite3_bind_text(stmt, bindIndex++, stream2Tag1.value_or("").c_str(), -1, SQLITE_TRANSIENT);
             }
 
             // Execute the statement
