@@ -125,8 +125,8 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
         std::cout << "Processing: {}" << mediaEntry.resultPath << std::endl;
 
 
-        bool resul = albumCollection.RestoreAlbumCollectionFromJSON(mediaEntry.resultPath, true);
-//        auto const& accumulatedList = AlbumCollection::RestoreAlbumCollectionFromJSON(mediaEntry.resultPath, true);
+        bool resul = albumCollection.RestoreAlbumCollectionFromJSON(mediaEntry.resultPath);
+//        auto const& accumulatedList = AlbumCollection::RestoreAlbumCollectionFromJSON(mediaEntry.resultPath);
 //        medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
     }
 
@@ -217,7 +217,7 @@ ConvertActionEnum GetUserAction()
 
 int main()
 {
-    spdlog::info("Hello, world!");
+  //  spdlog::info("Hello, world!");
 
     auto appSettingPtr = AppSettingsJson::AppSetting();
     if (appSettingPtr == nullptr)

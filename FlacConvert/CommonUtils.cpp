@@ -1,8 +1,38 @@
 #include "CommonUtils.h"
 #include <string>
 #include <algorithm> // Include this header for std::transform
+#include <cstdint>
+#include <charconv>
+#include <stdexcept>
+#include <iostream>
 
 namespace CommonUtils {
+    std::uintmax_t stringToUintmax(const std::string& str) {
+        if (str.empty()) {
+            throw std::invalid_argument("Empty string");
+        }
+
+        // Ensure string contains only valid characters (digits, no leading/trailing spaces)
+        const char* start = str.data();
+        const char* end = start + str.size();
+
+        std::uintmax_t result;
+        auto [ptr, ec] = std::from_chars(start, end, result);
+
+        if (ec == std::errc::invalid_argument) {
+            throw std::invalid_argument("Invalid number format");
+        }
+        if (ec == std::errc::result_out_of_range) {
+            throw std::out_of_range("Number exceeds uintmax_t range");
+        }
+        if (ptr != end) {
+            throw std::invalid_argument("Trailing characters after number");
+        }
+
+        return result;
+    }
+
+
     std::wstring ToLower(const std::wstring& str) {
         std::wstring lowerStr = str;
 

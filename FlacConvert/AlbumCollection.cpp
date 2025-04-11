@@ -6,6 +6,7 @@
 #include "AlbumCollection.h"
 #include "FolderConvert.h"
 #include "JsonUtils.h"
+#include "PlatformUtils.h"
 #include "MediaTrack.h"
 
 #include "CommonUtils.h"
@@ -77,10 +78,16 @@ TrackInfoList AlbumCollection::LoadAlbumCollectionRecursively(std::filesystem::p
                 if (MediaTrack::IsFileAcceptedAudioFile(entry))
                 {
                     auto path2Fixed = entry.path().lexically_normal().native();
-                    long long fileSize = fs::file_size(path2Fixed);
-
+                    uintmax_t fs_fileSize;
+                    try {
+                        fs_fileSize = fs::file_size(path2Fixed);
+                    }
+                    catch (const fs::filesystem_error& e) {
+						spdlog::error("Error getting file size for {}: {}", PlatformUtils::WideToUTF8(path2Fixed), e.what());
+                        fs_fileSize = 0; // Default value or skip
+                    }
                     auto fileName = entry.path().filename();
-                    currentDirTrackList.push_back({ fileName, fileSize, FFprobeOutput{}, std::wstring{L"{}"}});
+                    currentDirTrackList.push_back({ fileName, fs_fileSize, FFprobeOutput{}, std::wstring{L"{}"}});
                 }
             }
         }
@@ -114,7 +121,10 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
             //str = RemoveSpecialCharacter(albumPath.path().generic_string());
             str = albumPath.path().generic_string();
         }
-        catch (...) {}
+        catch (...) {
+			spdlog::error("Error converting path: {}", PlatformUtils::WideToUTF8(albumPath.path()));
+        }
+
 //        std::cout << std::format("{} Processing [{}/{}]: {}", CommonUtils::ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), str);
         progressIndex = (progressIndex + 1) % CommonUtils::ProgressCircleChars.size();
 
@@ -127,7 +137,6 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
 
             if (MediaTrack::IsValidMedia(trackPath)) {
                 auto path2Fixed = trackPath.lexically_normal().native();
-              //  long long fileSize = fs::file_size(path2Fixed);
 
                 if (bAsync)
                 {
@@ -193,10 +202,12 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
             if (trackPath.has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
 
                 rapidjson::Document trackDoc;
+
                 std::string utf8Json = CommonUtils::wstringToUtf8(mediaInfoString);
                 trackDoc.Parse(utf8Json.c_str());
                 if (trackDoc.HasParseError()) {
                     std::cerr << "Error parsing JSON: " << trackDoc.GetParseError() << std::endl;                    
+                    continue;
                 }
                 else
                 {
@@ -244,7 +255,8 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
 
     if (fs::exists(path)) {
         std::error_code ec;
-        if (fs::remove(path, ec)) {
+        if (!fs::remove(path, ec)) {
+            std::cerr << "Failed to remove existing file: " << ec.message() << "\n";
         }
     }
 
@@ -273,7 +285,7 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
 
 
 //ststic function that loads album list from a Json file and returns a DirectoryContentEntryList object
-bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path, bool bBasicDataOnly)
+bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
 {
   //  DirectoryContentEntryList albumList;
 
@@ -329,26 +341,8 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path,
 
         for (SizeType i = 0; i < mediaTrackList.Size(); i++)
         {
-            auto mi = MediaTrack::ParseMediaTrack(mediaTrackList[i]);
-
-            trackList.push_back({ mi.format.filename, std::stol(mi.format.size.value_or("0")), mi, L"{}" });
-
-			//auto& mediaTags = mediaTrackList[i];
-   //         auto jsonString = mediaTags.GetString();
-
-   //         if (mediaTags.IsObject() && mediaTags.HasMember("format"))
-   //         {
-   //             FFprobeOutput mi{ MediaTrack::ParseMediaTrack(mediaTags["format"]) };
-
-   //             if (bBasicDataOnly)
-   //             {
-   //                 trackList.push_back({ mi.format.filename, std::stol(mi.format.size.value_or("0")), mi, L"{}" });
-   //             }
-   //             else
-   //             {
-   //                 trackList.push_back({ mi.format.filename, std::stol(mi.format.size.value_or("0")), mi, json});
-   //             }
-   //         }
+            FFprobeOutput mi = MediaTrack::ParseMediaTrack(mediaTrackList[i]);
+            trackList.push_back({ mi.format.filename, CommonUtils::stringToUintmax(mi.format.size.value_or("0")), mi, L"{}" });
         }
 
         if (trackList.size() > 0)
@@ -378,13 +372,13 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path,
 //-------------COMPARE
 
 
-void AlbumCollection::SortByNumberOfTracks()
+void AlbumCollection::SortByNumberOfTracks(bool ascending)
 {
-    std::ranges::stable_sort(_AlbumList, [](const auto& album1, const auto& album2) {
+    std::ranges::stable_sort(_AlbumList, [ascending](const auto& album1, const auto& album2) {
         const auto& [albumName1, trackList1] = album1;
         const auto& [albumName2, trackList2] = album2;
 
-        return trackList2.size() > trackList1.size();
+        return ascending ? trackList2.size() > trackList1.size() : trackList2.size() < trackList1.size();
     });
 }
 

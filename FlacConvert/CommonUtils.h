@@ -12,6 +12,9 @@
 
 namespace CommonUtils
 {
+    std::uintmax_t stringToUintmax(const std::string& str);
+
+
     constexpr std::array<char, 4> ProgressCircleChars = { '|', '/', '-', '\\' };
 
     void show_circular_progress(std::string str);

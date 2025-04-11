@@ -59,14 +59,14 @@ public:
 	bool SaveToSQLDatabase(std::filesystem::path path);
 
 	// load albums from a Json file
-	bool RestoreAlbumCollectionFromJSON(std::filesystem::path dirPath, bool bBasicDataOnly = false);	
+	bool RestoreAlbumCollectionFromJSON(std::filesystem::path dirPath);
 	//Save album list and metadata to JSON file
 	bool SaveAlbumsAsJSON(std::filesystem::path path);
 
 
 
 	//compare
-	void SortByNumberOfTracks();
+	void SortByNumberOfTracks(bool ascending = true);
 	SimilarDirectoryEntryList FindDuplicatedAlbums();
 
 	
