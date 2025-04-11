@@ -111,7 +111,7 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
    
     for (auto& [albumPath, trackList] : _AlbumList)
     {
-        CommonUtils::show_circular_progress("processing...");
+        CommonUtils::show_circular_progress("processing... [" + std::to_string(++albumCount) + "/" + std::to_string(_AlbumList.size()) + "] ");
 
 //        std::cout << "\r\033[K";
         //std::wcout << std::format(L"{} Processing [{}/{}]: {}", ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), albumPath.path().generic_wstring());

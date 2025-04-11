@@ -57,7 +57,7 @@ struct Disposition {
 
 // Represents the "format" section (-show_format)
 struct Format {
-	std::wstring filename; // File path/name, e.g., "/path/to/song.flac"
+	std::string filename; // File path/name, e.g., "/path/to/song.flac"
     
     std::optional<uint64_t> file_size;
 

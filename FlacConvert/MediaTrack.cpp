@@ -153,26 +153,28 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/error.h>
 }
-
-std::string fixPathForFFmpeg(const std::string& filename) {
-    std::string path = std::filesystem::path(filename).generic_string();
-    if (path.find("//?/") == 0) {
-        path = path.substr(4); // Strip "//?/"
-    }
-    return path;
+std::string WideStringToUTF8(const std::wstring& wstr) {
+    if (wstr.empty()) return std::string();
+    int sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
+    std::string utf8Str(sizeNeeded, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), &utf8Str[0], sizeNeeded, nullptr, nullptr);
+    return utf8Str;
 }
 
-FFprobeOutput extractMetadata(const std::string& filename) {
+FFprobeOutput extractMetadata(const std::filesystem::path filePath) {
     FFprobeOutput output;
 
-    std::string absPath = fixPathForFFmpeg(filename);
+    // Get the UTF-8 encoded string. Depending on your implementation,
+    // u8string() might return std::string or std::u8string.
+    std::wstring widePath = filePath.wstring();
+    std::string utf8Path = WideStringToUTF8(widePath);
 
     AVFormatContext* fmt_ctx = nullptr;
-    int ret = avformat_open_input(&fmt_ctx, absPath.c_str(), nullptr, nullptr);
+    int ret = avformat_open_input(&fmt_ctx, utf8Path.c_str(), nullptr, nullptr);
     if (ret < 0) {
         char errbuf[128];
         av_strerror(ret, errbuf, sizeof(errbuf));
-        std::cerr << "Failed to open " << absPath << ": " << errbuf << " (" << ret << ")\n";
+        std::cerr << "Failed to open " << utf8Path.c_str() << ": " << errbuf << " (" << ret << ")\n";
         return output;
     }
 
@@ -184,7 +186,7 @@ FFprobeOutput extractMetadata(const std::string& filename) {
 
     // Format section
     Format fmt;
-    fmt.filename = std::wstring(filename.begin(), filename.end()); // Assuming CommonUtils::utf8ToWstring
+    fmt.filename = filePath.generic_string();
     fmt.nb_streams = fmt_ctx->nb_streams;
     fmt.format_name = fmt_ctx->iformat->name ? fmt_ctx->iformat->name : "";
     fmt.format_long_name = fmt_ctx->iformat->long_name ? fmt_ctx->iformat->long_name : "";
@@ -201,7 +203,7 @@ FFprobeOutput extractMetadata(const std::string& filename) {
 
     // Optional: Get file size from filesystem
     try {
-        fmt.file_size = std::filesystem::file_size(std::filesystem::path(filename));
+        fmt.file_size = std::filesystem::file_size(filePath);
     }
     catch (const std::filesystem::filesystem_error& e) {
         std::cerr << "Failed to get file size: " << e.what() << "\n";
@@ -382,7 +384,7 @@ std::string toJson(const FFprobeOutput& output) {
         json << "  \"format\": {\n";
         const Format& fmt = output.format;
 
-        json << "    \"filename\": \"" << escapeJsonString(wstringToStringUtf8(fmt.filename)) << "\",\n";
+        json << "    \"filename\": \"" << escapeJsonString(fmt.filename) << "\",\n";
         json << "    \"nb_streams\": " << fmt.nb_streams << ",\n";
         json << "    \"format_name\": \"" << escapeJsonString(fmt.format_name) << "\",\n";
         json << "    \"format_long_name\": \"" << escapeJsonString(fmt.format_long_name) << "\"";
@@ -522,7 +524,7 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
 
         //std::map<std::string, std::string> returnVal = extractTags(mediaFilePath.generic_string());
 
-        auto mediaInfo = extractMetadata(mediaFilePath.generic_string());
+        auto mediaInfo = extractMetadata(mediaFilePath);
         auto jsonString2 = toJson(mediaInfo);
         //auto jsonString2 = MediaTrack::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
 
@@ -632,7 +634,7 @@ bool TryParseFFprobeFormat(const Value& doc, FFprobeOutput &mediaInfo)
 
         const auto& formatTag = doc["format"];
 
-        if (auto filename = JsonUtils::tryParseMember<std::wstring>(formatTag, "filename")) { format.filename = *filename; }
+        if (auto filename = JsonUtils::tryParseMember<std::string>(formatTag, "filename")) { format.filename = *filename; }
 
         if (auto nb_streams = JsonUtils::tryParseMember<int>(formatTag, "nb_streams")) { format.nb_streams = *nb_streams; }
         if (auto nb_programs = JsonUtils::tryParseMember<int>(formatTag, "nb_programs")) { format.nb_programs = *nb_programs; }
