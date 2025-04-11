@@ -698,10 +698,10 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
                 sqlite3_bind_text(stmt, bindIndex++, stream1.value().sample_rate.value_or("").c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_int(stmt, bindIndex++, stream1.value().channels.value_or(0));
                 sqlite3_bind_text(stmt, bindIndex++, stream1.value().channel_layout.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(stmt, bindIndex++, stream1.value().bit_rate.value_or(0));
+                sqlite3_bind_int64(stmt, bindIndex++, stream1.value().bit_rate.value_or(0));
                 sqlite3_bind_int(stmt, bindIndex++, stream1.value().frame_size.value_or(0));
                 sqlite3_bind_text(stmt, bindIndex++, stream1.value().duration.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(stmt, bindIndex++, stream1.value().start_time.value_or(0));
+                sqlite3_bind_int64(stmt, bindIndex++, stream1.value().start_time.value_or(0));
                 sqlite3_bind_text(stmt, bindIndex++, stream1Tag1.value_or("").c_str(), -1, SQLITE_TRANSIENT);
             }
             if (stream2.has_value())
@@ -712,10 +712,10 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
                 sqlite3_bind_text(stmt, bindIndex++, stream2.value().sample_rate.value_or("").c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_int(stmt, bindIndex++, stream2.value().channels.value_or(0));
                 sqlite3_bind_text(stmt, bindIndex++, stream2.value().channel_layout.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(stmt, bindIndex++, stream2.value().bit_rate.value_or(0));
+                sqlite3_bind_int64(stmt, bindIndex++, stream2.value().bit_rate.value_or(0));
                 sqlite3_bind_int(stmt, bindIndex++, stream2.value().frame_size.value_or(0));
                 sqlite3_bind_text(stmt, bindIndex++, stream2.value().duration.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(stmt, bindIndex++, stream2.value().start_time.value_or(0));
+                sqlite3_bind_int64(stmt, bindIndex++, stream2.value().start_time.value_or(0));
                 sqlite3_bind_text(stmt, bindIndex++, stream2Tag1.value_or("").c_str(), -1, SQLITE_TRANSIENT);
             }
 
