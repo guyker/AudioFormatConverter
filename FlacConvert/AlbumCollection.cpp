@@ -203,7 +203,7 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
 
                 rapidjson::Document trackDoc;
 
-                std::string utf8Json = CommonUtils::wstringToUtf8(mediaInfoString);
+                std::string utf8Json = PlatformUtils::wstringToUtf8_ver2(mediaInfoString);
                 trackDoc.Parse(utf8Json.c_str());
                 if (trackDoc.HasParseError()) {
                     std::cerr << "Error parsing JSON: " << trackDoc.GetParseError() << std::endl;                    
@@ -234,7 +234,7 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
                 {
                     //track list exists add album
                     std::wstring name = albumPath.path().wstring();
-                    std::string utf8Key = CommonUtils::wstringToUtf8(name);
+                    std::string utf8Key = PlatformUtils::wstringToUtf8_ver2(name);
                     
 
                     Value key(utf8Key.c_str(), mediaDoc.GetAllocator());
@@ -310,7 +310,7 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
     rapidjson::Document doc;
 
     // Parse the JSON data 
-    std::string utf8Json = CommonUtils::wstringToUtf8(json);
+    std::string utf8Json = PlatformUtils::wstringToUtf8_ver2(json);
     doc.Parse(utf8Json.c_str());
 
     // Check for parse errors 
@@ -609,7 +609,7 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
             // Bind parameters (1-based indexing)
             int bindIndex = 1;
             sqlite3_bind_null(stmt, bindIndex++); // id (auto-incremented)
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(albumPath).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(albumPath).c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(stmt, bindIndex++, mediaInfo.format.nb_streams);
             sqlite3_bind_int(stmt, bindIndex++, mediaInfo.format.nb_programs);
             sqlite3_bind_int(stmt, bindIndex++, mediaInfo.format.nb_stream_groups);
@@ -622,26 +622,26 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
             sqlite3_bind_int(stmt, bindIndex++, mediaInfo.format.probe_score);
 
             // Bind tags
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.album).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.artist).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.album_artist).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.genre).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.disc).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.title).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.track).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.track_total).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.date).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.comment).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.publisher).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.encoder).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.encoded_by).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.organization).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.composer).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.copyright).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.album_dynamic_range).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.dynamic_range).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.label).c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, CommonUtils::wstringToUtf8(mediaInfo.format_tags.year).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.album).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.artist).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.album_artist).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.genre).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.disc).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.title).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.track).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.track_total).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.date).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.comment).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.publisher).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.encoder).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.encoded_by).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.organization).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.composer).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.copyright).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.album_dynamic_range).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.dynamic_range).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.label).c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.year).c_str(), -1, SQLITE_TRANSIENT);
 
             //stream
             sqlite3_bind_int(stmt, bindIndex++, stream.index);

@@ -301,6 +301,7 @@ std::string escapeJsonString(const std::string& input) {
 #include <string>
 #include <stdexcept>
 #include <cstdint>
+#include "PlatformUtils.h"
 
 std::string wstringToStringUtf8(const std::wstring& wstr) {
     if (wstr.empty()) {
@@ -716,7 +717,7 @@ FFprobeOutput MediaTrack::ParseMediaTrack(const Value& doc)
 FFprobeOutput MediaTrack::ParseMediaTrack(std::wstring jsonString)
 {
     rapidjson::Document doc;
-    std::string utf8Json = CommonUtils::wstringToUtf8(jsonString);
+    std::string utf8Json = PlatformUtils::wstringToUtf8_ver2(jsonString);
     doc.Parse(utf8Json.c_str());
 
     if (doc.HasParseError()) {

@@ -66,24 +66,6 @@ namespace CommonUtils
     }
 
 
-    static std::string wstringToUtf8(const std::wstring& wstr) {
-#ifdef _WIN32
-        if (wstr.empty()) return {};
-
-        int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
-        if (size_needed == 0) {
-            //  throw std::runtime_error("WideCharToMultiByte failed to determine size");
-        }
-        std::string utf8Str(size_needed - 1, 0); // -1 to exclude null terminator
-        WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &utf8Str[0], size_needed, nullptr, nullptr);
-
-        return utf8Str;
-#else
-        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-        return converter.to_bytes(wstr);
-#endif
-    }
-
 
     // Function to convert UTF-8 string to wstring (cross-platform)
     static std::wstring utf8ToWstring(const std::string& str) {
