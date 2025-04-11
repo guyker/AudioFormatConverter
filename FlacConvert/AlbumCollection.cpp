@@ -182,6 +182,8 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
 }
 
 
+std::list<MediaTrack> SaveAlbumsAsJSON_LasrError;
+
 bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
 {
     rapidjson::Document mediaDoc;
@@ -192,8 +194,9 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
 
-        for (auto [trackName, size, mediaInfo, mediaInfoString] : trackList)
+        for (auto& item : trackList)
         {
+            auto [trackName, size, mediaInfo, mediaInfoString] = item;
             std::filesystem::path trackPath = albumPath.path() / std::filesystem::path(trackName);
 
             auto hasExtension = trackPath.has_extension();
@@ -206,6 +209,7 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
                 std::string utf8Json = PlatformUtils::wstringToUtf8_ver2(mediaInfoString);
                 trackDoc.Parse(utf8Json.c_str());
                 if (trackDoc.HasParseError()) {
+					SaveAlbumsAsJSON_LasrError.push_back(item);
                     std::cerr << "Error parsing JSON: " << trackDoc.GetParseError() << std::endl;                    
                     continue;
                 }
