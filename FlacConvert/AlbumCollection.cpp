@@ -562,7 +562,8 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
         "label TEXT, "
         "year TEXT, "
         //stream
-        "stream0_index INTEGER, stream0_codec_name TEXT, stream0_sample_rate TEXT, stream0_channels INTEGER"
+        "stream1_index INTEGER, stream1_codec_name TEXT, stream1_sample_rate TEXT, stream1_channels INTEGER, "
+        "stream2_index INTEGER, stream2_codec_name TEXT, stream2_sample_rate TEXT, stream2_channels INTEGER"
         ");",
         //stream
 
@@ -586,7 +587,8 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
         {
             std::wstring albumPath = dirPath.path().wstring();
 
-            Stream stream = mediaInfo.streams.size() > 0 ? mediaInfo.streams[0] : Stream{};
+            std::optional<Stream> stream1 = mediaInfo.streams.size() > 0 ? std::optional<Stream>{ mediaInfo.streams[0] } : std::nullopt;
+            std::optional<Stream> stream2 = mediaInfo.streams.size() > 1 ? std::optional<Stream>{ mediaInfo.streams[1] } : std::nullopt;
 
             const char* sql = R"(
             INSERT OR REPLACE INTO TracksDB (
@@ -594,8 +596,10 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
                 start_time, duration, size, bit_rate, probe_score,
                 album, artist, album_artist, genre, disc, title, track, track_total, date, comment,
                 publisher, encoder, encoded_by, organization, composer, copyright,
-                album_dynamic_range, dynamic_range, label, year, stream0_index, stream0_codec_name, stream0_sample_rate, stream0_channels
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                album_dynamic_range, dynamic_range, label, year,
+                stream1_index, stream1_codec_name, stream1_sample_rate, stream1_channels,
+                stream2_index, stream2_codec_name, stream2_sample_rate, stream2_channels
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         )";
 
             sqlite3_stmt* stmt;
@@ -644,11 +648,20 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
             sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.year).c_str(), -1, SQLITE_TRANSIENT);
 
             //stream
-            sqlite3_bind_int(stmt, bindIndex++, stream.index);
-            sqlite3_bind_text(stmt, bindIndex++, stream.codec_name.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, bindIndex++, stream.sample_rate.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int(stmt, bindIndex++, stream.channels.value_or(0));
-
+            if (stream1.has_value())
+            {
+                sqlite3_bind_int(stmt, bindIndex++, stream1.value().index);
+                sqlite3_bind_text(stmt, bindIndex++, stream1.value().codec_name.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmt, bindIndex++, stream1.value().sample_rate.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int(stmt, bindIndex++, stream1.value().channels.value_or(0));
+            }
+            if (stream2.has_value())
+            {
+                sqlite3_bind_int(stmt, bindIndex++, stream2.value().index);
+                sqlite3_bind_text(stmt, bindIndex++, stream2.value().codec_name.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmt, bindIndex++, stream2.value().sample_rate.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int(stmt, bindIndex++, stream2.value().channels.value_or(0));
+            }
 
             // Execute the statement
             rc = sqlite3_step(stmt);
