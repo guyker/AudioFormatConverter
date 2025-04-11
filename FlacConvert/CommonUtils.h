@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 #include <string>
-
+#include <iostream>
 #include <array>
 #include <vector>
 #include <utility>
@@ -13,6 +13,11 @@
 namespace CommonUtils
 {
     constexpr std::array<char, 4> ProgressCircleChars = { '|', '/', '-', '\\' };
+
+    void show_circular_progress(std::string str);
+    void show_progress_bar(int total, int delay_ms);
+
+
 
     std::wstring ToLower(const std::wstring& str);
 

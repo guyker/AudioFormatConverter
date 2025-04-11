@@ -9,6 +9,7 @@
 #include "MediaTrack.h"
 
 #include "CommonUtils.h"
+#include <spdlog/spdlog.h>
 
 namespace fs = std::filesystem;
 using namespace rapidjson;
@@ -25,19 +26,23 @@ using namespace rapidjson;
 bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata)
 {
     auto startTime = std::chrono::steady_clock::now();
-    std::cout << "Scanning collection... " << std::endl;
+    
+    spdlog::info("Scanning collection...");
 
     //Scan directory and load all tracks location
     LoadAlbumCollectionRecursively(albumCollectionDirPath, 9);
 
-    auto endTime = std::chrono::steady_clock::now();
-    std::cout << std::format("Completed, Albums: {} [{}ms]", _AlbumList.size(), std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()) << std::endl;
+    auto endLoadTime = std::chrono::steady_clock::now();    
+    spdlog::info("Completed, Found {} Albums, processing time: [{}ms]", _AlbumList.size(), std::chrono::duration_cast<std::chrono::milliseconds>(endLoadTime - startTime).count());;
 
     if (bIncludeMetadata)
     {
-        std::cout << "Loading Albums metadata... " << std::endl;
+        spdlog::info("Loading Albums metadata... ");
+
         auto nAlbums = LoadAllMetadata(true); //load media metadate
-        std::cout << "Completed (Loading Albums metadata) Found " << nAlbums << " Albums" << std::endl;
+
+        auto endLoadMEtadataTime = std::chrono::steady_clock::now();
+        spdlog::info("Completed (Loading Albums metadata) Found {} Albums, processing time: [{}ms]", nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endLoadMEtadataTime - endLoadTime).count());
     }
 
 
@@ -97,10 +102,13 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
 {
     int albumCount = 0;
     int progressIndex = 0;
-
+    
+   
     for (auto& [albumPath, trackList] : _AlbumList)
     {
-        std::cout << "\r\033[K";
+        CommonUtils::show_circular_progress("processing...");
+
+//        std::cout << "\r\033[K";
         //std::wcout << std::format(L"{} Processing [{}/{}]: {}", ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), albumPath.path().generic_wstring());
         std::string str{ "???" };
         try
@@ -109,7 +117,7 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
             str = albumPath.path().generic_string();
         }
         catch (...) {}
-        std::cout << std::format("{} Processing [{}/{}]: {}", CommonUtils::ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), str);
+//        std::cout << std::format("{} Processing [{}/{}]: {}", CommonUtils::ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), str);
         progressIndex = (progressIndex + 1) % CommonUtils::ProgressCircleChars.size();
 
         //Album tracks list holder 
@@ -160,6 +168,8 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
 
       //  std::wcout << "\r\033[K";
     }
+
+	std::cout << std::endl;
 
     return _AlbumList.size();
 }
