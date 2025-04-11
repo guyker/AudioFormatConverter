@@ -30,21 +30,19 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
     spdlog::info("Scanning collection...");
 
     //Scan directory and load all tracks location
-    LoadAlbumCollectionRecursively(albumCollectionDirPath, 9);
+    LoadAlbumCollectionRecursively(albumCollectionDirPath, AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth);
 
     auto endLoadTime = std::chrono::steady_clock::now();    
     spdlog::info("Completed, Found {} Albums, processing time: [{}ms]", _AlbumList.size(), std::chrono::duration_cast<std::chrono::milliseconds>(endLoadTime - startTime).count());;
 
-    if (bIncludeMetadata)
-    {
-        spdlog::info("Loading Albums metadata... ");
-
-        auto nAlbums = LoadAllMetadata(true); //load media metadate
-
-        auto endLoadMEtadataTime = std::chrono::steady_clock::now();
-        spdlog::info("Completed (Loading Albums metadata) Found {} Albums, processing time: [{}ms]", nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endLoadMEtadataTime - endLoadTime).count());
-    }
-
+	if (bIncludeMetadata)
+	{
+		//Load metadata for all media files in the album collection
+		spdlog::info("Loading Albums metadata... ");
+		auto nAlbums = LoadAllMetadata(true); //load media metadate
+		auto endLoadMEtadataTime = std::chrono::steady_clock::now();
+		spdlog::info("Completed (Loading Albums metadata) Found {} Albums, processing time: [{}ms]", nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endLoadMEtadataTime - endLoadTime).count());
+	}
 
     return true;
 }
