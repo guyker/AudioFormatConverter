@@ -131,7 +131,7 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
         //Album tracks list holder 
         std::vector<std::tuple<MediaLoadingFuture, FFprobeOutput&, std::wstring&>> asyncFutureList;
 
-        for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
+        for (auto& [trackName, size, mediaInfo, mediaInfoString, lastError] : trackList)
         {
             std::filesystem::path trackPath = albumPath.path() / std::filesystem::path(trackName);
 
@@ -184,6 +184,69 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
 
 std::list<MediaTrack> SaveAlbumsAsJSON_LasrError;
 
+void SaveAlbumsAsJSONFile_LasrError(std::list<MediaTrack> mediaTracks, std::filesystem::path outPath)
+{
+
+    // Create a RapidJSON Document and set it as an array.
+    Document document;
+    document.SetArray();
+    Document::AllocatorType& allocator = document.GetAllocator();
+
+//	spdlog::error("Error parsing JSON metadata track (adding ro error list): ", outPath.c_str());
+
+	for (auto& track : mediaTracks)
+	{
+        rapidjson::Value trackObj(rapidjson::kObjectType);
+
+        // 1. Convert and add the file path (std::filesystem::path -> UTF-8 std::string).
+        std::string fileNameStr = track.trackPath.string();
+        trackObj.AddMember("Track name", rapidjson::Value(fileNameStr.c_str(), allocator), allocator);
+
+        std::string trackPathStr = track.formatInfo.format.filename.c_str();
+        trackObj.AddMember("Path", rapidjson::Value(trackPathStr.c_str(), allocator), allocator);
+
+        // 2. Add the file size.
+        trackObj.AddMember("File Size", static_cast<unsigned long long>(track.fs_fileSize), allocator);
+        trackObj.AddMember("format_duration", static_cast<unsigned long long>(track.formatInfo.format.duration.value_or(0.0)), allocator);
+        trackObj.AddMember("format_format_name", rapidjson::Value(track.formatInfo.format.format_name.c_str(), allocator), allocator);
+        
+        trackObj.AddMember("Error Reason", rapidjson::Value(track.LastErroString.value_or("***NO FOUND***").c_str(), allocator), allocator);
+
+        // 3. Convert and add the FFprobeOutput (media information / tags).
+        //rapidjson::Value formatInfoObj = FFprobeOutputToJson(track.formatInfo, allocator);
+        //trackObj.AddMember("formatInfo", formatInfoObj, allocator);
+
+        //// 4. Convert the wide string (mediaInfoString) to UTF-8 and add it.
+        //std::string mediaInfoUtf8 = WStringToUTF8(track.mediaInfoString);
+        //trackObj.AddMember("mediaInfoString", rapidjson::Value(mediaInfoUtf8.c_str(), allocator), allocator);
+
+        // Add the track object to the JSON array.
+        document.PushBack(trackObj, allocator);
+	}
+
+    // Create a StringBuffer to hold the JSON output.
+    StringBuffer buffer;
+    // Use PrettyWriter for formatted output (you can use Writer for compact output).
+    PrettyWriter<StringBuffer> writer(buffer);
+    document.Accept(writer);
+
+    // Write the JSON string to a file.
+    std::ofstream outFile(outPath.string() + "_error.json");
+    if (!outFile) {
+        spdlog::error("Error: could not open file for writing.");
+        return;
+    }
+    outFile << buffer.GetString();
+    outFile.close();
+
+    std::cout << "JSON file created successfully as tracks.json" << std::endl;
+}
+
+#include "rapidjson/document.h"
+#include "rapidjson/error/en.h"
+#include "rapidjson/stringbuffer.h"
+#include <iostream>
+
 bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
 {
     rapidjson::Document mediaDoc;
@@ -196,7 +259,7 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
 
         for (auto& item : trackList)
         {
-            auto [trackName, size, mediaInfo, mediaInfoString] = item;
+            auto& [trackName, size, mediaInfo, mediaInfoString, lastError] = item;
             std::filesystem::path trackPath = albumPath.path() / std::filesystem::path(trackName);
 
             auto hasExtension = trackPath.has_extension();
@@ -209,8 +272,13 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
                 std::string utf8Json = PlatformUtils::wstringToUtf8_ver2(mediaInfoString);
                 trackDoc.Parse(utf8Json.c_str());
                 if (trackDoc.HasParseError()) {
+                    // Get error code and message
+                    rapidjson::ParseErrorCode errorCode = trackDoc.GetParseError();
+                    const char* errorMsg = rapidjson::GetParseError_En(errorCode);
+                    size_t errorOffset = trackDoc.GetErrorOffset();
+                    item.LastErroString = errorMsg;
 					SaveAlbumsAsJSON_LasrError.push_back(item);
-                    std::cerr << "Error parsing JSON: " << trackDoc.GetParseError() << std::endl;                    
+                    spdlog::error("Error parsing JSON: ", errorMsg);
                     continue;
                 }
                 else
@@ -256,11 +324,13 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
         }
     }
 
+	SaveAlbumsAsJSONFile_LasrError(SaveAlbumsAsJSON_LasrError, path);
+
 
     if (fs::exists(path)) {
         std::error_code ec;
         if (!fs::remove(path, ec)) {
-            std::cerr << "Failed to remove existing file: " << ec.message() << "\n";
+            spdlog::error("Failed to remove existing file: ", ec.message());
         }
     }
 
@@ -278,7 +348,7 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
         //std::wcout << std::endl << std::format(L"====> Document saved to: {}", path.generic_wstring()) << std::endl;
     }
     else {
-        std::cerr << "Unable to open file for writing" << std::endl;
+        spdlog::error("Unable to open file for writing");
         return false;
     }
 
@@ -319,8 +389,8 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
 
     // Check for parse errors 
     if (doc.HasParseError()) {
-        std::cerr << "Error parsing JSON: "
-            << doc.GetParseError() << std::endl;
+        rapidjson::ParseErrorCode errorCode = doc.GetParseError();
+        spdlog::error("Error parsing JSON: ", rapidjson::GetParseError_En(errorCode));
 
         return false;
     }
@@ -469,8 +539,8 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(DirectoryConte
                     bool bPotentialSimilar = true;
                     for (int i = 0; i < trackList1.size(); i++)
                     {
-                        auto& [trackName1, size1, mediaInfo1, mediaInfoString2] = trackList1[i];
-                        auto& [trackName2, size2, mediaInfo2, mediaInfoString1] = trackList2[i];
+                        auto& [trackName1, size1, mediaInfo1, mediaInfoString1, lastError1] = trackList1[i];
+                        auto& [trackName2, size2, mediaInfo2, mediaInfoString2, lastError2] = trackList2[i];
 
                         if (mediaInfo1.format.duration.has_value() && mediaInfo2.format.duration.has_value())
                         {
@@ -523,7 +593,7 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
     int rc = sqlite3_open(dbPath.c_str(), &db);
 
     if (rc != SQLITE_OK) {
-        std::cerr << "Cannot open database: " << sqlite3_errmsg(db) << std::endl;
+        spdlog::error("Cannot open database: ", sqlite3_errmsg(db));
         return rc;
     }
 
@@ -592,7 +662,7 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
 
     rc = sqlite3_exec(db, sql, nullptr, nullptr, nullptr);
     if (rc != SQLITE_OK) {
-        std::cerr << "Failed to create TracksDB table: " << sqlite3_errmsg(db) << std::endl;
+        spdlog::error("Failed to create TracksDB table: ", sqlite3_errmsg(db));
         return rc;
     }
   
@@ -602,7 +672,7 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
 
 
     if (rc != SQLITE_OK) {
-        std::cerr << "Cannot create table: " << sqlite3_errmsg(db) << std::endl;
+        spdlog::error("Cannot create table: ", sqlite3_errmsg(db));
         sqlite3_close(db);
         return rc;
     }
@@ -610,7 +680,7 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
 
     for (auto [dirPath, trackList] : _AlbumList)
     {
-        for (auto& [trackName, size, mediaInfo, mediaInfoString] : trackList)
+        for (auto& [trackName, size, mediaInfo, mediaInfoString, lastError] : trackList)
         {
             std::wstring albumPath = dirPath.path().wstring();
 
@@ -726,7 +796,7 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
             // Execute the statement
             rc = sqlite3_step(stmt);
             if (rc != SQLITE_DONE) {
-                std::cerr << "***ERROR - Database error: " << sqlite3_errmsg(db) << "\n";
+                spdlog::error("***ERROR - Database error: ", sqlite3_errmsg(db));
                 sqlite3_close(db);
                 return false;
             }
@@ -738,7 +808,7 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
 
 
     if (rc != SQLITE_OK) {
-        std::cerr << "Cannot insert data: " << sqlite3_errmsg(db) << std::endl;
+        spdlog::error("Cannot insert data: ", sqlite3_errmsg(db));
         sqlite3_close(db);
         return rc;
     }

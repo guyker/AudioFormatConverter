@@ -8,6 +8,7 @@
 #include "CommonUtils.h"
 #include "MediaInformation.h"
 #include "MediaTrack.h"
+#include <spdlog/spdlog.h>
 
 using namespace std;
 
@@ -25,7 +26,7 @@ int FolderConvert::ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::pat
     std::filesystem::directory_iterator directoryIT;
     try {
         if (!fs::exists(directory) || !fs::is_directory(directory)) {
-            std::cerr << directory << " - Error: Directory does not exist or is not valid.\n";
+            spdlog::error("Error: Directory does not exist or is not valid: ", directory.generic_string());
             return -1;
         }
 
@@ -52,7 +53,7 @@ int FolderConvert::ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::pat
         }
     }
     catch (const fs::filesystem_error& e) {
-        std::cerr << "ScanAudioFiles: Filesystem error: " << e.what() << std::endl;
+        spdlog::error("ScanAudioFiles: Filesystem error: ", e.what());
 
         return -1;
     }
@@ -196,14 +197,14 @@ int FolderConvert::ConverAudioFolder2(const std::filesystem::path& directory, co
 	for (auto& task : tasksVector) {
 		task->Run();
 		if (task->GetStatus() == -1) {
-			std::cerr << "***ERROR*** Media convert error: " << task->GetStatus() << std::endl;
+            spdlog::error("***ERROR*** Media convert error: ", task->GetStatus());
 		}
 	}
     for (auto& task : tasksVector) {
 		task->PostRun();
         if (task->GetStatus() != 0)
         {
-            std::cerr << "***STOP*** error found: " << task->GetStatus() << std::endl;
+            spdlog::error("***STOP*** error found: ", task->GetStatus());
         }
     }
 
@@ -211,7 +212,7 @@ int FolderConvert::ConverAudioFolder2(const std::filesystem::path& directory, co
     {
         if (item->GetStatus() != 0)
         {
-            std::cerr << "***STOP***2 error found: " << item->GetStatus() << std::endl;
+            spdlog::error("***STOP***2 error found: ", item->GetStatus());
             return -1;
 
         }
