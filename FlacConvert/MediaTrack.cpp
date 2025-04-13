@@ -161,7 +161,7 @@ std::string WideStringToUTF8(const std::wstring& wstr) {
     return utf8Str;
 }
 
-FFprobeOutput extractMetadata(const std::filesystem::path filePath) {
+FFprobeOutput MediaTrack::extractMetadata(const std::filesystem::path filePath) {
     FFprobeOutput output;
 
     // Get the UTF-8 encoded string. Depending on your implementation,
@@ -177,12 +177,15 @@ FFprobeOutput extractMetadata(const std::filesystem::path filePath) {
         std::cerr << "Failed to open " << utf8Path.c_str() << ": " << errbuf << " (" << ret << ")\n";
         return output;
     }
+    return output;
 
     if (avformat_find_stream_info(fmt_ctx, nullptr) < 0) {
         std::cerr << "Could not find stream info\n";
         avformat_close_input(&fmt_ctx);
         return output;
     }
+
+
 
     // Format section
     Format fmt;
@@ -367,11 +370,6 @@ std::string wstringToStringUtf8(const std::wstring& wstr) {
     return utf8;
 }
 
-//// Convert wstring to string (assuming UTF-8)
-//std::string wstringToString(const std::wstring& wstr) {
-//    // Simple conversion; replace with proper UTF-8 conversion if needed
-//    return std::string(wstr.begin(), wstr.end());
-//}
 
 std::string toJson(const FFprobeOutput& output) {
     std::ostringstream json;
@@ -516,7 +514,14 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
 {
     try
     {        
+        //return std::make_tuple(FFprobeOutput{}, L"{}");
+
+
         auto mediaInfo = extractMetadata(mediaFilePath);
+
+
+        return std::make_tuple(FFprobeOutput{}, L"{}");
+
         auto jsonString2 = toJson(mediaInfo);
         //auto jsonString2 = MediaTrack::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
 

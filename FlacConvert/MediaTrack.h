@@ -37,6 +37,8 @@ struct MediaTrack
 	//keep it last for agregation
 	std::optional<std::string> LastErroString;
 
+	static FFprobeOutput extractMetadata(const std::filesystem::path filePath);
+
 	static bool IsFileConvertable(std::filesystem::path filePath)
 	{
 		//L".mp3", L".wav", L".flac", L".aac", L".ogg", L".wma", L".m4a"
