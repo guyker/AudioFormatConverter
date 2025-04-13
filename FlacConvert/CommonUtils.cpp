@@ -45,7 +45,7 @@ namespace CommonUtils {
         const char* spinner = "|/-\\";
         static int spinner_index = 0;
 
-        std::cout << "\r" << str.c_str() << spinner[spinner_index] << std::flush;
+        std::cout << "\r" << spinner[spinner_index] << " " << str.c_str() << std::flush;
         spinner_index = (spinner_index + 1) % 4;
     }
 

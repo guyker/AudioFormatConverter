@@ -509,21 +509,13 @@ std::map<std::string, std::string> extractTags(const std::string& filename) {
     avformat_close_input(&fmt_ctx);
     return tags;
 }
-//std::map<std::string, std::string> returnVal = extractTags(mediaFilePath);
 
 
 //returns media information (json string and media objec) from a media file (on file system)
 std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::filesystem::path mediaFilePath)
 {
-
     try
     {        
-        //return std::make_tuple(FFprobeOutput{}, L"{}");
-        //
-
-
-        //std::map<std::string, std::string> returnVal = extractTags(mediaFilePath.generic_string());
-
         auto mediaInfo = extractMetadata(mediaFilePath);
         auto jsonString2 = toJson(mediaInfo);
         //auto jsonString2 = MediaTrack::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);

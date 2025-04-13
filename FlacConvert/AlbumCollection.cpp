@@ -26,10 +26,6 @@ using namespace rapidjson;
 
 
 
-
-//constexpr auto CLEAR_LINE{ L"\x1b[H\x1b[J" };
-//std::vector<std::wstring> CommonUtils::ProgressCircleChars = { L"⏳", L"⏰", L"⏱️", L"⏲️", L"⏳", L"⏰", L"⏱️", L"⏲️" };
-
 //Load album collection from a directory into _AlbumList
 // 1. loads album and media tracs
 // 2. [Optionally] load metadat for individual tracks
@@ -115,27 +111,17 @@ TrackInfoList AlbumCollection::LoadAlbumCollectionRecursively(std::filesystem::p
 size_t AlbumCollection::LoadAllMetadata(bool bAsync)
 {
     int albumCount = 0;
-    int progressIndex = 0;
-    
-   
+       
     for (auto& [albumPath, trackList] : _AlbumList)
     {
-        CommonUtils::show_circular_progress("processing... [" + std::to_string(++albumCount) + "/" + std::to_string(_AlbumList.size()) + "] ");
-
-//        std::cout << "\r\033[K";
-        //std::wcout << std::format(L"{} Processing [{}/{}]: {}", ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), albumPath.path().generic_wstring());
-        std::string str{ "???" };
-        try
+        std::string name = "N/A";
+        if (albumPath.is_directory() && albumPath.path().has_filename())
         {
-            //str = RemoveSpecialCharacter(albumPath.path().generic_string());
-            str = albumPath.path().generic_string();
+            auto name222 = albumPath.path();
+            name = albumPath.path().filename().generic_string();
         }
-        catch (...) {
-			spdlog::error("Error converting path: {}", PlatformUtils::WideToUTF8(albumPath.path()));
-        }
-
-//        std::cout << std::format("{} Processing [{}/{}]: {}", CommonUtils::ProgressCircleChars[progressIndex], ++albumCount, _AlbumList.size(), str);
-        progressIndex = (progressIndex + 1) % CommonUtils::ProgressCircleChars.size();
+        std::string progress = std::format("Processing... {}/{} - {}", ++albumCount, _AlbumList.size(), name);
+        CommonUtils::show_circular_progress(progress);
 
         //Album tracks list holder 
         std::vector<std::tuple<MediaLoadingFuture, FFprobeOutput&, std::wstring&>> asyncFutureList;
@@ -150,24 +136,11 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
                 if (bAsync)
                 {
                     auto miFuture = std::async(std::launch::async, MediaTrack::ReadMediaInfoFromFile, path2Fixed);
-
-                    //miFuture.get();
                     asyncFutureList.push_back({ std::move(miFuture), mediaInfo, mediaInfoString });
 
-                    //if (asyncFutureList.size() > 4)
-                    //{
-                    //    for (auto& [furure_ret, mediaInfo, mediaInfoString] : asyncFutureList)
-                    //    {
-                    //        auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
-                    //        mediaInfo = mediaInfo_ret;
-                    //        mediaInfoString = mediaInfoString_ret;
-                    //    }
-                    //    asyncFutureList.clear();
-                    //}
                 }
                 else
                 {
-                    //fs::path outfilePath{ trackName / fs::path("_" + TMP_MEDIA_JSON_FILE_NAME) };
                     auto [mi_ret, jsonString_ret] = MediaTrack::ReadMediaInfoFromFile(path2Fixed);
                     mediaInfoString = jsonString_ret;
                     mediaInfo = mi_ret;
@@ -175,14 +148,15 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
             }
         }
 
-        for (auto& [furure_ret, mediaInfo, mediaInfoString] : asyncFutureList)
+        if (bAsync)
         {
-            auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
-            mediaInfo = mediaInfo_ret;
-            mediaInfoString = mediaInfoString_ret;
+            for (auto& [furure_ret, mediaInfo, mediaInfoString] : asyncFutureList)
+            {
+                auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
+                mediaInfo = mediaInfo_ret;
+                mediaInfoString = mediaInfoString_ret;
+            }
         }
-
-      //  std::wcout << "\r\033[K";
     }
 
 	std::cout << std::endl;
@@ -493,8 +467,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums() {
 
 
 
-SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(
-    const std::vector<DirectoryContentEntryList::const_iterator>& group) {
+SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(const std::vector<DirectoryContentEntryList::const_iterator>& group) {
     auto logger = spdlog::get("console");
     if (!logger) {
         logger = spdlog::stdout_color_mt("console");
@@ -713,7 +686,6 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums2()
 
     return duplicatedAlbumList;
 }
-
 
 SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup2(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt)
 {
