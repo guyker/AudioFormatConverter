@@ -1,16 +1,25 @@
 ﻿
+
+#include <vector>
+#include <map>
+#include <algorithm>
 #include <ranges>
-#include <algorithm> 
 #include <format>
+#include <filesystem>
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include "rapidjson/document.h"
+#include "rapidjson/error/en.h"
+#include "rapidjson/stringbuffer.h"
+#include <iostream>
 
 #include "AlbumCollection.h"
+#include "MediaTrack.h"
 #include "FolderConvert.h"
 #include "JsonUtils.h"
 #include "PlatformUtils.h"
-#include "MediaTrack.h"
 
 #include "CommonUtils.h"
-#include <spdlog/spdlog.h>
 
 namespace fs = std::filesystem;
 using namespace rapidjson;
@@ -242,10 +251,7 @@ void SaveAlbumsAsJSONFile_LasrError(std::list<MediaTrack> mediaTracks, std::file
     std::cout << "JSON file created successfully as tracks.json" << std::endl;
 }
 
-#include "rapidjson/document.h"
-#include "rapidjson/error/en.h"
-#include "rapidjson/stringbuffer.h"
-#include <iostream>
+
 
 bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
 {
@@ -437,12 +443,6 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
 
 
 
-
-
-
-
-
-
 //-------------COMPARE
 
 
@@ -450,6 +450,211 @@ void AlbumCollection::SortByNumberOfTracks(bool ascending)
 {
     std::ranges::stable_sort(_AlbumList, SortByTracks<SortOrder::Ascending>{});
 }
+
+
+
+
+SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums() {
+    auto logger = spdlog::get("console");
+    if (!logger) logger = spdlog::stdout_color_mt("console");
+
+    SimilarDirectoryEntryList duplicatedAlbumList;
+    if (_AlbumList.size() < 2) {
+        logger->info("Album list too small: {}", _AlbumList.size());
+        return duplicatedAlbumList;
+    }
+
+    auto appSettingPtr = AppSettingsJson::AppSetting();
+    size_t minMatchingTracks = appSettingPtr->MinMatchingTracksForDuplicate;
+
+    // Group by track count
+    std::map<size_t, std::vector<DirectoryContentEntryList::const_iterator>> trackCountGroups;
+    for (auto it = _AlbumList.begin(); it != _AlbumList.end(); ++it) {
+        auto tracks = (*it).trackList.size();
+        if (tracks >= minMatchingTracks) {
+            trackCountGroups[tracks].push_back(it);
+        }
+    }
+
+    // Process groups
+    for (const auto& [trackCount, group] : trackCountGroups) {
+        if (group.size() < 2) {
+            logger->debug("Skipping group with {} albums ({} tracks)", group.size(), trackCount);
+            continue;
+        }
+        logger->debug("Checking {} albums with {} tracks", group.size(), trackCount);
+        auto dupAlbums = FindDuplicationInGroup(group);
+        duplicatedAlbumList.insert(duplicatedAlbumList.end(), dupAlbums.begin(), dupAlbums.end());
+    }
+
+    logger->info("Total duplicate groups: {}", duplicatedAlbumList.size());
+    return duplicatedAlbumList;
+}
+
+
+
+SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(
+    const std::vector<DirectoryContentEntryList::const_iterator>& group) {
+    auto logger = spdlog::get("console");
+    if (!logger) {
+        logger = spdlog::stdout_color_mt("console");
+    }
+
+    SimilarDirectoryEntryList duplicatedAlbumList;
+
+    if (group.size() < 2) {
+        logger->debug("Group too small for duplicates: {} albums", group.size());
+        return duplicatedAlbumList;
+    }
+
+    auto appSettingPtr = AppSettingsJson::AppSetting();
+    double sizeMatchPercentageThreshold = appSettingPtr->SizeMatchPercentageThreshold;
+
+    // Group albums by album and artist tags
+    struct AlbumKey {
+        std::string album, artist;
+        bool operator<(const AlbumKey& other) const {
+            return std::tie(album, artist) < std::tie(other.album, other.artist);
+        }
+    };
+    std::map<AlbumKey, std::vector<std::pair<fs::directory_entry, std::vector<double>>>> albumGroups;
+
+    for (const auto& it : group) {
+        if (it == _AlbumList.end()) {
+            logger->warn("Invalid iterator in group");
+            continue;
+        }
+        const auto& [dirEntry, trackList] = *it;
+        if (trackList.empty()) {
+            logger->warn("Empty track list for album at iterator index {}", std::distance(_AlbumList.cbegin(), it));
+            continue;
+        }
+
+        // Extract album name with robust error handling
+        std::string albumName = "unknown_album_" + std::to_string(std::distance(_AlbumList.cbegin(), it));
+        try {
+            if (fs::exists(dirEntry.path()) && dirEntry.is_directory()) {
+                // Use wstring to avoid UTF-8 conversion issues
+                std::wstring wName = dirEntry.path().filename().wstring();
+                albumName = PlatformUtils::wstringToUtf8_ver2(wName); // Use your safe conversion
+                // Sanitize
+                bool invalid = false;
+                for (char c : albumName) {
+                    if (static_cast<unsigned char>(c) < 0x20) {
+                        invalid = true;
+                        break;
+                    }
+                }
+                if (invalid) {
+                    logger->warn("Invalid characters in album name: {}", dirEntry.path().string());
+                    albumName = "sanitized_album_" + std::to_string(std::distance(_AlbumList.cbegin(), it));
+                }
+            }
+            else {
+                logger->warn("Non-existent or invalid directory: {}", dirEntry.path().string());
+            }
+        }
+        catch (const fs::filesystem_error& e) {
+            logger->error("Filesystem error accessing path: {} ({})", dirEntry.path().string(), e.what());
+        }
+        catch (const std::exception& e) {
+            logger->error("Unexpected error accessing filename: {} ({})", dirEntry.path().string(), e.what());
+        }
+        catch (...) {
+            logger->error("Unknown error accessing filename for iterator index {}", std::distance(_AlbumList.cbegin(), it));
+        }
+
+        // Extract metadata from first track
+        std::string artist;
+        const auto& [trackName, size, mediaInfo, mediaInfoString, lastError] = trackList[0];
+        if (mediaInfo.format.tags && mediaInfo.format.tags->contains("album")) {
+            albumName = mediaInfo.format.tags->at("album");
+            if (mediaInfo.format.tags->contains("artist")) {
+                artist = mediaInfo.format.tags->at("artist");
+            }
+            // Sanitize tags (avoid id3v2_priv.ÿþ)
+            bool invalidAlbum = false;
+            for (char c : albumName) {
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    invalidAlbum = true;
+                    break;
+                }
+            }
+            if (invalidAlbum) {
+                try {
+                    albumName = PlatformUtils::wstringToUtf8_ver2(dirEntry.path().filename().wstring());
+                }
+                catch (...) {
+                    albumName = "sanitized_album_" + std::to_string(std::distance(_AlbumList.cbegin(), it));
+                }
+            }
+            for (char c : artist) {
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    artist.clear();
+                    break;
+                }
+            }
+        }
+        else if (lastError) {
+            logger->debug("Metadata error for track: {} ({})", (dirEntry.path() / trackName).string(), lastError.value());
+        }
+
+        // Collect sorted track durations
+        std::vector<double> durations;
+        durations.reserve(trackList.size());
+        for (const auto& [tName, tSize, tMediaInfo, tJson, tError] : trackList) {
+            durations.push_back(tMediaInfo.format.duration.value_or(0.0));
+        }
+        std::ranges::sort(durations);
+
+        albumGroups[{albumName, artist}].emplace_back(dirEntry, std::move(durations));
+    }
+
+    // Find duplicates by comparing durations
+    for (const auto& [key, albums] : albumGroups) {
+        if (albums.size() < 2) continue;
+
+        for (size_t i = 0; i < albums.size(); ++i) {
+            for (size_t j = i + 1; j < albums.size(); ++j) {
+                const auto& [dir1, durations1] = albums[i];
+                const auto& [dir2, durations2] = albums[j];
+
+                bool isDuplicate = durations1.size() == durations2.size();
+                if (isDuplicate) {
+                    for (size_t k = 0; k < durations1.size(); ++k) {
+                        double d1 = durations1[k], d2 = durations2[k];
+                        if (d1 == 0.0 || d2 == 0.0) {
+                            if (d1 != d2) {
+                                isDuplicate = false;
+                                break;
+                            }
+                            continue;
+                        }
+                        double minD = std::min(d1, d2);
+                        double maxD = std::max(d1, d2);
+                        double diffPercentage = maxD > 0 ? 100 * (maxD - minD) / maxD : 0;
+                        if (diffPercentage > sizeMatchPercentageThreshold) {
+                            isDuplicate = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (isDuplicate) {
+                    logger->info("Duplicate albums: {} and {} (album: {}, artist: {})",
+                        dir1.path().string(), dir2.path().string(),
+                        key.album.empty() ? "(unknown)" : key.album,
+                        key.artist.empty() ? "(unknown)" : key.artist);
+                    duplicatedAlbumList.push_back({ dir1.path().wstring(), dir2.path().wstring() });
+                }
+            }
+        }
+    }
+
+    logger->info("Found {} duplicate groups in group of {} albums", duplicatedAlbumList.size(), group.size());
+    return duplicatedAlbumList;
+}
+
 
 
 
@@ -467,7 +672,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums2()
     secondIt++;
 
     auto appSettingPtr = AppSettingsJson::AppSetting();
-	auto minMatchingTracksForDuplicate = appSettingPtr->MinMatchingTracksForDuplicate;
+    auto minMatchingTracksForDuplicate = appSettingPtr->MinMatchingTracksForDuplicate;
     while (firstIt != _AlbumList.end() && secondIt != _AlbumList.end())
     {
         bool bFound = false;
@@ -508,6 +713,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums2()
 
     return duplicatedAlbumList;
 }
+
 
 SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup2(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt)
 {

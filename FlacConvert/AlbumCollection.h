@@ -67,12 +67,15 @@ public:
 
 	//compare
 	void SortByNumberOfTracks(bool ascending = true);
+	SimilarDirectoryEntryList FindDuplicatedAlbums();
 	SimilarDirectoryEntryList FindDuplicatedAlbums2();
 
 	
 private:
 		
 	//sort and find duplications
+	SimilarDirectoryEntryList FindDuplicationInGroup(const std::vector<DirectoryContentEntryList::const_iterator>& group);
+
 	SimilarDirectoryEntryList FindDuplicationInGroup2(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt);
 
 	//private Helpers
