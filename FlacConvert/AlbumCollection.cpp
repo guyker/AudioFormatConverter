@@ -448,12 +448,7 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
 
 void AlbumCollection::SortByNumberOfTracks(bool ascending)
 {
-    std::ranges::stable_sort(_AlbumList, [ascending](const auto& album1, const auto& album2) {
-        const auto& [albumName1, trackList1] = album1;
-        const auto& [albumName2, trackList2] = album2;
-
-        return ascending ? trackList2.size() > trackList1.size() : trackList2.size() < trackList1.size();
-    });
+    std::ranges::stable_sort(_AlbumList, SortByTracks<SortOrder::Ascending>{});
 }
 
 
