@@ -453,7 +453,7 @@ void AlbumCollection::SortByNumberOfTracks(bool ascending)
 
 
 
-SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums()
+SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums2()
 {
     SimilarDirectoryEntryList duplicatedAlbumList;
 
@@ -494,7 +494,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums()
 
         if (bFound)
         {
-            auto dupAlbums = FindDuplicationInGroup(_AlbumList, firstIt, secondIt);
+            auto dupAlbums = FindDuplicationInGroup2(_AlbumList, firstIt, secondIt);
             duplicatedAlbumList.insert(duplicatedAlbumList.end(), dupAlbums.begin(), dupAlbums.end());
             firstIt = secondIt;;
             secondIt++;
@@ -509,7 +509,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums()
     return duplicatedAlbumList;
 }
 
-SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt)
+SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup2(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt)
 {
     auto appSettingPtr = AppSettingsJson::AppSetting();
     auto sizeMatchPercentageThreshold = appSettingPtr->SizeMatchPercentageThreshold;

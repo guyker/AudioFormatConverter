@@ -136,7 +136,7 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
     // ***by know medialList should contain an empty list***
 
     albumCollection.SortByNumberOfTracks();
-    auto dupList = albumCollection.FindDuplicatedAlbums();
+    auto dupList = albumCollection.FindDuplicatedAlbums2();
 
     auto iCount = dupList.size();
     int iCurrent = 0;
