@@ -30,6 +30,8 @@
 #define pclose _pclose
 
 
+#include "PlatformUtils.h"
+
 
 
 std::wstring getAudioMetadataJSON(const std::wstring& filePath) {
@@ -162,7 +164,8 @@ FFprobeOutput MediaTrack::extractMetadata(const std::filesystem::path filePath) 
     // Get the UTF-8 encoded string. Depending on your implementation,
     // u8string() might return std::string or std::u8string.
     std::wstring widePath = filePath.wstring();
-    std::string utf8Path = WideStringToUTF8(widePath);
+    //std::string utf8Path = WideStringToUTF8(widePath);
+	std::string utf8Path = PlatformUtils::WideToUTF8(widePath);
 
     AVFormatContext* fmt_ctx = nullptr;
     int ret = avformat_open_input(&fmt_ctx, utf8Path.c_str(), nullptr, nullptr);

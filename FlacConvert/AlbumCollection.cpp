@@ -20,6 +20,7 @@
 #include "PlatformUtils.h"
 
 #include "CommonUtils.h"
+#include "ffmpeg.h"
 
 namespace fs = std::filesystem;
 using namespace rapidjson;
@@ -117,8 +118,8 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
         std::string name = "N/A";
         if (albumPath.is_directory() && albumPath.path().has_filename())
         {
-            auto name222 = albumPath.path();
-            name = albumPath.path().filename().generic_string();
+            std::string name = PlatformUtils::WideToUTF8(albumPath.path().filename().wstring());
+           // name = albumPath.path().filename().generic_string();
         }
         std::string progress = std::format("Processing... {}/{} - {}", ++albumCount, _AlbumList.size(), name);
         CommonUtils::show_circular_progress(progress);
@@ -164,6 +165,47 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
     return _AlbumList.size();
 }
 
+void SaveAlbumsAsJSONFile_FFmpegError(std::filesystem::path outPath)
+{
+    std::vector<ffmpeg::FFmpegLogItem> ffmpegErrorList = ffmpeg::get_ffmpeg_logs();
+
+
+    // Create a RapidJSON Document and set it as an array.
+    Document document;
+    document.SetArray();
+    Document::AllocatorType& allocator = document.GetAllocator();
+
+    //	spdlog::error("Error parsing JSON metadata track (adding ro error list): ", outPath.c_str());
+
+    for (auto& item: ffmpegErrorList)
+    {
+        rapidjson::Value trackObj(rapidjson::kObjectType);
+
+        // 1. Convert and add the file path (std::filesystem::path -> UTF-8 std::string).
+        trackObj.AddMember("URL", rapidjson::Value(item.url.c_str(), allocator), allocator);
+        trackObj.AddMember("Error", rapidjson::Value(item.level.c_str(), allocator), allocator);
+        trackObj.AddMember("Message", rapidjson::Value(item.message.c_str(), allocator), allocator);
+
+        document.PushBack(trackObj, allocator);
+    }
+
+    // Create a StringBuffer to hold the JSON output.
+    StringBuffer buffer;
+    // Use PrettyWriter for formatted output (you can use Writer for compact output).
+    PrettyWriter<StringBuffer> writer(buffer);
+    document.Accept(writer);
+
+    // Write the JSON string to a file.
+    std::ofstream outFile(outPath.string() + "_ffmpeg_error.json");
+    if (!outFile) {
+        spdlog::error("Error: could not open file for writing.");
+        return;
+    }
+    outFile << buffer.GetString();
+    outFile.close();
+
+    std::cout << "JSON file created successfully as tracks.json" << std::endl;
+}
 
 std::list<MediaTrack> SaveAlbumsAsJSON_LasrError;
 
@@ -305,7 +347,7 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
     }
 
 	SaveAlbumsAsJSONFile_LasrError(SaveAlbumsAsJSON_LasrError, path);
-
+    SaveAlbumsAsJSONFile_FFmpegError(path);
 
     if (fs::exists(path)) {
         std::error_code ec;

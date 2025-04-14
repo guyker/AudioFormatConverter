@@ -24,8 +24,10 @@
 
 namespace ffmpeg {
 
+
+
     // Global log storage (thread-safe)
-    static std::vector<std::string> ffmpeg_logs;
+    static std::vector<FFmpegLogItem> ffmpeg_logs;
     static std::mutex ffmpeg_log_mutex;
 
     void initialize_ffmpeg_logging() {
@@ -39,7 +41,7 @@ namespace ffmpeg {
         av_log_set_callback(ffmpeg_log_callback);
 
         // Set log level: AV_LOG_QUIET to suppress all, or AV_LOG_ERROR for errors only
-        av_log_set_level(AV_LOG_QUIET); // No console output
+        //av_log_set_level(AV_LOG_QUIET); // No console output
         // Alternatively: av_log_set_level(AV_LOG_ERROR); // Capture errors only
     }
 
@@ -49,6 +51,7 @@ namespace ffmpeg {
         if (level > av_log_get_level()) {
             return; // Skip logs above set level
         }
+
 
         // Format the log message
         char buffer[1024];
@@ -60,10 +63,36 @@ namespace ffmpeg {
             message.pop_back();
         }
 
+
+        // Map level to string for readability
+        const char* level_str = "UNKNOWN";
+        switch (level) {
+        case AV_LOG_PANIC:   level_str = "PANIC"; break;
+        case AV_LOG_FATAL:   level_str = "FATAL"; break;
+        case AV_LOG_ERROR:   level_str = "ERROR"; break;
+        case AV_LOG_WARNING: level_str = "WARNING"; break;
+        case AV_LOG_INFO:    level_str = "INFO"; break;
+        case AV_LOG_VERBOSE: level_str = "VERBOSE"; break;
+        case AV_LOG_DEBUG:   level_str = "DEBUG"; break;
+        case AV_LOG_TRACE:   level_str = "TRACE"; break;
+        }
+
+
+        // Get context (e.g., filename)
+        std::string context = "N/A";
+        if (avcl) {
+            // Assuming AVFormatContext for media files
+            AVFormatContext* fmt_ctx = static_cast<AVFormatContext*>(avcl);
+            if (fmt_ctx->url) {
+                context = fmt_ctx->url;
+            }
+        }
+
+
         // Store in vector (thread-safe)
         {
             std::lock_guard<std::mutex> lock(ffmpeg_log_mutex);
-            ffmpeg_logs.push_back(message);
+            ffmpeg_logs.push_back(FFmpegLogItem { context,  level_str, message });
         }
 
         // Optionally forward to spdlog
@@ -93,7 +122,7 @@ namespace ffmpeg {
         }
     }
 
-    std::vector<std::string> get_ffmpeg_logs() {
+    std::vector<FFmpegLogItem> get_ffmpeg_logs() {
         std::lock_guard<std::mutex> lock(ffmpeg_log_mutex);
         return ffmpeg_logs;
     }
