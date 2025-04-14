@@ -155,6 +155,7 @@
     <ClCompile Include="AlbumCollection.cpp" />
     <ClCompile Include="AppSettings.cpp" />
     <ClCompile Include="CommonUtils.cpp" />
+    <ClCompile Include="ffmpeg.cpp" />
     <ClCompile Include="FlacConvertMain.cpp" />
     <ClCompile Include="FolderConvert.cpp" />
     <ClCompile Include="JsonUtils.cpp" />

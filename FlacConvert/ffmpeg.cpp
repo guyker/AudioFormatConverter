@@ -34,9 +34,9 @@ namespace ffmpeg {
 
 
     void ffmpeg_log_callback(void* avcl, int level, const char* fmt, va_list vl) {
-        //if (level > ::av_log_get_level()) {
-        //    return; // Skip logs above set level
-        //}
+        if (level > ::av_log_get_level()) {
+            return; // Skip logs above set level
+        }
 
         // Format the log message
         char buffer[1024];
