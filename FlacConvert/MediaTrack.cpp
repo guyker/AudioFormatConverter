@@ -2,6 +2,7 @@
 
 
 
+
 #include <iostream>
 #include <cstdio>
 #include <stdexcept>
@@ -9,6 +10,18 @@
 #include <array>
 #include <cstdlib>
 #include <cwchar>
+
+#include <iostream>
+#include <string>
+#include <map>
+
+#include <string>
+#include <iostream>
+#include <filesystem>
+#include <fstream>
+#include <windows.h> // For Windows path handling
+
+#include "FFmpegWrapper.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -115,17 +128,7 @@ std::string runFFprobe(const std::wstring& filename) {
 
 
 
-#include <iostream>
-#include <string>
-#include <map>
-extern "C" {
-#include <libavformat/avformat.h>
-}
 
-//std::tuple<FFprobeOutput, std::wstring> ReadMediaInfoFromFile(std::filesystem::path mediaFilePath)
-//{
-//
-//}
 
 std::string escapePath(const std::string& path) {
     std::string result;
@@ -144,15 +147,7 @@ std::string normalizePath(const std::string& path) {
     return result;
 }
 
-#include <string>
-#include <iostream>
-#include <filesystem>
-#include <fstream>
-#include <windows.h> // For Windows path handling
-extern "C" {
-#include <libavformat/avformat.h>
-#include <libavutil/error.h>
-}
+
 std::string WideStringToUTF8(const std::wstring& wstr) {
     if (wstr.empty()) return std::string();
     int sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);

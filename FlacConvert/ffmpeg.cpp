@@ -7,14 +7,6 @@
 
 #include "ffmpeg.h"
 
-
-extern "C" {
-#include <libavutil/avutil.h>
-#include <libavutil/log.h>
-}
-
-#include <libavformat/avformat.h>
-
 #include <cstdarg>
 #include <cstdio>
 #include <string>

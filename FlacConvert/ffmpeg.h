@@ -1,11 +1,9 @@
 #pragma once
 
+#include "FFmpegWrapper.h"
+
 #include <vector>
 #include <string>
-
-extern "C" {
-#include <libavutil/log.h>
-}
 #include <cstdarg>
 
 namespace ffmpeg

@@ -170,6 +170,7 @@
     <ClInclude Include="AppSettings.h" />
     <ClInclude Include="CommonUtils.h" />
     <ClInclude Include="ffmpeg.h" />
+    <ClInclude Include="FFmpegWrapper.h" />
     <ClInclude Include="FolderConvert.h" />
     <ClInclude Include="JsonUtils.h" />
     <ClInclude Include="MediaAlbum.h" />
