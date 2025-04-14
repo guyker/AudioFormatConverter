@@ -1,15 +1,34 @@
 
 
+//extern "C" {
+//    __declspec(dllimport) int av_log_get_level(void);
+//}
+
 
 #include "ffmpeg.h"
-#include <libavformat/avformat.h>
+
+
+extern "C" {
+#include <libavutil/avutil.h>
 #include <libavutil/log.h>
+}
+
+#include <libavformat/avformat.h>
+
 #include <cstdarg>
 #include <cstdio>
 #include <string>
 #include <vector>
 #include <mutex>
 #include <spdlog/spdlog.h>
+
+//#pragma comment(lib, "avcodec.lib")
+//#pragma comment(lib, "avformat.lib")
+//#pragma comment(lib, "avutil.lib")
+//#pragma comment(lib, "swresample.lib")  // Often required for avutil
+//#pragma comment(lib, "swscale.lib")    // Often required for avutil
+//#pragma comment(lib, "avfilter.lib")  // Often required for avutil
+//#pragma comment(lib, "avdevice.lib") // Often required for avutil
 
 namespace ffmpeg {
 
@@ -25,16 +44,17 @@ namespace ffmpeg {
         }
 
         // Set custom callback
-    //     av_log_set_callback(ffmpeg_log_callback);
+        av_log_set_callback(ffmpeg_log_callback);
 
-         // Set log level: AV_LOG_QUIET to suppress all, or AV_LOG_ERROR for errors only
-          //av_log_set_level(AV_LOG_QUIET); // No console output
-          // Alternatively: av_log_set_level(AV_LOG_ERROR); // Capture errors only
+        // Set log level: AV_LOG_QUIET to suppress all, or AV_LOG_ERROR for errors only
+        av_log_set_level(AV_LOG_QUIET); // No console output
+        // Alternatively: av_log_set_level(AV_LOG_ERROR); // Capture errors only
     }
 
 
+
     void ffmpeg_log_callback(void* avcl, int level, const char* fmt, va_list vl) {
-        if (level > ::av_log_get_level()) {
+        if (level > av_log_get_level()) {
             return; // Skip logs above set level
         }
 
