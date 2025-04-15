@@ -37,7 +37,7 @@
 //#include <spdlog/sinks/basic_file_sink.h>
 #include "PlatformUtils.h"
 
-#include "ffmpeg.h"
+#include "FFmpeg.h"
 
 namespace fs = std::filesystem;
 
@@ -229,7 +229,7 @@ int main()
 		return -1;
     }
   
-    ffmpeg::initialize_ffmpeg_logging();
+    FFmpeg::initialize_ffmpeg_logging();
 
 	std::vector<MediaDirectoryElement> mediaList;
 

@@ -20,7 +20,7 @@
 #include "PlatformUtils.h"
 
 #include "CommonUtils.h"
-#include "ffmpeg.h"
+#include "FFmpeg.h"
 
 namespace fs = std::filesystem;
 using namespace rapidjson;
@@ -167,7 +167,7 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
 
 void SaveAlbumsAsJSONFile_FFmpegError(std::filesystem::path outPath)
 {
-    std::vector<ffmpeg::FFmpegLogItem> ffmpegErrorList = ffmpeg::get_ffmpeg_logs();
+    std::vector<FFmpeg::FFmpegLogItem> ffmpegErrorList = FFmpeg::get_ffmpeg_logs();
 
 
     // Create a RapidJSON Document and set it as an array.

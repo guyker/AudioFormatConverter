@@ -5,7 +5,7 @@
 //}
 
 
-#include "ffmpeg.h"
+#include "FFmpeg.h"
 
 #include <cstdarg>
 #include <cstdio>
@@ -23,7 +23,7 @@
 //#pragma comment(lib, "avfilter.lib")  // Often required for avutil
 //#pragma comment(lib, "avdevice.lib") // Often required for avutil
 
-namespace ffmpeg {
+namespace FFmpeg {
 
     // Global log storage (thread-safe)
     static std::vector<FFmpegLogItem> ffmpeg_logs;
@@ -243,10 +243,10 @@ namespace ffmpeg {
         }
 
         // Format section
-        output.format = ffmpeg::GetFormatInformation(fmt_ctx, filePath);
+        output.format = FFmpeg::GetFormatInformation(fmt_ctx, filePath);
 
         // Streams section
-        output.streams = ffmpeg::GetStreamInformation(fmt_ctx);
+        output.streams = FFmpeg::GetStreamInformation(fmt_ctx);
 
 
         avformat_close_input(&fmt_ctx);

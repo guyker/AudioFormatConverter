@@ -21,7 +21,7 @@
 #include <fstream>
 #include <windows.h> // For Windows path handling
 
-#include "ffmpeg.h"
+#include "FFmpeg.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -97,7 +97,7 @@ std::wstring runFFprobe(const std::wstring& filename) {
 
 #include <clocale>
 #include <cwchar>
-#include "ffmpeg.h"
+#include "FFmpeg.h"
 
 // On Linux, set the locale to a UTF‑8–compatible one and convert the wide filename using wcstombs.
 std::string runFFprobe(const std::wstring& filename) {
@@ -395,7 +395,7 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
         //return std::make_tuple(FFprobeOutput{}, L"{}");
 
 
-        auto mediaInfo = ffmpeg::GetFFprobeMetadata(mediaFilePath);
+        auto mediaInfo = FFmpeg::GetFFprobeMetadata(mediaFilePath);
 
 
   //      return std::make_tuple(FFprobeOutput{}, L"{}");
@@ -408,7 +408,7 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
         std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
         auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
 
-        auto jsonString = ffmpeg::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
+        auto jsonString = FFmpeg::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
         auto mi = MediaTrack::ParseMediaTrack(jsonString);
 
         return std::make_tuple(mi, jsonString);

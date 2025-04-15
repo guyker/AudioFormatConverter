@@ -7,7 +7,7 @@
 #include <cstdarg>
 #include "MediaInformation.h"
 
-namespace ffmpeg
+namespace FFmpeg
 {
     struct FFmpegLogItem {
         std::string url;
