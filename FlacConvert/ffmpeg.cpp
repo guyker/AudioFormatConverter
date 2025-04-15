@@ -14,6 +14,7 @@
 #include <mutex>
 #include <spdlog/spdlog.h>
 #include "PlatformUtils.h"
+#include "MediaTrack.h"
 
 //#pragma comment(lib, "avcodec.lib")
 //#pragma comment(lib, "avformat.lib")
@@ -191,23 +192,17 @@ namespace FFmpeg {
 
         try
         {
-            // Specify your file name as a wide string.
-       //     std::wstring filename = L"input.mp3";
-#ifdef _WIN32
             std::wstring f = mediaFilePath.generic_wstring();
 
             std::wstring wide_output = getAudioMetadataJSON(f);
-            // Convert wide output to UTF-8 narrow string for printing.
-         //   std::cout << wide_output << std::endl;
-#else
-            std::string output = runFFprobe(filename);
-            std::cout << output << std::endl;
-#endif
 
             if (status == 0)
             {
-
                 return wide_output;
+            }
+            else
+            {
+				spdlog::error("Error: Failed to extract metadata from media track.");
             }
 
         }
@@ -220,7 +215,20 @@ namespace FFmpeg {
     }
 
 
-    FFprobeOutput GetFFprobeMetadata(const std::filesystem::path filePath) {
+    FFprobeOutput GetFFprobeMetadataShell(const std::filesystem::path filePath)
+    {
+        std::size_t hashNumber = std::hash<std::wstring>{}(filePath);
+        auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
+
+        auto jsonString = FFmpeg::ExtractMetadataFromMediaTrack(filePath, tmpFile);
+        auto mi = MediaTrack::ParseFFprobeInformation(jsonString);
+
+        return mi;
+    }
+    
+
+    FFprobeOutput GetFFprobeMetadataAPI(const std::filesystem::path filePath)
+    {
         // Initialize FFmpeg (not needed in newer versions, but safe to call)
         // av_register_all();
 

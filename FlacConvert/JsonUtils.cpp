@@ -132,7 +132,7 @@ namespace JsonUtils {
     }
 
     std::string TypeToString(rapidjson::Type type) {
-        static const std::array<const char*, 7> names = {
+        constexpr std::array<const char*, 7> names = {
             "Null", "False", "True", "Object", "Array", "String", "Number"
         };
         return (type >= rapidjson::kNullType && type <= rapidjson::kNumberType)

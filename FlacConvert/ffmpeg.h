@@ -20,8 +20,11 @@ namespace FFmpeg
     std::vector<FFmpegLogItem> get_ffmpeg_logs();
     void clear_ffmpeg_logs();
 
+    FFprobeOutput GetFFprobeMetadataAPI(const std::filesystem::path filePath);
+    FFprobeOutput GetFFprobeMetadataShell(const std::filesystem::path filePath);
+
     std::wstring ExtractMetadataFromMediaTrack(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
-    FFprobeOutput GetFFprobeMetadata(const std::filesystem::path filePath);
+
     Format GetFormatInformation(AVFormatContext* fmt_ctx, const std::filesystem::path filePath);
     std::vector<Stream> GetStreamInformation(AVFormatContext* fmt_ctx);
 }

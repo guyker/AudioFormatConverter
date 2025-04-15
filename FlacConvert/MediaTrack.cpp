@@ -141,18 +141,13 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
     {
         if (AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI)
         {
-            auto mediaInfo = FFmpeg::GetFFprobeMetadata(mediaFilePath);
+            auto mediaInfo = FFmpeg::GetFFprobeMetadataAPI(mediaFilePath);
             return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJsonString(mediaInfo)));
         }
         else
         {
-            std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
-            auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
-
-            auto jsonString = FFmpeg::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
-            auto mi = MediaTrack::ParseFFprobeInformation(jsonString);
-
-            return std::make_tuple(mi, jsonString);
+            auto mediaInfo = FFmpeg::GetFFprobeMetadataShell(mediaFilePath);
+            return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJsonString(mediaInfo)));
         }
     }
     catch (const std::exception& ex) {
