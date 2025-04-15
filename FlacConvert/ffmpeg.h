@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <cstdarg>
+#include "MediaInformation.h"
 
 namespace ffmpeg
 {
@@ -14,9 +15,12 @@ namespace ffmpeg
         std::string message;
     };
 
-
     void initialize_ffmpeg_logging();
     void ffmpeg_log_callback(void* avcl, int level, const char* fmt, va_list vl);
     std::vector<FFmpegLogItem> get_ffmpeg_logs();
     void clear_ffmpeg_logs();
+
+
+    Format GetFormatInformation(AVFormatContext* fmt_ctx, const std::filesystem::path filePath);
+    std::vector<Stream> GetStreamInformation(AVFormatContext* fmt_ctx);
 }

@@ -21,7 +21,7 @@
 #include <fstream>
 #include <windows.h> // For Windows path handling
 
-#include "FFmpegWrapper.h"
+#include "ffmpeg.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -97,6 +97,7 @@ std::wstring runFFprobe(const std::wstring& filename) {
 
 #include <clocale>
 #include <cwchar>
+#include "ffmpeg.h"
 
 // On Linux, set the locale to a UTF‑8–compatible one and convert the wide filename using wcstombs.
 std::string runFFprobe(const std::wstring& filename) {
@@ -175,7 +176,6 @@ FFprobeOutput MediaTrack::extractMetadata(const std::filesystem::path filePath) 
         std::cerr << "Failed to open " << utf8Path.c_str() << ": " << errbuf << " (" << ret << ")\n";
         return output;
     }
-    return output;
 
     if (avformat_find_stream_info(fmt_ctx, nullptr) < 0) {
         std::cerr << "Could not find stream info\n";
@@ -183,99 +183,12 @@ FFprobeOutput MediaTrack::extractMetadata(const std::filesystem::path filePath) 
         return output;
     }
 
-
-
     // Format section
-    Format fmt;
-    fmt.filename = filePath.generic_string();
-    fmt.nb_streams = fmt_ctx->nb_streams;
-    fmt.format_name = fmt_ctx->iformat->name ? fmt_ctx->iformat->name : "";
-    fmt.format_long_name = fmt_ctx->iformat->long_name ? fmt_ctx->iformat->long_name : "";
-    if (fmt_ctx->duration != AV_NOPTS_VALUE) {
-        fmt.duration = static_cast<double>(fmt_ctx->duration) / AV_TIME_BASE;
-    }
-    if (fmt_ctx->bit_rate > 0) {
-        fmt.bit_rate = fmt_ctx->bit_rate;
-    }
-    if (fmt_ctx->start_time != AV_NOPTS_VALUE) {
-        fmt.start_time = fmt_ctx->start_time;
-    }
-    fmt.probe_score = fmt_ctx->probe_score;
-
-    // Optional: Get file size from filesystem
-    try {
-        fmt.file_size = std::filesystem::file_size(filePath);
-    }
-    catch (const std::filesystem::filesystem_error& e) {
-        std::cerr << "Failed to get file size: " << e.what() << "\n";
-    }
-
-    if (fmt_ctx->metadata) {
-        Tags format_tags;
-        AVDictionaryEntry* tag = nullptr;
-        while ((tag = av_dict_get(fmt_ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
-            format_tags[tag->key] = tag->value;
-        }
-        fmt.tags = format_tags;
-    }
-    output.format = fmt;
+    output.format = ffmpeg::GetFormatInformation(fmt_ctx, filePath);
 
     // Streams section
-    for (unsigned int i = 0; i < fmt_ctx->nb_streams; ++i) {
-        AVStream* stream = fmt_ctx->streams[i];
-        Stream s;
-        s.index = stream->index;
-        AVCodecParameters* codecpar = stream->codecpar;
-        s.codec_name = avcodec_get_name(codecpar->codec_id);
-        switch (codecpar->codec_type) {
-        case AVMEDIA_TYPE_AUDIO: s.codec_type = "audio"; break;
-        case AVMEDIA_TYPE_VIDEO: s.codec_type = "video"; break;
-        case AVMEDIA_TYPE_SUBTITLE: s.codec_type = "subtitle"; break;
-        default: s.codec_type = "unknown"; break;
-        }
+    output.streams = ffmpeg::GetStreamInformation(fmt_ctx);
 
-        if (codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-            if (codecpar->sample_rate > 0) {
-                s.sample_rate = std::to_string(codecpar->sample_rate);
-            }
-            if (codecpar->ch_layout.nb_channels > 0) {
-                s.channels = codecpar->ch_layout.nb_channels;
-                char layout[64];
-                av_channel_layout_describe(&codecpar->ch_layout, layout, sizeof(layout));
-                s.channel_layout = layout;
-            }
-            if (codecpar->bit_rate > 0) {
-                s.bit_rate = codecpar->bit_rate;
-            }
-            if (codecpar->bits_per_raw_sample > 0) {
-                s.bits_per_sample = codecpar->bits_per_raw_sample;
-            }
-            if (codecpar->frame_size > 0) {
-                s.frame_size = codecpar->frame_size;
-            }
-        }
-
-        if (stream->duration != AV_NOPTS_VALUE) {
-            s.duration = std::to_string(static_cast<double>(stream->duration) * av_q2d(stream->time_base));
-        }
-        if (stream->start_time != AV_NOPTS_VALUE) {
-            s.start_time = stream->start_time;
-        }
-        if (stream->nb_frames > 0) {
-            s.nb_frames = stream->nb_frames;
-        }
-
-        if (stream->metadata) {
-            Tags stream_tags;
-            AVDictionaryEntry* tag = nullptr;
-            while ((tag = av_dict_get(stream->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
-                stream_tags[tag->key] = tag->value;
-            }
-            s.tags = stream_tags;
-        }
-
-        output.streams.push_back(s);
-    }
 
     avformat_close_input(&fmt_ctx);
     return output;
@@ -518,7 +431,7 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
         auto mediaInfo = extractMetadata(mediaFilePath);
 
 
-        return std::make_tuple(FFprobeOutput{}, L"{}");
+  //      return std::make_tuple(FFprobeOutput{}, L"{}");
 
         auto jsonString2 = toJson(mediaInfo);
         //auto jsonString2 = MediaTrack::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
