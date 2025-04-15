@@ -46,7 +46,7 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
 	{
 		//Load metadata for all media files in the album collection
 		spdlog::info("Loading Albums metadata... ");
-		auto nAlbums = LoadAllMetadata(false); //load media metadate
+		auto nAlbums = LoadAllMetadata(AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls); //load media metadate
 		auto endLoadMEtadataTime = std::chrono::steady_clock::now();
 		spdlog::info("Completed (Loading Albums metadata) Found {} Albums, processing time: [{}ms]", nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endLoadMEtadataTime - endLoadTime).count());
 	}

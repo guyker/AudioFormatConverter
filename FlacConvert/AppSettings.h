@@ -67,6 +67,7 @@ struct AppSettingsJson
 	std::string WorkingDirectory{};
 	std::string DatabaseFileName{};
 
+	bool UseAsyncFFmpegCalls { true };
 	bool UseFFmpegLibraryAPI { true };
 	int MinMatchingTracksForDuplicate{ 1 };
 	int SizeMatchPercentageThreshold{ 3 }; // tracks are identical if the size difference is less than 3%
@@ -94,18 +95,16 @@ struct AppSettingsJson
 			"1.0.0",
 			AppSettingsJson::DefaultWorkingDirectory,
 			AppSettingsJson::DefaultDatabaseFileName,
-			true,
+			true, //UseAsyncFFmpegCalls
+			true, //UseFFmpegLibraryAPI
 			1, //MinMatchingTracksForDuplicate
 			3, //SizeMatchPercentageThreshold
 			10, //RecursionDirectorySearchDepth
-			//FLAC settings
 			{
 				 L"ffmpeg",
-				 L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats"
-				 L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats"
+				 L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats",
+				 L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats",				
 			},
-
-			//MediaDirectoryList
 			{
 				{true, "\\\\?\\R:\\tmp\\24\\flac", "\\\\?\\R:\\tmp\\24\\MediaResult_flac.json", "\\\\?\\R:\\tmp\\24\\MediaResult_flac.db"},
 				{true, "\\\\?\\R:\\tmp\\24\\mp3", "\\\\?\\R:\\tmp\\24\\MediaResult_mp3.json", "\\\\?\\R:\\tmp\\24\\MediaResult_mp3.db"}

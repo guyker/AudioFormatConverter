@@ -128,6 +128,7 @@ std::string AppSettingsJson::toJsonString() const {
     doc.AddMember("MediaDirectoryList", mediaArray, allocator);
 
 
+    doc.AddMember("UseAsyncFFmpegCalls", UseAsyncFFmpegCalls, allocator);
     doc.AddMember("UseFFmpegLibraryAPI", UseFFmpegLibraryAPI, allocator);
     doc.AddMember("MinMatchingTracksForDuplicate", MinMatchingTracksForDuplicate, allocator);
     doc.AddMember("SizeMatchPercentageThreshold", SizeMatchPercentageThreshold, allocator);
@@ -221,7 +222,10 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
             MediaDirectoryList.push_back(media);
         }
     }
-
+    
+    if (doc.HasMember("UseAsyncFFmpegCalls") && doc["UseAsyncFFmpegCalls"].IsBool()) {
+        UseAsyncFFmpegCalls = doc["UseAsyncFFmpegCalls"].GetBool();
+    }
     if (doc.HasMember("UseFFmpegLibraryAPI") && doc["UseFFmpegLibraryAPI"].IsBool()) {
         UseFFmpegLibraryAPI = doc["UseFFmpegLibraryAPI"].GetBool();
     }
