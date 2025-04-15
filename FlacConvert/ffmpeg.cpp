@@ -135,31 +135,11 @@ namespace FFmpeg {
 
 
     //create a media file (on filesystem) from a media track
-    std::wstring ExtractMetadataFromMediaTrack(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
+    std::wstring GetJsonMetadataShell(std::filesystem::path mediaFilePath)
     {
-        using namespace std::string_literals;
-
-
-        int status = 0;
-
-        auto tmpPath = fs::temp_directory_path();
-        //fs::path tmpFilePath{ tmpPath.generic_wstring() + L"\\media_info.json"s };
-        fs::path tmpFilePath{ tmpPath / outFile };
-
-
-        std::wstring cmdExecNameW{ L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters "s };
-        std::wstring commandW{ cmdExecNameW + L"\""s + mediaFilePath.generic_wstring() + L"\""s + L" > \""s + tmpFilePath.generic_wstring() + L"\""s };
-
-        //std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + L"'" + _targetTMPPath.generic_wstring() + L"'" };
-
-
         try
         {
             std::wstring f = mediaFilePath.generic_wstring();
-
-            //std::wstring wide_output = getAudioMetadataJSON(f);
-
-
             std::wstring command = L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"" + f + L"\"";
 
 #ifdef _WIN32
@@ -189,25 +169,14 @@ namespace FFmpeg {
 #endif
 
             // Convert UTF-8 JSON output to wstring
-            //return CommonUtils::utf8ToWstring(result.str());
             auto wide_output = CommonUtils::utf8ToWstring(result.str());
 
-
-
-
-            if (status == 0)
-            {
-                return wide_output;
-            }
-            else
-            {
-				spdlog::error("Error: Failed to extract metadata from media track.");
-            }
+            return wide_output;
 
         }
         catch (const std::exception& e) {
             std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << e.what() << std::endl;
-            std::cerr << "Error: " << e.what() << std::endl;
+            spdlog::error("Error: ", e.what());
         }
 
         return L"**ERROR***";
@@ -216,10 +185,7 @@ namespace FFmpeg {
 
     FFprobeOutput GetFFprobeMetadataShell(const std::filesystem::path filePath)
     {
-        std::size_t hashNumber = std::hash<std::wstring>{}(filePath);
-        auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
-
-        auto jsonString = FFmpeg::ExtractMetadataFromMediaTrack(filePath, tmpFile);
+        auto jsonString = FFmpeg::GetJsonMetadataShell(filePath);
         auto mi = MediaTrack::ParseFFprobeInformation(jsonString);
 
         return mi;

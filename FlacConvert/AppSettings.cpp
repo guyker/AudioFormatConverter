@@ -111,7 +111,8 @@ std::string AppSettingsJson::toJsonString() const {
     // Serialize FLACEncodingSettings
     rapidjson::Value flacObj(rapidjson::kObjectType);
     flacObj.AddMember("ffmpeg_exe_name", rapidjson::Value(PlatformUtils::WideToUTF8(FLACSettings.ffmpeg_exe_name).c_str(), allocator), allocator);
-    flacObj.AddMember("ffmpeg_arguments", rapidjson::Value(PlatformUtils::WideToUTF8(FLACSettings.ffmpeg_arguments).c_str(), allocator), allocator);
+    flacObj.AddMember("ffmpeg_convert_24bit_flac", rapidjson::Value(PlatformUtils::WideToUTF8(FLACSettings.ffmpeg_convert_24bit_flac).c_str(), allocator), allocator);
+    flacObj.AddMember("ffmpeg_get_metadata_tags", rapidjson::Value(PlatformUtils::WideToUTF8(FLACSettings.ffmpeg_get_metadata_tags).c_str(), allocator), allocator);
     doc.AddMember("FLACSettings", flacObj, allocator);
 
     // Serialize MediaDirectoryList
@@ -193,8 +194,11 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
         if (flacObj.HasMember("ffmpeg_exe_name") && flacObj["ffmpeg_exe_name"].IsString()) {
             FLACSettings.ffmpeg_exe_name = UTF8ToWide(flacObj["ffmpeg_exe_name"].GetString());
         }
-        if (flacObj.HasMember("ffmpeg_arguments") && flacObj["ffmpeg_arguments"].IsString()) {
-            FLACSettings.ffmpeg_arguments = UTF8ToWide(flacObj["ffmpeg_arguments"].GetString());
+        if (flacObj.HasMember("ffmpeg_convert_24bit_flac") && flacObj["ffmpeg_convert_24bit_flac"].IsString()) {
+            FLACSettings.ffmpeg_convert_24bit_flac = UTF8ToWide(flacObj["ffmpeg_convert_24bit_flac"].GetString());
+        }
+        if (flacObj.HasMember("ffmpeg_get_metadata_tags") && flacObj["ffmpeg_get_metadata_tags"].IsString()) {
+            FLACSettings.ffmpeg_get_metadata_tags = UTF8ToWide(flacObj["ffmpeg_get_metadata_tags"].GetString());
         }
     }
 

@@ -4,7 +4,8 @@
   "DatabaseFileName": "all_albums.db",
   "FLACSettings": {
     "ffmpeg_exe_name": "ffmpeg",
-    "ffmpeg_arguments": "-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats"
+    "ffmpeg_convert_24bit_flac": "-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats",
+    "ffmpeg_get_metadata_tags": "-v quiet -print_format json -show_format -show_streams -show_chapters"
   },
   "MediaDirectoryList": [
     {

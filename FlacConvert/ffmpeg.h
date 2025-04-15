@@ -22,8 +22,7 @@ namespace FFmpeg
 
     FFprobeOutput GetFFprobeMetadataAPI(const std::filesystem::path filePath);
     FFprobeOutput GetFFprobeMetadataShell(const std::filesystem::path filePath);
-
-    std::wstring ExtractMetadataFromMediaTrack(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
+    std::wstring GetJsonMetadataShell(std::filesystem::path mediaFilePath);
 
     Format GetFormatInformation(AVFormatContext* fmt_ctx, const std::filesystem::path filePath);
     std::vector<Stream> GetStreamInformation(AVFormatContext* fmt_ctx);

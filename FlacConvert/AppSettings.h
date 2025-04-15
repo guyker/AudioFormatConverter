@@ -38,9 +38,8 @@ using namespace rapidjson;
 struct FLACEncodingSettings
 {
 	std::wstring ffmpeg_exe_name;
-	std::wstring ffmpeg_arguments;
-	std::wstring ffmpeg_arguments2;
-	std::wstring ffmpeg_arguments3;
+	std::wstring ffmpeg_convert_24bit_flac;
+	std::wstring ffmpeg_get_metadata_tags;
 };
 
 struct MediaDirectoryElement
@@ -102,6 +101,7 @@ struct AppSettingsJson
 			//FLAC settings
 			{
 				 L"ffmpeg",
+				 L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats"
 				 L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats"
 			},
 
