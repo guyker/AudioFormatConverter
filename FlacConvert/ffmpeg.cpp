@@ -134,43 +134,6 @@ namespace FFmpeg {
     }
 
 
-
-
-    std::wstring getAudioMetadataJSON(const std::wstring& filePath) {
-        std::wstring command = L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"" + filePath + L"\"";
-
-#ifdef _WIN32
-        command += L" 2>&1"; // Redirect stderr to stdout (Windows)
-        FILE* pipe = _wpopen(command.c_str(), L"r");
-#else
-        command += L" 2>&1"; // Redirect stderr to stdout (Linux/macOS)
-        FILE* pipe = popen(std::string(command.begin(), command.end()).c_str(), "r");
-#endif
-
-        if (!pipe) {
-            std::wcerr << L"Failed to run ffprobe!" << std::endl;
-            return L"";
-        }
-
-        std::ostringstream result;
-        char buffer[2024];
-
-        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            result << buffer;
-        }
-
-#ifdef _WIN32
-        _pclose(pipe);
-#else
-        pclose(pipe);
-#endif
-
-        // Convert UTF-8 JSON output to wstring
-        //return CommonUtils::utf8ToWstring(result.str());
-        return CommonUtils::utf8ToWstring(result.str());
-    }
-
-
     //create a media file (on filesystem) from a media track
     std::wstring ExtractMetadataFromMediaTrack(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
     {
@@ -194,7 +157,43 @@ namespace FFmpeg {
         {
             std::wstring f = mediaFilePath.generic_wstring();
 
-            std::wstring wide_output = getAudioMetadataJSON(f);
+            //std::wstring wide_output = getAudioMetadataJSON(f);
+
+
+            std::wstring command = L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"" + f + L"\"";
+
+#ifdef _WIN32
+            command += L" 2>&1"; // Redirect stderr to stdout (Windows)
+            FILE* pipe = _wpopen(command.c_str(), L"r");
+#else
+            command += L" 2>&1"; // Redirect stderr to stdout (Linux/macOS)
+            FILE* pipe = popen(std::string(command.begin(), command.end()).c_str(), "r");
+#endif
+
+            if (!pipe) {
+                std::wcerr << L"Failed to run ffprobe!" << std::endl;
+                return L"";
+            }
+
+            std::ostringstream result;
+            char buffer[2024];
+
+            while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+                result << buffer;
+            }
+
+#ifdef _WIN32
+            _pclose(pipe);
+#else
+            pclose(pipe);
+#endif
+
+            // Convert UTF-8 JSON output to wstring
+            //return CommonUtils::utf8ToWstring(result.str());
+            auto wide_output = CommonUtils::utf8ToWstring(result.str());
+
+
+
 
             if (status == 0)
             {
