@@ -159,40 +159,7 @@ std::string WideStringToUTF8(const std::wstring& wstr) {
     return utf8Str;
 }
 
-FFprobeOutput MediaTrack::extractMetadata(const std::filesystem::path filePath) {
-    FFprobeOutput output;
 
-    // Get the UTF-8 encoded string. Depending on your implementation,
-    // u8string() might return std::string or std::u8string.
-    std::wstring widePath = filePath.wstring();
-    //std::string utf8Path = WideStringToUTF8(widePath);
-	std::string utf8Path = PlatformUtils::WideToUTF8(widePath);
-
-    AVFormatContext* fmt_ctx = nullptr;
-    int ret = avformat_open_input(&fmt_ctx, utf8Path.c_str(), nullptr, nullptr);
-    if (ret < 0) {
-        char errbuf[128];
-        av_strerror(ret, errbuf, sizeof(errbuf));
-        std::cerr << "Failed to open " << utf8Path.c_str() << ": " << errbuf << " (" << ret << ")\n";
-        return output;
-    }
-
-    if (avformat_find_stream_info(fmt_ctx, nullptr) < 0) {
-        std::cerr << "Could not find stream info\n";
-        avformat_close_input(&fmt_ctx);
-        return output;
-    }
-
-    // Format section
-    output.format = ffmpeg::GetFormatInformation(fmt_ctx, filePath);
-
-    // Streams section
-    output.streams = ffmpeg::GetStreamInformation(fmt_ctx);
-
-
-    avformat_close_input(&fmt_ctx);
-    return output;
-}
 
 
 
@@ -428,7 +395,7 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
         //return std::make_tuple(FFprobeOutput{}, L"{}");
 
 
-        auto mediaInfo = extractMetadata(mediaFilePath);
+        auto mediaInfo = ffmpeg::GetFFprobeMetadata(mediaFilePath);
 
 
   //      return std::make_tuple(FFprobeOutput{}, L"{}");
@@ -441,7 +408,7 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
         std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
         auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
 
-        auto jsonString = MediaTrack::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
+        auto jsonString = ffmpeg::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
         auto mi = MediaTrack::ParseMediaTrack(jsonString);
 
         return std::make_tuple(mi, jsonString);
@@ -456,54 +423,7 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
 
 
 
-//create a media file (on filesystem) from a media track
-std::wstring MediaTrack::ExtractMetadataFromMediaTrack(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
-{
-    using namespace std::string_literals;
 
-
-    int status = 0;
-
-    auto tmpPath = fs::temp_directory_path();
-    //fs::path tmpFilePath{ tmpPath.generic_wstring() + L"\\media_info.json"s };
-    fs::path tmpFilePath{ tmpPath / outFile };
-
-
-    std::wstring cmdExecNameW{ L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters "s };
-    std::wstring commandW{ cmdExecNameW + L"\""s + mediaFilePath.generic_wstring() + L"\""s + L" > \""s + tmpFilePath.generic_wstring() + L"\""s };
-
-    //std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + L"'" + _targetTMPPath.generic_wstring() + L"'" };
-
-
-    try
-    {
-        // Specify your file name as a wide string.
-   //     std::wstring filename = L"input.mp3";
-#ifdef _WIN32
-        std::wstring f = mediaFilePath.generic_wstring();
-
-        std::wstring wide_output = runFFprobe(f);
-        // Convert wide output to UTF-8 narrow string for printing.
-     //   std::cout << wide_output << std::endl;
-#else
-        std::string output = runFFprobe(filename);
-        std::cout << output << std::endl;
-#endif
-
-        if (status == 0)
-        {
-
-            return wide_output;
-        }
-
-    }
-    catch (const std::exception& e) {
-        std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << e.what() << std::endl;
-        std::cerr << "Error: " << e.what() << std::endl;
-    }
-
-    return L"**ERROR***";
-}
 
 // Parse Tags from a RapidJSON Value
 Tags parseTags(const rapidjson::Value& jsonValue)

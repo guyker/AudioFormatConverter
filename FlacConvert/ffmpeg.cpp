@@ -13,6 +13,7 @@
 #include <vector>
 #include <mutex>
 #include <spdlog/spdlog.h>
+#include "PlatformUtils.h"
 
 //#pragma comment(lib, "avcodec.lib")
 //#pragma comment(lib, "avformat.lib")
@@ -132,6 +133,125 @@ namespace ffmpeg {
     }
 
 
+
+
+    std::wstring getAudioMetadataJSON(const std::wstring& filePath) {
+        std::wstring command = L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"" + filePath + L"\"";
+
+#ifdef _WIN32
+        command += L" 2>&1"; // Redirect stderr to stdout (Windows)
+        FILE* pipe = _wpopen(command.c_str(), L"r");
+#else
+        command += L" 2>&1"; // Redirect stderr to stdout (Linux/macOS)
+        FILE* pipe = popen(std::string(command.begin(), command.end()).c_str(), "r");
+#endif
+
+        if (!pipe) {
+            std::wcerr << L"Failed to run ffprobe!" << std::endl;
+            return L"";
+        }
+
+        std::ostringstream result;
+        char buffer[2024];
+
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            result << buffer;
+        }
+
+#ifdef _WIN32
+        _pclose(pipe);
+#else
+        pclose(pipe);
+#endif
+
+        // Convert UTF-8 JSON output to wstring
+        //return CommonUtils::utf8ToWstring(result.str());
+        return CommonUtils::utf8ToWstring(result.str());
+    }
+
+
+    //create a media file (on filesystem) from a media track
+    std::wstring ExtractMetadataFromMediaTrack(std::filesystem::path mediaFilePath, std::filesystem::path outFile)
+    {
+        using namespace std::string_literals;
+
+
+        int status = 0;
+
+        auto tmpPath = fs::temp_directory_path();
+        //fs::path tmpFilePath{ tmpPath.generic_wstring() + L"\\media_info.json"s };
+        fs::path tmpFilePath{ tmpPath / outFile };
+
+
+        std::wstring cmdExecNameW{ L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters "s };
+        std::wstring commandW{ cmdExecNameW + L"\""s + mediaFilePath.generic_wstring() + L"\""s + L" > \""s + tmpFilePath.generic_wstring() + L"\""s };
+
+        //std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + L"'" + _targetTMPPath.generic_wstring() + L"'" };
+
+
+        try
+        {
+            // Specify your file name as a wide string.
+       //     std::wstring filename = L"input.mp3";
+#ifdef _WIN32
+            std::wstring f = mediaFilePath.generic_wstring();
+
+            std::wstring wide_output = getAudioMetadataJSON(f);
+            // Convert wide output to UTF-8 narrow string for printing.
+         //   std::cout << wide_output << std::endl;
+#else
+            std::string output = runFFprobe(filename);
+            std::cout << output << std::endl;
+#endif
+
+            if (status == 0)
+            {
+
+                return wide_output;
+            }
+
+        }
+        catch (const std::exception& e) {
+            std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << e.what() << std::endl;
+            std::cerr << "Error: " << e.what() << std::endl;
+        }
+
+        return L"**ERROR***";
+    }
+    FFprobeOutput GetFFprobeMetadata(const std::filesystem::path filePath) {
+        FFprobeOutput output;
+
+        // Get the UTF-8 encoded string. Depending on your implementation,
+        // u8string() might return std::string or std::u8string.
+        std::wstring widePath = filePath.wstring();
+        //std::string utf8Path = WideStringToUTF8(widePath);
+        std::string utf8Path = PlatformUtils::WideToUTF8(widePath);
+
+        AVFormatContext* fmt_ctx = nullptr;
+        int ret = avformat_open_input(&fmt_ctx, utf8Path.c_str(), nullptr, nullptr);
+        if (ret < 0) {
+            char errbuf[128];
+            av_strerror(ret, errbuf, sizeof(errbuf));
+            std::cerr << "Failed to open " << utf8Path.c_str() << ": " << errbuf << " (" << ret << ")\n";
+            return output;
+        }
+
+        if (avformat_find_stream_info(fmt_ctx, nullptr) < 0) {
+            std::cerr << "Could not find stream info\n";
+            avformat_close_input(&fmt_ctx);
+            return output;
+        }
+
+        // Format section
+        output.format = ffmpeg::GetFormatInformation(fmt_ctx, filePath);
+
+        // Streams section
+        output.streams = ffmpeg::GetStreamInformation(fmt_ctx);
+
+
+        avformat_close_input(&fmt_ctx);
+        return output;
+    }
     Format GetFormatInformation(AVFormatContext* fmt_ctx, const std::filesystem::path filePath)
     { 
         // Format section

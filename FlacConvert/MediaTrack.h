@@ -37,7 +37,6 @@ struct MediaTrack
 	//keep it last for agregation
 	std::optional<std::string> LastErroString;
 
-	static FFprobeOutput extractMetadata(const std::filesystem::path filePath);
 
 	static bool IsFileConvertable(std::filesystem::path filePath)
 	{
@@ -87,9 +86,6 @@ struct MediaTrack
 
 		return false;
 	}
-
-
-	static std::wstring ExtractMetadataFromMediaTrack(std::filesystem::path mediaFilePath, std::filesystem::path outFile);
 
 	//returns media information (json string and media objec) from a media file (on file system)
 	static std::tuple<FFprobeOutput, std::wstring> ReadMediaInfoFromFile(std::filesystem::path mediaFilePath);
