@@ -27,11 +27,7 @@
 
 
 
-
-
-
-
-std::string toJson(const FFprobeOutput& output) {
+std::string toJsonString(const FFprobeOutput& output) {
     std::ostringstream json;
 
     json << "{\n";
@@ -137,37 +133,6 @@ std::string toJson(const FFprobeOutput& output) {
     return json.str();
 }
 
-std::map<std::string, std::string> extractTags(const std::string& filename) {
-    std::map<std::string, std::string> tags;
-
-    // Initialize FFmpeg (not needed in newer versions, but safe to call)
-   // av_register_all();
-
-    // Open the file
-    AVFormatContext* fmt_ctx = nullptr;
-    if (avformat_open_input(&fmt_ctx, filename.c_str(), nullptr, nullptr) < 0) {
-        std::cerr << "Could not open file: " << filename << "\n";
-        return tags;
-    }
-
-    // Find stream info (populates metadata)
-    if (avformat_find_stream_info(fmt_ctx, nullptr) < 0) {
-        std::cerr << "Could not find stream info\n";
-        avformat_close_input(&fmt_ctx);
-        return tags;
-    }
-
-    // Extract metadata tags
-    AVDictionaryEntry* tag = nullptr;
-    while ((tag = av_dict_get(fmt_ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
-        tags[tag->key] = tag->value;
-    }
-
-    // Clean up
-    avformat_close_input(&fmt_ctx);
-    return tags;
-}
-
 
 //returns media information (json string and media objec) from a media file (on file system)
 std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::filesystem::path mediaFilePath)
@@ -177,7 +142,7 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
         if (AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI)
         {
             auto mediaInfo = FFmpeg::GetFFprobeMetadata(mediaFilePath);
-            return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJson(mediaInfo)));
+            return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJsonString(mediaInfo)));
         }
         else
         {
@@ -185,7 +150,7 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
             auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
 
             auto jsonString = FFmpeg::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
-            auto mi = MediaTrack::ParseMediaTrack(jsonString);
+            auto mi = MediaTrack::ParseFFprobeInformation(jsonString);
 
             return std::make_tuple(mi, jsonString);
         }
@@ -200,38 +165,8 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
 
 
 
-
-
-// Parse Tags from a RapidJSON Value
-Tags parseTags(const rapidjson::Value& jsonValue)
-{
-    Tags resultTags;
-    // Iterate over the object's members using MemberIterator
-    for (rapidjson::Value::ConstMemberIterator itr = jsonValue.MemberBegin(); itr != jsonValue.MemberEnd(); ++itr) {
-        // Get the key (tag name) as a string
-        std::string key = itr->name.GetString();
-
-        // Get the value, ensure it's a string, and add to the map
-        if (itr->value.IsString()) {
-            resultTags[key] = itr->value.GetString();
-        }
-        else {
-            // Handle non-string values (e.g., convert numbers to strings)
-            // For ffprobe, tags are typically strings, but this is a fallback
-            if (itr->value.IsNumber()) {
-                resultTags[key] = std::to_string(itr->value.GetDouble());
-            }
-            else
-            {
-                int  i = 0;
-            }
-            // Add more conversions if needed (e.g., bool, null)
-        }
-    }
-
-    return resultTags;
-}
-
+//Helper functions to parse a member from a JSON object
+//Parse the format section of the FFprobe output
 bool TryParseFFprobeFormat(const Value& doc, FFprobeOutput &mediaInfo)
 {
     if (doc.HasMember("format") && doc["format"].IsObject()) {
@@ -255,7 +190,7 @@ bool TryParseFFprobeFormat(const Value& doc, FFprobeOutput &mediaInfo)
 
         if (formatTag.HasMember("tags") && formatTag["tags"].IsObject()) {
             const rapidjson::Value& jsonValue = formatTag["tags"];
-            format.tags = parseTags(jsonValue);
+            format.tags = JsonUtils::GetKeyValueMap(jsonValue);
 
             {
                 //OPTIONAL - ADD popular / most used tags to direct fields
@@ -290,6 +225,8 @@ bool TryParseFFprobeFormat(const Value& doc, FFprobeOutput &mediaInfo)
     return false;
 }
 
+//Helper functions to parse a member from a JSON object
+// Parse the streams section of the FFprobe output
 bool TryParseFFprobeStreams(const Value& doc, FFprobeOutput& mediaInfo)
 {
     if (doc.HasMember("streams") && doc["streams"].IsArray()) {
@@ -302,7 +239,7 @@ bool TryParseFFprobeStreams(const Value& doc, FFprobeOutput& mediaInfo)
             stream.channels = s.HasMember("channels") && s["channels"].IsInt() ? std::optional<int>(s["channels"].GetInt()) : std::nullopt;
             stream.duration = s.HasMember("duration") && s["duration"].IsString() ? std::optional<std::string>(s["duration"].GetString()) : std::nullopt;
             if (s.HasMember("tags") && s["tags"].IsObject()) {
-                stream.tags = parseTags(s["tags"]);
+                stream.tags = JsonUtils::GetKeyValueMap(s["tags"]);
             }
             mediaInfo.streams.push_back(stream);
         }
@@ -311,7 +248,7 @@ bool TryParseFFprobeStreams(const Value& doc, FFprobeOutput& mediaInfo)
     return false;
 }
 
-FFprobeOutput MediaTrack::ParseMediaTrack(const Value& doc)
+FFprobeOutput MediaTrack::ParseFFprobeInformation(const Value& doc)
 {
     FFprobeOutput mediaInfo;
 
@@ -321,7 +258,7 @@ FFprobeOutput MediaTrack::ParseMediaTrack(const Value& doc)
     return mediaInfo;
 }
 
-FFprobeOutput MediaTrack::ParseMediaTrack(std::wstring jsonString)
+FFprobeOutput MediaTrack::ParseFFprobeInformation(std::wstring jsonString)
 {
     rapidjson::Document doc;
     std::string utf8Json = PlatformUtils::wstringToUtf8_ver2(jsonString);
@@ -333,7 +270,7 @@ FFprobeOutput MediaTrack::ParseMediaTrack(std::wstring jsonString)
         return FFprobeOutput{};
     }
 
-    auto mediaInfo = ParseMediaTrack(doc);
+    auto mediaInfo = ParseFFprobeInformation(doc);
 
     return mediaInfo;
 }

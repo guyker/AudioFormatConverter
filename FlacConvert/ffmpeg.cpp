@@ -218,7 +218,12 @@ namespace FFmpeg {
 
         return L"**ERROR***";
     }
+
+
     FFprobeOutput GetFFprobeMetadata(const std::filesystem::path filePath) {
+        // Initialize FFmpeg (not needed in newer versions, but safe to call)
+        // av_register_all();
+
         FFprobeOutput output;
 
         // Get the UTF-8 encoded string. Depending on your implementation,
@@ -280,7 +285,7 @@ namespace FFmpeg {
         }
 
         if (fmt_ctx->metadata) {
-            Tags format_tags;
+            JsonUtils::Tags format_tags;
             AVDictionaryEntry* tag = nullptr;
             while ((tag = av_dict_get(fmt_ctx->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
                 format_tags[tag->key] = tag->value;
@@ -340,7 +345,7 @@ namespace FFmpeg {
             }
 
             if (stream->metadata) {
-                Tags stream_tags;
+                JsonUtils::Tags stream_tags;
                 AVDictionaryEntry* tag = nullptr;
                 while ((tag = av_dict_get(stream->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
                     stream_tags[tag->key] = tag->value;

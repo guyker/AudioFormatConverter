@@ -15,6 +15,7 @@
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
+#include <spdlog/spdlog.h>
 
 
 namespace JsonUtils {
@@ -99,8 +100,45 @@ namespace JsonUtils {
         return std::nullopt; // Type mismatch or unsupported type
     }
 
+    // Parse Tags from a RapidJSON Value
+    Tags GetKeyValueMap(const rapidjson::Value& jsonValue)
+    {
+        Tags resultTags;
+        // Iterate over the object's members using MemberIterator
+        for (rapidjson::Value::ConstMemberIterator itr = jsonValue.MemberBegin(); itr != jsonValue.MemberEnd(); ++itr) {
+            // Get the key (tag name) as a string
+            std::string key = itr->name.GetString();
 
+            // Get the value, ensure it's a string, and add to the map
+            if (itr->value.IsString()) {
+                resultTags[key] = itr->value.GetString();
+            }
+            else {
+                // Handle non-string values (e.g., convert numbers to strings)
+                // For ffprobe, tags are typically strings, but this is a fallback
+                if (itr->value.IsNumber()) {
+                    resultTags[key] = std::to_string(itr->value.GetDouble());
+                }
+                else
+                {
+                    auto typeName = JsonUtils::TypeToString(itr->value.GetType());
+                    spdlog::error("Error: could not parse tag (GetKeyValueMap), Key name: ", key, ", type: ", typeName);
+                }
+                // Add more conversions if needed (e.g., bool, null)
+            }
+        }
 
+        return resultTags;
+    }
+
+    std::string TypeToString(rapidjson::Type type) {
+        static const std::array<const char*, 7> names = {
+            "Null", "False", "True", "Object", "Array", "String", "Number"
+        };
+        return (type >= rapidjson::kNullType && type <= rapidjson::kNumberType)
+            ? names[type]
+            : "Unknown";
+    }
 
     std::string valueToString(const rapidjson::Value& value) {
         rapidjson::StringBuffer buffer;

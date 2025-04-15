@@ -10,9 +10,14 @@
 #include <sstream>
 #include <locale>
 #include <codecvt>
+#include <map>
 
 
 namespace JsonUtils {
+    //Represents dynamic metadata tags (key-value pairs)
+    // Key-value map, keys lowercase (e.g., "artist"), values strings (e.g., "The Beatles"), from file metadata
+    using Tags = std::map<std::string, std::string>;
+
 
     // Attempts to parse a RapidJSON member into the specified type T
     // Returns std::optional<T> with the value if successful, std::nullopt if not
@@ -31,7 +36,8 @@ namespace JsonUtils {
     template std::optional<double> tryParseMember<double>(const rapidjson::Value&, const char*);
     template std::optional<bool> tryParseMember<bool>(const rapidjson::Value&, const char*);
 
-
+    std::string TypeToString(rapidjson::Type type);
+    Tags GetKeyValueMap(const rapidjson::Value& jsonValue);
 
     std::string valueToString(const rapidjson::Value& value);
     std::string escapeJsonString(const std::string& input);

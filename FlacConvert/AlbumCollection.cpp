@@ -437,7 +437,7 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
 
         for (SizeType i = 0; i < mediaTrackList.Size(); i++)
         {
-            FFprobeOutput mi = MediaTrack::ParseMediaTrack(mediaTrackList[i]);
+            FFprobeOutput mi = MediaTrack::ParseFFprobeInformation(mediaTrackList[i]);
             trackList.push_back({ mi.format.filename, CommonUtils::stringToUintmax(mi.format.size.value_or("0")), mi, L"{}" });
         }
 

@@ -29,15 +29,6 @@
 
 namespace fs = std::filesystem;
 
-//struct MediaTrack;
-
-
-	// Represents dynamic metadata tags (key-value pairs)
-//struct Tags {
-//	std::map<std::string, std::string> tags; // Key-value map, keys lowercase (e.g., "artist"), values strings (e.g., "The Beatles"), from file metadata
-//};
-
-using Tags = std::map<std::string, std::string>;
 
 // Represents the "disposition" object for streams/frames
 struct Disposition {
@@ -73,7 +64,7 @@ struct Format {
 	std::optional<int64_t> bit_rate; // Overall bitrate in bits/s, string with integer, e.g., "960000", optional
 	int probe_score{ 0 }; // Format detection confidence, integer 0-100
 
-	std::optional<Tags> tags; // Container metadata tags, e.g., "artist": "The Beatles", optional
+	std::optional<JsonUtils::Tags> tags; // Container metadata tags, e.g., "artist": "The Beatles", optional
 };
 
 // Represents an entry in the "streams" array (-show_streams)
@@ -102,7 +93,7 @@ struct Stream {
     std::optional<std::string> duration; // Duration in seconds, e.g., "123.456789", optional
     std::optional<int64_t> bit_rate; // Stream bitrate in bits/s, e.g., "960000", optional
     std::optional<Disposition> disposition; // Stream disposition flags, optional
-    std::optional<Tags> tags; // Stream-specific tags, e.g., "language": "eng", optional
+    std::optional<JsonUtils::Tags> tags; // Stream-specific tags, e.g., "language": "eng", optional
 };
 
 // Represents an entry in the "packets" array (-show_packets)
@@ -143,7 +134,7 @@ struct Program {
     int program_id{ 0 }; // Program ID, integer, e.g., 1
     int program_num{ 0 }; // Program number, integer, e.g., 1
     std::vector<int> stream_indices; // Indices of streams in this program, e.g., {0}
-    std::optional<Tags> tags; // Program-specific tags, optional
+    std::optional<JsonUtils::Tags> tags; // Program-specific tags, optional
 };
 
 // Represents an entry in the "chapters" array (-show_chapters)
@@ -154,7 +145,7 @@ struct Chapter {
     std::optional<std::string> start_time; // Start time in seconds, e.g., "0.000000", optional
     std::optional<int64_t> end; // End time in time base units, integer, e.g., 123456, optional
     std::optional<std::string> end_time; // End time in seconds, e.g., "123.456789", optional
-    std::optional<Tags> tags; // Chapter-specific tags, e.g., "title": "Intro", optional
+    std::optional<JsonUtils::Tags> tags; // Chapter-specific tags, e.g., "title": "Intro", optional
 };
 
 // Represents the "error" section (-show_error)
