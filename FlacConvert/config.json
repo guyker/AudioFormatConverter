@@ -26,6 +26,8 @@
       "dbPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac2.db"
     }
   ],
+  "UseFFmpegLibraryAPI": true,
   "MinMatchingTracksForDuplicate": 1,
-  "SizeMatchPercentageThreshold": 3
+  "SizeMatchPercentageThreshold": 3,
+  "RecursionDirectorySearchDepth": 10
 }

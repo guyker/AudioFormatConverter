@@ -68,6 +68,7 @@ struct AppSettingsJson
 	std::string WorkingDirectory{};
 	std::string DatabaseFileName{};
 
+	bool UseFFmpegLibraryAPI { true };
 	int MinMatchingTracksForDuplicate{ 1 };
 	int SizeMatchPercentageThreshold{ 3 }; // tracks are identical if the size difference is less than 3%
 	int RecursionDirectorySearchDepth{ 10 }; // max depth for recursive search
@@ -94,6 +95,7 @@ struct AppSettingsJson
 			"1.0.0",
 			AppSettingsJson::DefaultWorkingDirectory,
 			AppSettingsJson::DefaultDatabaseFileName,
+			true,
 			1, //MinMatchingTracksForDuplicate
 			3, //SizeMatchPercentageThreshold
 			10, //RecursionDirectorySearchDepth

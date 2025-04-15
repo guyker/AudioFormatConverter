@@ -391,27 +391,22 @@ std::map<std::string, std::string> extractTags(const std::string& filename) {
 std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::filesystem::path mediaFilePath)
 {
     try
-    {        
-        //return std::make_tuple(FFprobeOutput{}, L"{}");
+    {
+        if (AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI)
+        {
+            auto mediaInfo = FFmpeg::GetFFprobeMetadata(mediaFilePath);
+            return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJson(mediaInfo)));
+        }
+        else
+        {
+            std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
+            auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
 
+            auto jsonString = FFmpeg::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
+            auto mi = MediaTrack::ParseMediaTrack(jsonString);
 
-        auto mediaInfo = FFmpeg::GetFFprobeMetadata(mediaFilePath);
-
-
-  //      return std::make_tuple(FFprobeOutput{}, L"{}");
-
-        auto jsonString2 = toJson(mediaInfo);
-        //auto jsonString2 = MediaTrack::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
-
-        return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(jsonString2));
-
-        std::size_t hashNumber = std::hash<std::wstring>{}(mediaFilePath);
-        auto tmpFile = std::format("tmp_media_{}.json", hashNumber);
-
-        auto jsonString = FFmpeg::ExtractMetadataFromMediaTrack(mediaFilePath, tmpFile);
-        auto mi = MediaTrack::ParseMediaTrack(jsonString);
-
-        return std::make_tuple(mi, jsonString);
+            return std::make_tuple(mi, jsonString);
+        }
     }
     catch (const std::exception& ex) {
         std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << ex.what() << std::endl;

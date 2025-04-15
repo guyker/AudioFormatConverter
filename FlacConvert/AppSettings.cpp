@@ -127,8 +127,10 @@ std::string AppSettingsJson::toJsonString() const {
     doc.AddMember("MediaDirectoryList", mediaArray, allocator);
 
 
+    doc.AddMember("UseFFmpegLibraryAPI", UseFFmpegLibraryAPI, allocator);
     doc.AddMember("MinMatchingTracksForDuplicate", MinMatchingTracksForDuplicate, allocator);
     doc.AddMember("SizeMatchPercentageThreshold", SizeMatchPercentageThreshold, allocator);
+    doc.AddMember("RecursionDirectorySearchDepth", RecursionDirectorySearchDepth, allocator);
 
 
     // Convert document to string
@@ -216,12 +218,19 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
         }
     }
 
+    if (doc.HasMember("UseFFmpegLibraryAPI") && doc["UseFFmpegLibraryAPI"].IsBool()) {
+        SizeMatchPercentageThreshold = doc["UseFFmpegLibraryAPI"].GetBool();
+    }
     if (doc.HasMember("MinMatchingTracksForDuplicate") && doc["MinMatchingTracksForDuplicate"].IsInt()) {
         MinMatchingTracksForDuplicate = doc["MinMatchingTracksForDuplicate"].GetInt();
     }
     if (doc.HasMember("SizeMatchPercentageThreshold") && doc["SizeMatchPercentageThreshold"].IsInt()) {
         SizeMatchPercentageThreshold = doc["SizeMatchPercentageThreshold"].GetInt();
     }
+    if (doc.HasMember("RecursionDirectorySearchDepth") && doc["RecursionDirectorySearchDepth"].IsInt()) {
+        SizeMatchPercentageThreshold = doc["RecursionDirectorySearchDepth"].GetInt();
+    }
+
 
     return true;
 }
