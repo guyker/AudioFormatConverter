@@ -33,5 +33,6 @@ namespace JsonUtils {
 
 
 
-    static std::string valueToString(const rapidjson::Value& value);
+    std::string valueToString(const rapidjson::Value& value);
+    std::string escapeJsonString(const std::string& input);
 }

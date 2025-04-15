@@ -102,12 +102,32 @@ namespace JsonUtils {
 
 
 
-    static std::string valueToString(const rapidjson::Value& value) {
+    std::string valueToString(const rapidjson::Value& value) {
         rapidjson::StringBuffer buffer;
         rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
         value.Accept(writer); // Serialize the Value into the buffer
         return buffer.GetString();
     }
+
+    // Helper to escape JSON strings (basic version)
+    std::string escapeJsonString(const std::string& input) {
+        std::ostringstream oss;
+        for (char c : input) {
+            switch (c) {
+            case '"': oss << "\\\""; break;
+            case '\\': oss << "\\\\"; break;
+            case '\n': oss << "\\n"; break;
+            case '\r': oss << "\\r"; break;
+            case '\t': oss << "\\t"; break;
+            default: oss << c; break;
+            }
+        }
+        return oss.str();
+    }
+
+
+
+
 }
 
 

@@ -23,230 +23,12 @@
 
 #include "FFmpeg.h"
 
-#ifdef _WIN32
-#include <windows.h>
-// On Windows, use _wpopen/_pclose which accept wide strings.
-#define popen _wpopen
-#define pclose _pclose
-
-
 #include "PlatformUtils.h"
 
 
 
-std::wstring getAudioMetadataJSON(const std::wstring& filePath) {
-    std::wstring command = L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"" + filePath + L"\"";
-
-#ifdef _WIN32
-    command += L" 2>&1"; // Redirect stderr to stdout (Windows)
-    FILE* pipe = _wpopen(command.c_str(), L"r");
-#else
-    command += L" 2>&1"; // Redirect stderr to stdout (Linux/macOS)
-    FILE* pipe = popen(std::string(command.begin(), command.end()).c_str(), "r");
-#endif
-
-    if (!pipe) {
-        std::wcerr << L"Failed to run ffprobe!" << std::endl;
-        return L"";
-    }
-
-    std::ostringstream result;
-    char buffer[2024];
-
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result << buffer;
-    }
-
-#ifdef _WIN32
-    _pclose(pipe);
-#else
-    pclose(pipe);
-#endif
-
-    // Convert UTF-8 JSON output to wstring
-    //return CommonUtils::utf8ToWstring(result.str());
-    return CommonUtils::utf8ToWstring(result.str());
-}
 
 
-// Run ffprobe using a wide-string command and capture its output as a wide string.
-std::wstring runFFprobe(const std::wstring& filename) {
-
-    auto ret = getAudioMetadataJSON(filename);
-
-    return ret;
-
-    //// Build the command (including quoting the filename)
-    //std::wstring command = L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"";
-    //command += filename;
-    //command += L"\"";
-
-    //std::array<wchar_t, 2024> buffer;
-    //std::wstring outputWide;
-    //FILE* pipe = popen(command.c_str(), L"r");
-    //if (!pipe)
-    //    throw std::runtime_error("Failed to open pipe");
-    //while (fgetws(buffer.data(), static_cast<int>(buffer.size()), pipe))
-    //    outputWide += buffer.data();
-    //pclose(pipe);
-    //// Convert the wide-character output (assumed to be UTF‑16) to UTF‑8.
-    //return WideToUTF8_2(outputWide);
-}
-
-#else  // Linux/Unix
-
-#include <clocale>
-#include <cwchar>
-#include "FFmpeg.h"
-
-// On Linux, set the locale to a UTF‑8–compatible one and convert the wide filename using wcstombs.
-std::string runFFprobe(const std::wstring& filename) {
-    // Ensure that the locale is set to UTF‑8.
-    std::setlocale(LC_CTYPE, "en_US.UTF-8");
-
-    // Convert the wide filename to a UTF‑8 encoded narrow string.
-    size_t len = std::wcstombs(nullptr, filename.c_str(), 0);
-    if (len == static_cast<size_t>(-1))
-        throw std::runtime_error("wcstombs conversion error");
-    std::string narrowFilename(len, '\0');
-    std::wcstombs(&narrowFilename[0], filename.c_str(), len);
-
-    // Build the command.
-    std::string command = "ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"";
-    command += narrowFilename;
-    command += "\"";
-
-    std::array<char, 1024> buffer;
-    std::string output;
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe)
-        throw std::runtime_error("Failed to open pipe");
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe))
-        output += buffer.data();
-    pclose(pipe);
-    return output;
-}
-
-#endif
-
-
-
-
-
-std::string escapePath(const std::string& path) {
-    std::string result;
-    for (char c : path) {
-        if (c == ' ') result += "%20";
-        else if (c == '\'') result += "%27"; // Standard single quote
-        else if (c == '’') result += "%E2%80%99"; // Smart quote (UTF-8: E2 80 99)
-        else result += c;
-    }
-    return result;
-}
-
-std::string normalizePath(const std::string& path) {
-    std::string result = path;
-    std::replace(result.begin(), result.end(), '\\', '/');
-    return result;
-}
-
-
-std::string WideStringToUTF8(const std::wstring& wstr) {
-    if (wstr.empty()) return std::string();
-    int sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
-    std::string utf8Str(sizeNeeded, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), &utf8Str[0], sizeNeeded, nullptr, nullptr);
-    return utf8Str;
-}
-
-
-
-
-
-// Helper to escape JSON strings (basic version)
-std::string escapeJsonString(const std::string& input) {
-    std::ostringstream oss;
-    for (char c : input) {
-        switch (c) {
-        case '"': oss << "\\\""; break;
-        case '\\': oss << "\\\\"; break;
-        case '\n': oss << "\\n"; break;
-        case '\r': oss << "\\r"; break;
-        case '\t': oss << "\\t"; break;
-        default: oss << c; break;
-        }
-    }
-    return oss.str();
-}
-
-
-
-#include <string>
-#include <stdexcept>
-#include <cstdint>
-#include "PlatformUtils.h"
-
-std::string wstringToStringUtf8(const std::wstring& wstr) {
-    if (wstr.empty()) {
-        return std::string();
-    }
-
-    std::string utf8;
-    utf8.reserve(wstr.size() * 2); // Rough estimate for UTF-8 size
-
-    for (size_t i = 0; i < wstr.size(); ++i) {
-        uint32_t codepoint;
-#if defined(_WIN32)
-        // Windows: wchar_t is UTF-16 (2 bytes)
-        wchar_t wc = wstr[i];
-        if (wc >= 0xD800 && wc <= 0xDBFF) {
-            // High surrogate
-            if (i + 1 >= wstr.size()) {
-                throw std::runtime_error("Incomplete UTF-16 surrogate pair");
-            }
-            wchar_t wc2 = wstr[++i];
-            if (wc2 < 0xDC00 || wc2 > 0xDFFF) {
-                throw std::runtime_error("Invalid UTF-16 surrogate pair");
-            }
-            codepoint = 0x10000 + ((wc - 0xD800) << 10) + (wc2 - 0xDC00);
-        }
-        else if (wc >= 0xDC00 && wc <= 0xDFFF) {
-            throw std::runtime_error("Unexpected UTF-16 low surrogate");
-        }
-        else {
-            codepoint = static_cast<uint32_t>(wc);
-        }
-#else
-        // Linux/macOS: wchar_t is UTF-32 (4 bytes)
-        codepoint = static_cast<uint32_t>(wstr[i]);
-#endif
-
-        // Convert codepoint to UTF-8
-        if (codepoint <= 0x7F) {
-            utf8 += static_cast<char>(codepoint);
-        }
-        else if (codepoint <= 0x7FF) {
-            utf8 += static_cast<char>(0xC0 | ((codepoint >> 6) & 0x1F));
-            utf8 += static_cast<char>(0x80 | (codepoint & 0x3F));
-        }
-        else if (codepoint <= 0xFFFF) {
-            utf8 += static_cast<char>(0xE0 | ((codepoint >> 12) & 0x0F));
-            utf8 += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
-            utf8 += static_cast<char>(0x80 | (codepoint & 0x3F));
-        }
-        else if (codepoint <= 0x10FFFF) {
-            utf8 += static_cast<char>(0xF0 | ((codepoint >> 18) & 0x07));
-            utf8 += static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
-            utf8 += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
-            utf8 += static_cast<char>(0x80 | (codepoint & 0x3F));
-        }
-        else {
-            throw std::runtime_error("Invalid Unicode codepoint");
-        }
-    }
-
-    return utf8;
-}
 
 
 std::string toJson(const FFprobeOutput& output) {
@@ -260,10 +42,10 @@ std::string toJson(const FFprobeOutput& output) {
         json << "  \"format\": {\n";
         const Format& fmt = output.format;
 
-        json << "    \"filename\": \"" << escapeJsonString(fmt.filename) << "\",\n";
+        json << "    \"filename\": \"" << JsonUtils::escapeJsonString(fmt.filename) << "\",\n";
         json << "    \"nb_streams\": " << fmt.nb_streams << ",\n";
-        json << "    \"format_name\": \"" << escapeJsonString(fmt.format_name) << "\",\n";
-        json << "    \"format_long_name\": \"" << escapeJsonString(fmt.format_long_name) << "\"";
+        json << "    \"format_name\": \"" << JsonUtils::escapeJsonString(fmt.format_name) << "\",\n";
+        json << "    \"format_long_name\": \"" << JsonUtils::escapeJsonString(fmt.format_long_name) << "\"";
 
         if (fmt.duration) {
             json << ",\n    \"duration\": \"" << std::fixed << std::setprecision(3) << *fmt.duration << "\"";
@@ -285,7 +67,7 @@ std::string toJson(const FFprobeOutput& output) {
             bool first = true;
             for (const auto& [key, value] : fmt.tags.value()) {
                 if (!first) json << ",\n";
-                json << "      \"" << escapeJsonString(key) << "\": \"" << escapeJsonString(value) << "\"";
+                json << "      \"" << JsonUtils::escapeJsonString(key) << "\": \"" << JsonUtils::escapeJsonString(value) << "\"";
                 first = false;
             }
             json << "\n    }";
@@ -302,19 +84,19 @@ std::string toJson(const FFprobeOutput& output) {
             json << "    {\n";
             json << "      \"index\": " << s.index;
             if (s.codec_name) {
-                json << ",\n      \"codec_name\": \"" << escapeJsonString(*s.codec_name) << "\"";
+                json << ",\n      \"codec_name\": \"" << JsonUtils::escapeJsonString(*s.codec_name) << "\"";
             }
             if (s.codec_type) {
-                json << ",\n      \"codec_type\": \"" << escapeJsonString(*s.codec_type) << "\"";
+                json << ",\n      \"codec_type\": \"" << JsonUtils::escapeJsonString(*s.codec_type) << "\"";
             }
             if (s.sample_rate) {
-                json << ",\n      \"sample_rate\": \"" << escapeJsonString(*s.sample_rate) << "\"";
+                json << ",\n      \"sample_rate\": \"" << JsonUtils::escapeJsonString(*s.sample_rate) << "\"";
             }
             if (s.channels) {
                 json << ",\n      \"channels\": " << *s.channels;
             }
             if (s.channel_layout) {
-                json << ",\n      \"channel_layout\": \"" << escapeJsonString(*s.channel_layout) << "\"";
+                json << ",\n      \"channel_layout\": \"" << JsonUtils::escapeJsonString(*s.channel_layout) << "\"";
             }
             if (s.bit_rate) {
                 json << ",\n      \"bit_rate\": \"" << *s.bit_rate << "\"";
@@ -326,7 +108,7 @@ std::string toJson(const FFprobeOutput& output) {
                 json << ",\n      \"frame_size\": " << *s.frame_size;
             }
             if (s.duration) {
-                json << ",\n      \"duration\": \"" << escapeJsonString(*s.duration) << "\"";
+                json << ",\n      \"duration\": \"" << JsonUtils::escapeJsonString(*s.duration) << "\"";
             }
             if (s.start_time) {
                 json << ",\n      \"start_time\": \"" << *s.start_time << "\"";
@@ -339,7 +121,7 @@ std::string toJson(const FFprobeOutput& output) {
                 bool first = true;
                 for (const auto& [key, value] : s.tags.value()) {
                     if (!first) json << ",\n";
-                    json << "        \"" << escapeJsonString(key) << "\": \"" << escapeJsonString(value) << "\"";
+                    json << "        \"" << JsonUtils::escapeJsonString(key) << "\": \"" << JsonUtils::escapeJsonString(value) << "\"";
                     first = false;
                 }
                 json << "\n      }";
