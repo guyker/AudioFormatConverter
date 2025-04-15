@@ -106,7 +106,7 @@ TrackInfoList AlbumCollection::LoadAlbumCollectionRecursively(std::filesystem::p
     return currentDirTrackList;
 }
 
-
+//currently I have a list of async objects that fills up when I scan each album, at the end of each album, I wait for the completion of all tracks, I want something similar but at the Album list level.in another words I want to improve performance by keeping the track processing queue lenght to N(pre defince number)
 
 //Load all media media information from the preloaded album list (_AlbumList)
 size_t AlbumCollection::LoadAllMetadata(bool bAsync)
