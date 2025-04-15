@@ -53,10 +53,17 @@ namespace FFmpeg {
             return; // Skip logs above set level
         }
 
-
+        if (!fmt)
+        {
+            spdlog::error("ffmpeg_log_callback: fmt is null");
+            return;
+        }
         // Format the log message
         char buffer[1024];
-        vsnprintf(buffer, sizeof(buffer), fmt, vl);
+		if (vsnprintf(buffer, sizeof(buffer), fmt, vl) < 0) {
+			spdlog::error("ffmpeg_log_callback: vsnprintf failed");
+			return;
+		}
 
         // Remove trailing newline for cleaner logging
         std::string message = buffer;
@@ -65,8 +72,9 @@ namespace FFmpeg {
         }
 
 
+
         // Map level to string for readability
-        const char* level_str = "UNKNOWN";
+        std::string level_str = "UNKNOWN";
         switch (level) {
         case AV_LOG_PANIC:   level_str = "PANIC"; break;
         case AV_LOG_FATAL:   level_str = "FATAL"; break;
@@ -84,11 +92,39 @@ namespace FFmpeg {
         if (avcl) {
             // Assuming AVFormatContext for media files
             AVFormatContext* fmt_ctx = static_cast<AVFormatContext*>(avcl);
-            if (fmt_ctx->url) {
-                context = fmt_ctx->url;
+
+            try
+			{
+				if (fmt_ctx->streams == 0x0000000000000000 || fmt_ctx->iformat == nullptr ||  fmt_ctx->url == (char*)0x0000000100000000) // this is a workaround for the ffmpeg crash when accessing fmt_ctx->url or other null value
+				{
+					context = "N/A - 0x0000000100000000";
+				}
+                else
+                {
+                    if (fmt_ctx->url) {
+                        context = fmt_ctx->url;
+                    }
+                    else if (fmt_ctx->iformat && fmt_ctx->iformat->name) {
+                        context = fmt_ctx->iformat->name;
+                    }
+                    else
+                    {
+                        if (fmt_ctx->oformat && fmt_ctx->oformat->name) {
+                            context = fmt_ctx->oformat->name;
+                        }
+                        else
+                        {
+                            int i = 0;
+                        }
+                    }
+                }
+			}
+            catch (const std::exception& e)
+            {
+				//this is a workaround for the ffmpeg crash when accessing fmt_ctx->url or other null value
+				context += std::string{" (error accessing context)" } +  e.what();
             }
         }
-
 
         // Store in vector (thread-safe)
         {
@@ -175,8 +211,8 @@ namespace FFmpeg {
 
         }
         catch (const std::exception& e) {
-            std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << e.what() << std::endl;
-            spdlog::error("Error: ", e.what());
+            //std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << e.what() << std::endl;
+            spdlog::error("Error (GetJsonMetadataShell): ", e.what());
         }
 
         return L"**ERROR***";
