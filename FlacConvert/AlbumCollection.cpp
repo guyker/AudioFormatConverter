@@ -111,7 +111,7 @@ TrackInfoList AlbumCollection::LoadAlbumCollectionRecursively(std::filesystem::p
 //Load all media media information from the preloaded album list (_AlbumList)
 size_t AlbumCollection::LoadAllMetadata(bool bAsync)
 {
-    int albumCount = 0;
+    size_t albumCount = 0;
        
     for (auto& [albumPath, trackList] : _AlbumList)
     {
@@ -125,8 +125,10 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
 			spdlog::error("Error: Album path is not a directory or does not have a filename. " + CommonUtils::utf8string_to_string(albumPath.path().generic_u8string()));
         }
 
+
+        CommonUtils::show_progress_bar(20, "Processing...", ++albumCount, _AlbumList.size(), name);
         //Update progress indicator
-        CommonUtils::show_circular_progress(std::format("Processing... {}/{} - {}", ++albumCount, _AlbumList.size(), name));
+    //    CommonUtils::show_circular_progress(std::format("Processing... {}/{} - {}", ++albumCount, _AlbumList.size(), name));
 
         //Album tracks list holder 
         std::vector<std::tuple<MediaLoadingFuture, FFprobeOutput&, std::wstring&>> asyncFutureList;
@@ -164,7 +166,7 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
         }
     }
 
-    CommonUtils::show_circular_progress("Processing... Completed");
+    CommonUtils::show_progress_bar(20, "Processing...", ++albumCount, _AlbumList.size(), std::string{});
 
     std::cout << std::endl;
 
@@ -287,12 +289,16 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
         rapidjson::Value albumObj(rapidjson::kObjectType);
 
         // Add AlbumName
-        //std::string albumName = CommonUtils::utf8string_to_string(albumPath.path().filename().u8string());
-        std::string albumName = CommonUtils::utf8string_to_string(albumPath.path().u8string());
-        rapidjson::Value albumNameVal;
-        albumNameVal.SetString(albumName.c_str(), albumName.size(), allocator);
-        albumObj.AddMember("Album Name", albumNameVal, allocator);
+        std::string albumPathString = CommonUtils::utf8string_to_string(albumPath.path().u8string());
+        std::string albumFolderString = CommonUtils::utf8string_to_string(albumPath.path().filename().u8string());
+        
+        rapidjson::Value albumPathStringVal;
+        albumPathStringVal.SetString(albumPathString.c_str(), albumPathString.size(), allocator);
+        albumObj.AddMember("Album Path", albumPathStringVal, allocator);
 
+        rapidjson::Value albumFolderStringVal;
+        albumFolderStringVal.SetString(albumFolderString.c_str(), albumFolderString.size(), allocator);
+        albumObj.AddMember("Folder", albumFolderStringVal, allocator);
 
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
@@ -446,8 +452,12 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
             spdlog::error("Album entry {} is not an object", iAlbumCount);
             continue;
         }
-        if (!albumVal.HasMember("Album Name") || !albumVal["Album Name"].IsString()) {
-            spdlog::error("Album entry {} missing or invalid AlbumName", iAlbumCount);
+        if (!albumVal.HasMember("Album Path") || !albumVal["Album Path"].IsString()) {
+            spdlog::error("Album entry {} missing or invalid Album Path", iAlbumCount);
+            continue;
+        }
+        if (!albumVal.HasMember("Folder") || !albumVal["Folder"].IsString()) {
+            spdlog::error("Album entry {} missing or invalid Folder", iAlbumCount);
             continue;
         }
         if (!albumVal.HasMember("Tracks") || !albumVal["Tracks"].IsArray()) {
@@ -455,12 +465,15 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
             continue;
         }
 
-        std::string albumNameStr = albumVal["Album Name"].GetString();
-        std::wstring albumName = CommonUtils::utf8ToWstring(albumNameStr);
-        
+        std::string albumPathStr = albumVal["Album Path"].GetString();
+        std::wstring albumpath = CommonUtils::utf8ToWstring(albumPathStr);
+
+        std::string albumFolderStr = albumVal["Folder"].GetString();
+        std::wstring albumFolder = CommonUtils::utf8ToWstring(albumFolderStr);
+
 
         // Updated logging to reflect new album name source
-        auto albumLogStr = std::format(L"Album [{}]: {}", ++iAlbumCount, albumName);
+        auto albumLogStr = std::format(L"Album [{}]: {}", ++iAlbumCount, albumpath);
         std::wcout << albumLogStr << '\r';
 
 
@@ -481,7 +494,7 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
         }
 
         if (trackList.size() > 0) {
-            std::filesystem::directory_entry entry{ albumName };
+            std::filesystem::directory_entry entry{ albumpath };
             _AlbumList.push_back({ entry, trackList });
         }
 

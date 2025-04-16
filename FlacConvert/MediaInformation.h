@@ -52,9 +52,12 @@ struct Format {
     
     std::optional<uint64_t> file_size;
 
-	int nb_streams{ 0 }; // Number of streams, non-negative integer, e.g., 1
+    int ctx_flags{ 0 };
+    int nb_streams{ 0 }; // Number of streams, non-negative integer, e.g., 1
 	int nb_programs{ 0 }; // Number of programs, non-negative integer, e.g., 0
-	int nb_stream_groups; //OPTIONAL ????
+    unsigned int nb_stream_groups{ 0 }; //OPTIONAL ????
+	
+    unsigned int nb_chapters{ 0 }; //OPTIONAL ????
 
 	std::string format_name; // Container format short name, e.g., "flac", "mp3"
 	std::string format_long_name; // Container format descriptive name, e.g., "raw FLAC"
@@ -62,6 +65,14 @@ struct Format {
 	std::optional<double> duration; // Duration in seconds, string with decimal, e.g., "123.456789", optional
 	std::optional<std::string> size; // File size in bytes, string with integer, e.g., "12345678", optional
 	std::optional<int64_t> bit_rate; // Overall bitrate in bits/s, string with integer, e.g., "960000", optional
+
+    unsigned int packet_size{ 0 }; //The default packet size (often used for streaming data)
+    int max_delay{ -1 }; //The maximum demuxing or buffering delay (usually in microseconds)
+    int flags{ 0 };
+    __int64 probesize{ 0 };
+    __int64 max_analyze_duration{ 0 };
+
+
 	int probe_score{ 0 }; // Format detection confidence, integer 0-100
 
 	std::optional<JsonUtils::Tags> tags; // Container metadata tags, e.g., "artist": "The Beatles", optional

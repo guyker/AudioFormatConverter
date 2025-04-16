@@ -282,19 +282,41 @@ namespace FFmpeg {
 		{
 			fmt.filename = CommonUtils::utf8string_to_string(filePath.u8string());
 		}
+
+        
+        fmt.ctx_flags = fmt_ctx->ctx_flags;
         fmt.nb_streams = fmt_ctx->nb_streams;
-        fmt.format_name = fmt_ctx->iformat->name ? fmt_ctx->iformat->name : "";
-        fmt.format_long_name = fmt_ctx->iformat->long_name ? fmt_ctx->iformat->long_name : "";
+
+        fmt.nb_stream_groups = fmt_ctx->nb_stream_groups;
+        
+        fmt.nb_chapters	= fmt_ctx->nb_stream_groups;
+
+
+        if (fmt_ctx->start_time != AV_NOPTS_VALUE) {
+            fmt.start_time = fmt_ctx->start_time;
+        }
         if (fmt_ctx->duration != AV_NOPTS_VALUE) {
             fmt.duration = static_cast<double>(fmt_ctx->duration) / AV_TIME_BASE;
         }
         if (fmt_ctx->bit_rate > 0) {
             fmt.bit_rate = fmt_ctx->bit_rate;
         }
-        if (fmt_ctx->start_time != AV_NOPTS_VALUE) {
-            fmt.start_time = fmt_ctx->start_time;
-        }
+
+        fmt.packet_size = fmt_ctx->packet_size;
+        fmt.max_delay = fmt_ctx->max_delay;
+        fmt.flags = fmt_ctx->flags;
+        fmt.probesize = fmt_ctx->probesize;
+        fmt.max_analyze_duration = fmt_ctx->max_analyze_duration;
+        
+
+
+        fmt.format_name = fmt_ctx->iformat->name ? fmt_ctx->iformat->name : "";
+        fmt.format_long_name = fmt_ctx->iformat->long_name ? fmt_ctx->iformat->long_name : "";
         fmt.probe_score = fmt_ctx->probe_score;
+
+
+
+
 
         // Optional: Get file size from filesystem
         try {

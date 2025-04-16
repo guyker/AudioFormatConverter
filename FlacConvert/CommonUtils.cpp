@@ -57,7 +57,57 @@ namespace CommonUtils {
         spinner_index = (spinner_index + 1) % 4;
     }
 
-    void show_progress_bar(int total, int delay_ms) {
+	std::string getEraseLineString(int length) {
+        std::string emptyLastLineString;
+        static int last_message_length = 0;
+        if (last_message_length > 0) {
+            // Clear the last line
+            emptyLastLineString = std::string(last_message_length, ' ');
+        }
+        last_message_length = length;        
+
+        return emptyLastLineString;
+	}
+
+
+    void show_progress_bar(int total, std::string prefix, size_t count, size_t size, std::string name) {
+        const char* spinner = "|/-\\";
+        int spinner_index = 0;
+        const int bar_width = 20; // Width of the progress bar (characters)
+
+        int i = bar_width * std::min<size_t>(count, size) / size;
+
+   //     for (int i = 0; i <= total; ++i) {
+            // Calculate progress
+            int percent = (i * 100) / total;
+            int filled = (i * bar_width) / total;
+
+            // Build progress bar
+            std::string bar(bar_width, ' ');
+            for (int j = 0; j < filled; ++j) {
+                bar[j] = '=';
+            }
+
+
+            auto emprryString = getEraseLineString(name.size());
+
+            // Print bar, percentage, and spinner
+            std::cout << "\rProgress: [" << bar << "] " << percent << "% " << spinner[spinner_index] << " " << count << "/" << size << " " << emprryString << std::flush;
+            if (count <= size)
+            {
+                std::cout << "\rProgress: [" << bar << "] " << percent << "% " << spinner[spinner_index] << " " << count << "/" << size << " " << name << std::flush;
+            }
+
+            // Update spinner
+            spinner_index = (spinner_index + 1) % 4;
+
+            // Simulate work
+         //   std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+    //    }
+    }
+
+
+    void show_progress_bar2(int total, int delay_ms) {
         const char* spinner = "|/-\\";
         int spinner_index = 0;
         const int bar_width = 20; // Width of the progress bar (characters)
