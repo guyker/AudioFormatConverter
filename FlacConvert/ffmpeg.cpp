@@ -266,11 +266,22 @@ namespace FFmpeg {
         avformat_close_input(&fmt_ctx);
         return output;
     }
+
+
+
+
     Format GetFormatInformation(AVFormatContext* fmt_ctx, const std::filesystem::path filePath)
     { 
         // Format section
         Format fmt;
-        fmt.filename = filePath.generic_string();
+        if (filePath.has_filename())
+        {
+            fmt.filename = CommonUtils::utf8string_to_string(filePath.filename().u8string());
+		}
+		else
+		{
+			fmt.filename = CommonUtils::utf8string_to_string(filePath.u8string());
+		}
         fmt.nb_streams = fmt_ctx->nb_streams;
         fmt.format_name = fmt_ctx->iformat->name ? fmt_ctx->iformat->name : "";
         fmt.format_long_name = fmt_ctx->iformat->long_name ? fmt_ctx->iformat->long_name : "";

@@ -17,9 +17,12 @@ namespace CommonUtils
 
     constexpr std::array<char, 4> ProgressCircleChars = { '|', '/', '-', '\\' };
 
-    void show_circular_progress(std::string str);
+    void show_circular_progress(std::string str = "");
     void show_progress_bar(int total, int delay_ms);
 
+    inline std::string utf8string_to_string(const std::u8string& u8str) {
+        return std::string(u8str.begin(), u8str.end());
+    }
 
 
     std::wstring ToLower(const std::wstring& str);

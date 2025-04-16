@@ -118,11 +118,19 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
         std::string name = "N/A";
         if (albumPath.is_directory() && albumPath.path().has_filename())
         {
-            std::string name = PlatformUtils::WideToUTF8(albumPath.path().filename().wstring());
-           // name = albumPath.path().filename().generic_string();
+            //name = PlatformUtils::WideToUTF8(albumPath.path().filename().wstring());
+            name = CommonUtils::utf8string_to_string(albumPath.path().filename().generic_u8string());
+			//name = albumPath.path().filename().wstring();
         }
         std::string progress = std::format("Processing... {}/{} - {}", ++albumCount, _AlbumList.size(), name);
+
         CommonUtils::show_circular_progress(progress);
+		//std::cout << progress << std::endl;
+		//std::cout << progress << std::endl;
+		//std::cout << progress << std::endl;
+		//std::cout << progress << std::endl;
+		//std::cout << progress << std::endl;
+
 
         //Album tracks list holder 
         std::vector<std::tuple<MediaLoadingFuture, FFprobeOutput&, std::wstring&>> asyncFutureList;
@@ -160,7 +168,9 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
         }
     }
 
-	std::cout << std::endl;
+    CommonUtils::show_circular_progress("Processing... Completed");
+
+    std::cout << std::endl;
 
     return _AlbumList.size();
 }

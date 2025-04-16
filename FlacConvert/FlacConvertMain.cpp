@@ -231,6 +231,18 @@ int main()
   
     FFmpeg::initialize_ffmpeg_logging();
 
+#ifdef _WIN32
+#include <windows.h>
+    SetConsoleOutputCP(CP_UTF8); // For Unicode output
+    // Enable ANSI escape codes in Windows Console
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD dwMode = 0;
+    GetConsoleMode(hOut, &dwMode);
+    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    SetConsoleMode(hOut, dwMode);
+#endif
+
+
 	std::vector<MediaDirectoryElement> mediaList;
 
     std::cout << "App Settings: " << std::filesystem::path(AppSettingsJson::DefaultConfigDirectory) / AppSettingsJson::DefaultConfigFileName << std::endl;

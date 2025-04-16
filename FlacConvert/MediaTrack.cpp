@@ -153,15 +153,15 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
     }
     catch (const std::exception& ex) {
 		spdlog::error("Error (ReadMediaInfoFromFile): ", ex.what());
-  //      try
-  //      {
-  //          auto mediaInfo = FFmpeg::GetFFprobeMetadataShell(mediaFilePath);
-  //          spdlog::info("Fixed by shell execution (ReadMediaInfoFromFile-#2)");
-  //          return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJsonString(mediaInfo)));
-  //      }
-  //      catch (const std::exception& ex) {
-  //          spdlog::error("Error (ReadMediaInfoFromFile-#2): ", ex.what());
-  //      }
+        //try
+        //{
+        //    auto mediaInfo = FFmpeg::GetFFprobeMetadataShell(mediaFilePath);
+        //    spdlog::info("Fixed by shell execution (ReadMediaInfoFromFile-#2)");
+        //    return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJsonString(mediaInfo)));
+        //}
+        //catch (const std::exception& ex) {
+        //    spdlog::error("Error (ReadMediaInfoFromFile-#2): ", ex.what());
+        //}
     }
 
     return std::make_tuple(FFprobeOutput{}, L"{}");

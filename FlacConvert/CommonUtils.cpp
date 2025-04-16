@@ -42,6 +42,14 @@ namespace CommonUtils {
     }
 
     void show_circular_progress(std::string str) {
+		static int last_message_length = 0;
+		if (last_message_length > 0) {
+			// Clear the last line
+			std::string emptyLastLineString = std::string(last_message_length, ' ');
+			std::cout << "\r" << emptyLastLineString.c_str() << std::flush;
+		}
+		last_message_length = str.length() + 2; // +2 for spinner and space
+
         const char* spinner = "|/-\\";
         static int spinner_index = 0;
 
