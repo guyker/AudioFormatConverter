@@ -693,11 +693,11 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(const std::vec
                 }
 
                 if (isDuplicate) {
-                    logger->info("FOUND DUPPPPPPPPPPPPPPPPPPPPPPPPPP");
-                    //logger->info("Duplicate albums: {} and {} (album: {}, artist: {})",
-                    //    dir1.path().string(), dir2.path().string(),
-                    //    key.album.empty() ? "(unknown)" : key.album,
-                    //    key.artist.empty() ? "(unknown)" : key.artist);
+                    logger->info("Duplicate albums: {} and {} (album: {}, artist: {})",
+                        CommonUtils::utf8string_to_string(dir1.path().u8string()), 
+                        CommonUtils::utf8string_to_string(dir2.path().u8string()),
+                        key.album.empty() ? "(unknown)" : key.album,
+                        key.artist.empty() ? "(unknown)" : key.artist);
 
                     duplicatedAlbumList.push_back({ dir1.path().wstring(), dir2.path().wstring() });
                 }
