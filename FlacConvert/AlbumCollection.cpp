@@ -118,19 +118,15 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
         std::string name = "N/A";
         if (albumPath.is_directory() && albumPath.path().has_filename())
         {
-            //name = PlatformUtils::WideToUTF8(albumPath.path().filename().wstring());
             name = CommonUtils::utf8string_to_string(albumPath.path().filename().generic_u8string());
-			//name = albumPath.path().filename().wstring();
         }
-        std::string progress = std::format("Processing... {}/{} - {}", ++albumCount, _AlbumList.size(), name);
+        else
+        {
+			spdlog::error("Error: Album path is not a directory or does not have a filename. " + CommonUtils::utf8string_to_string(albumPath.path().generic_u8string()));
+        }
 
-        CommonUtils::show_circular_progress(progress);
-		//std::cout << progress << std::endl;
-		//std::cout << progress << std::endl;
-		//std::cout << progress << std::endl;
-		//std::cout << progress << std::endl;
-		//std::cout << progress << std::endl;
-
+        //Update progress indicator
+        CommonUtils::show_circular_progress(std::format("Processing... {}/{} - {}", ++albumCount, _AlbumList.size(), name));
 
         //Album tracks list holder 
         std::vector<std::tuple<MediaLoadingFuture, FFprobeOutput&, std::wstring&>> asyncFutureList;
@@ -282,10 +278,22 @@ void SaveAlbumsAsJSONFile_LasrError(std::list<MediaTrack> mediaTracks, std::file
 bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
 {
     rapidjson::Document mediaDoc;
-    mediaDoc.SetObject();
+    mediaDoc.SetArray(); // Top-level array for albums
+    rapidjson::Document::AllocatorType& allocator = mediaDoc.GetAllocator();
 
     for (auto [albumPath, trackList] : _AlbumList)
     {
+        // Create album object
+        rapidjson::Value albumObj(rapidjson::kObjectType);
+
+        // Add AlbumName
+        //std::string albumName = CommonUtils::utf8string_to_string(albumPath.path().filename().u8string());
+        std::string albumName = CommonUtils::utf8string_to_string(albumPath.path().u8string());
+        rapidjson::Value albumNameVal;
+        albumNameVal.SetString(albumName.c_str(), albumName.size(), allocator);
+        albumObj.AddMember("Album Name", albumNameVal, allocator);
+
+
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
 
@@ -325,39 +333,26 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
 
         if (trackMediaArray.Size() > 0)
         {
-            try
-            {
-                ////track list exists add album
-                //std::string name = albumPath.path().generic_string();
-                //Value key(name.c_str(), mediaDoc.GetAllocator());
-                //mediaDoc.AddMember(key, trackMediaArray, mediaDoc.GetAllocator());
+            // Add Tracks to album
+            albumObj.AddMember("Tracks", trackMediaArray, allocator);
 
+            // Add album object to top-level array (no key)
+            mediaDoc.PushBack(albumObj, allocator);
 
+            //try
+            //{
+            //    // Add Tracks to album
+            //    albumObj.AddMember("Tracks", trackMediaArray, allocator);
 
-                try
-                {
-                    //track list exists add album
-                    std::wstring name = albumPath.path().wstring();
-                    std::string utf8Key = PlatformUtils::wstringToUtf8_ver2(name);
-                    
-
-                    Value key(utf8Key.c_str(), mediaDoc.GetAllocator());
-                    mediaDoc.AddMember(key, trackMediaArray, mediaDoc.GetAllocator());
-                }
-                catch (const std::exception& ex) {
-                    std::wcout << " ### EXCEOTION parsing json from ffmpeg: " << albumPath.path() << std::endl << ex.what() << std::endl;
-                }
-
-            }
-            catch (...)
-            {
-                int i = 0;
-            }
+            //    // Add album object to top-level array (no key)
+            //    mediaDoc.PushBack(albumObj, allocator);
+            //}
+            //catch (const std::exception& ex)
+            //{
+            //    spdlog::error("Exception adding album {}: {}", albumName, ex.what());
+            //}
         }
     }
-
-	SaveAlbumsAsJSONFile_LasrError(SaveAlbumsAsJSON_LasrError, path);
-    SaveAlbumsAsJSONFile_FFmpegError(path);
 
     if (fs::exists(path)) {
         std::error_code ec;
@@ -383,6 +378,11 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
         spdlog::error("Unable to open file for writing");
         return false;
     }
+
+
+    SaveAlbumsAsJSONFile_LasrError(SaveAlbumsAsJSON_LasrError, path);
+    SaveAlbumsAsJSONFile_FFmpegError(path);
+
 
     return true;
 }
@@ -427,33 +427,60 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
         return false;
     }
 
-    bool isObject = doc.IsObject();
-    auto jsonObject = doc.GetObj();
-
+    //bool isObject = doc.IsObject();
+    //auto jsonObject = doc.GetObj();
+    // 
+    //Check for array instead of object to match new JSON structure
+    if (!doc.IsArray()) {
+        spdlog::error("JSON root is not an array");
+        return false;
+    }
 
     //Albums
     int iAlbumCount = 0;
-    for (auto itr = jsonObject.begin(); itr != jsonObject.end(); itr++)
-    {
+    for (const auto& albumVal : doc.GetArray()) {
         TrackInfoList trackList;
-        std::wstring albumName = CommonUtils::utf8ToWstring(itr->name.GetString());
-        auto mediaTrackList = itr->value.GetArray();
+
+        // Validate that albumVal is an object with required fields
+        if (!albumVal.IsObject()) {
+            spdlog::error("Album entry {} is not an object", iAlbumCount);
+            continue;
+        }
+        if (!albumVal.HasMember("Album Name") || !albumVal["Album Name"].IsString()) {
+            spdlog::error("Album entry {} missing or invalid AlbumName", iAlbumCount);
+            continue;
+        }
+        if (!albumVal.HasMember("Tracks") || !albumVal["Tracks"].IsArray()) {
+            spdlog::error("Album entry {} missing or invalid Tracks array", iAlbumCount);
+            continue;
+        }
+
+        std::string albumNameStr = albumVal["Album Name"].GetString();
+        std::wstring albumName = CommonUtils::utf8ToWstring(albumNameStr);
         
 
+        // Updated logging to reflect new album name source
         auto albumLogStr = std::format(L"Album [{}]: {}", ++iAlbumCount, albumName);
-        //std::cout << albumLogStr << std::endl;
         std::wcout << albumLogStr << '\r';
 
 
-        for (SizeType i = 0; i < mediaTrackList.Size(); i++)
-        {
+        const auto& mediaTrackList = albumVal["Tracks"].GetArray();
+        for (SizeType i = 0; i < mediaTrackList.Size(); i++) {
             FFprobeOutput mi = MediaTrack::ParseFFprobeInformation(mediaTrackList[i]);
-            trackList.push_back({ mi.format.filename, CommonUtils::stringToUintmax(mi.format.size.value_or("0")), mi, L"{}" });
+            //Derive track filename from FFprobeOutput or use fallback
+            std::wstring trackFilename = mi.format.filename.empty() ?
+                L"track_" + std::to_wstring(i) :
+                std::filesystem::path(CommonUtils::utf8ToWstring(mi.format.filename)).filename().wstring();
+            trackList.push_back({
+                trackFilename,
+                CommonUtils::stringToUintmax(mi.format.size.value_or("0")),
+                mi,
+                L"{}", // mediaInfoString (empty, as JSON is parsed into FFprobeOutput)
+                std::nullopt // lastError
+                });
         }
 
-        if (trackList.size() > 0)
-        {
-            //_AlbumList.push_back({ entry, trackList });
+        if (trackList.size() > 0) {
             std::filesystem::directory_entry entry{ albumName };
             _AlbumList.push_back({ entry, trackList });
         }
@@ -666,10 +693,12 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(const std::vec
                 }
 
                 if (isDuplicate) {
-                    logger->info("Duplicate albums: {} and {} (album: {}, artist: {})",
-                        dir1.path().string(), dir2.path().string(),
-                        key.album.empty() ? "(unknown)" : key.album,
-                        key.artist.empty() ? "(unknown)" : key.artist);
+                    logger->info("FOUND DUPPPPPPPPPPPPPPPPPPPPPPPPPP");
+                    //logger->info("Duplicate albums: {} and {} (album: {}, artist: {})",
+                    //    dir1.path().string(), dir2.path().string(),
+                    //    key.album.empty() ? "(unknown)" : key.album,
+                    //    key.artist.empty() ? "(unknown)" : key.artist);
+
                     duplicatedAlbumList.push_back({ dir1.path().wstring(), dir2.path().wstring() });
                 }
             }
