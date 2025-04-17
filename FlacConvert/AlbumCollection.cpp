@@ -86,7 +86,7 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
             }
         }
 
-        spdlog::info("First pass: Completed, found {} albums [{}]", albumMap.size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        spdlog::info("First pass: Completed, found {} Folders [{}]", albumMap.size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();
 
 
@@ -143,7 +143,7 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
         spdlog::info("Third pass: Collecting Metadata...");
         auto nAlbums = LoadAllMetadata(AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
 
-        spdlog::info("Third pass: Completed, {} Albums [{}]", _AlbumList.size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        spdlog::info("Third pass: Completed, ffmpeg issues: {} [{}]", FFmpeg::get_ffmpeg_logs().size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();
     }
     else
