@@ -170,7 +170,7 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
     //guyguy review after loading changes
 
     auto appSettingPtr = AppSettingsJson::AppSetting();
-    fs::path databasePath = fs::path(appSettingPtr->WorkingDirectory) / fs::path(appSettingPtr->DatabaseFileName);
+    fs::path databasePath = fs::path(appSettingPtr->OutDirectory) / fs::path(appSettingPtr->DatabaseFileName);
 
     AlbumCollection albumCollection;
 
@@ -246,7 +246,7 @@ int main()
 	std::vector<MediaDirectoryElement> mediaList;
 
     std::cout << "App Settings: " << std::filesystem::path(AppSettingsJson::DefaultConfigDirectory) / AppSettingsJson::DefaultConfigFileName << std::endl;
-    std::cout << "Working directory: " << appSettingPtr->WorkingDirectory << std::endl;
+    std::cout << "Working directory: " << appSettingPtr->OutDirectory << std::endl;
     std::cout << "Database file name: " << appSettingPtr->DatabaseFileName << std::endl;
     std::cout << "Media Libraries: " << std::endl;
 	for (auto& mediaEntry : appSettingPtr->MediaDirectoryList)

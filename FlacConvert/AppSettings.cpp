@@ -12,7 +12,7 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSettingsInstance = nullptr;
 //{
 //	std::shared_ptr<AppSettingsJson> appSettingPtr = std::make_shared<AppSettingsJson>();
 //	appSettingPtr->Version = "1.0.0";
-//	appSettingPtr->WorkingDirectory = OUTPUT_PATH;
+//	appSettingPtr->OutDirectory = OUTPUT_PATH;
 //	appSettingPtr->DatabaseFileName = "all_albums.db";
 //	appSettingPtr->FLACSettings.ffmpeg_exe_name = L"ffmpeg";
 //	appSettingPtr->FLACSettings.ffmpeg_arguments = L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats";
@@ -105,7 +105,7 @@ std::string AppSettingsJson::toJsonString() const {
     rapidjson::Document::AllocatorType& allocator = doc.GetAllocator();
 
     doc.AddMember("Version", rapidjson::Value(Version.c_str(), allocator), allocator);
-    doc.AddMember("WorkingDirectory", rapidjson::Value(WorkingDirectory.c_str(), allocator), allocator);
+    doc.AddMember("OutDirectory", rapidjson::Value(OutDirectory.c_str(), allocator), allocator);
     doc.AddMember("DatabaseFileName", rapidjson::Value(DatabaseFileName.c_str(), allocator), allocator);
 
     // Serialize FLACEncodingSettings
@@ -183,8 +183,8 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
         Version = doc["Version"].GetString();
     }
     
-    if (doc.HasMember("WorkingDirectory") && doc["WorkingDirectory"].IsString()) {
-        WorkingDirectory = doc["WorkingDirectory"].GetString();
+    if (doc.HasMember("OutDirectory") && doc["OutDirectory"].IsString()) {
+        OutDirectory = doc["OutDirectory"].GetString();
     }
     if (doc.HasMember("DatabaseFileName") && doc["DatabaseFileName"].IsString()) {
         DatabaseFileName = doc["DatabaseFileName"].GetString();

@@ -54,8 +54,9 @@ struct AppSettingsJson
 {
 	static constexpr bool isCustomAppConfigPath = true;
 
-	static constexpr const char* DefaultWorkingDirectory = "\\\\?\\R:\\tmp\\24";
-	static constexpr const char* DefaultConfigDirectory = isCustomAppConfigPath ? DefaultWorkingDirectory : nullptr;
+	static constexpr const char* DefaultTMPDirectory = nullptr;
+	static constexpr const char* DefaultOutDirectory = "\\\\?\\R:\\tmp\\24";
+	static constexpr const char* DefaultConfigDirectory = isCustomAppConfigPath ? DefaultOutDirectory : nullptr;
 
 	static constexpr const char* DefaultConfigFileName = "config.json";
 	static constexpr const char* DefaultDatabaseFileName = "all_albums.db";
@@ -64,7 +65,7 @@ struct AppSettingsJson
 
 	std::string Version{ "1.0.0" };
 	
-	std::string WorkingDirectory{};
+	std::string OutDirectory{};
 	std::string DatabaseFileName{};
 
 	bool UseAsyncFFmpegCalls { true };
@@ -88,12 +89,10 @@ struct AppSettingsJson
 
 	static AppSettingsJson GetDefaultSettings()
 	{
-		auto eerr = new MediaDirectoryElement{ true, "\\\\?\\R:\\tmp\\24", "MediaResult_flac_result.json" };
-
 		AppSettingsJson appSettingsJson
 		{	
 			"1.0.0",
-			AppSettingsJson::DefaultWorkingDirectory,
+			AppSettingsJson::DefaultOutDirectory,
 			AppSettingsJson::DefaultDatabaseFileName,
 			true, //UseAsyncFFmpegCalls
 			true, //UseFFmpegLibraryAPI

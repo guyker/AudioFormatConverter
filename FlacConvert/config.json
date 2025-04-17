@@ -1,6 +1,6 @@
 {
   "Version": "1.0.0",
-  "WorkingDirectory": "\\\\?\\R:\\tmp\\24",
+  "OutDirectory": "\\\\?\\R:\\tmp\\24",
   "DatabaseFileName": "all_albums.db",
   "FLACSettings": {
     "ffmpeg_exe_name": "ffmpeg",

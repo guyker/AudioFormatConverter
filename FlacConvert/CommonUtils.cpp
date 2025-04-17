@@ -48,7 +48,7 @@ namespace CommonUtils {
 			std::string emptyLastLineString = std::string(last_message_length, ' ');
 			std::cout << "\r" << emptyLastLineString.c_str() << std::flush;
 		}
-		last_message_length = str.length() + 2; // +2 for spinner and space
+		last_message_length = static_cast<int>(str.length()) + 2; // +2 for spinner and space
 
         const char* spinner = "|/-\\";
         static int spinner_index = 0;
@@ -75,35 +75,32 @@ namespace CommonUtils {
         int spinner_index = 0;
         const int bar_width = 20; // Width of the progress bar (characters)
 
-        int i = bar_width * std::min<size_t>(count, size) / size;
+        auto normalized_count = std::min<size_t>(count, size);
+        int i = bar_width * normalized_count / size;
 
-   //     for (int i = 0; i <= total; ++i) {
-            // Calculate progress
-            int percent = (i * 100) / total;
-            int filled = (i * bar_width) / total;
+        int percent = (i * 100) / total;
+        int filled = (i * bar_width) / total;
 
-            // Build progress bar
-            std::string bar(bar_width, ' ');
-            for (int j = 0; j < filled; ++j) {
-                bar[j] = '=';
-            }
+        // Build progress bar
+        std::string bar(bar_width, ' ');
+        for (int j = 0; j < filled; ++j) {
+            bar[j] = '=';
+        }
 
+        auto emprryString = getEraseLineString(static_cast<int>(name.size()));
 
-            auto emprryString = getEraseLineString(name.size());
+        // Print bar, percentage, and spinner
+        std::cout << "\rProgress: [" << bar << "] " << percent << "% " << spinner[spinner_index] << " " << normalized_count << "/" << size << " " << emprryString << std::flush;
+        if (count <= size)
+        {
+            std::cout << "\rProgress: [" << bar << "] " << percent << "% " << spinner[spinner_index] << " " << normalized_count << "/" << size << " " << name << std::flush;
+        }
 
-            // Print bar, percentage, and spinner
-            std::cout << "\rProgress: [" << bar << "] " << percent << "% " << spinner[spinner_index] << " " << count << "/" << size << " " << emprryString << std::flush;
-            if (count <= size)
-            {
-                std::cout << "\rProgress: [" << bar << "] " << percent << "% " << spinner[spinner_index] << " " << count << "/" << size << " " << name << std::flush;
-            }
+        // Update spinner
+        spinner_index = (spinner_index + 1) % 4;
 
-            // Update spinner
-            spinner_index = (spinner_index + 1) % 4;
-
-            // Simulate work
-         //   std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-    //    }
+        // Simulate work
+     //   std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
     }
 
 
