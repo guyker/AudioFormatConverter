@@ -43,11 +43,25 @@ std::string GetDurationinString(auto time1, auto time2)
 	}
     else if (duration < 1000)
     {
+		//less than 1 second
         return std::to_string(duration) + " mSec";
     }
-    else
+    else if (duration < 1000 * 60)
     {
+		//lss than 1 minute
         return std::to_string(duration / 1000) + " sec";
+    }
+    else if (duration < 1000 * 60 * 60)
+    {
+		//less than 1 hour
+		return std::to_string(duration / 1000 / 60) + " min, " + std::to_string((duration / 1000) - ((duration / 1000 / 60) * 1000)) + " sec";
+    }
+    else
+    { 
+		//more than 1 hour
+		return std::to_string(duration / 1000 / 60 / 60) + " hours, " +
+			std::to_string((duration / 1000 / 60) - ((duration / 1000 / 60 / 60) * 60)) + " min, " +
+			std::to_string((duration / 1000) - ((duration / 1000 / 60) * 1000)) + " sec";
     }
 }
 

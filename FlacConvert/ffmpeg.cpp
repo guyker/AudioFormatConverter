@@ -49,6 +49,10 @@ namespace FFmpeg {
 
 
     void ffmpeg_log_callback(void* avcl, int level, const char* fmt, va_list vl) {
+
+		return; // Disable logging for now
+
+		// Check if the log level is above the set level
         if (level > av_log_get_level()) {
             return; // Skip logs above set level
         }
