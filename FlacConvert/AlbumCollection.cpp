@@ -27,14 +27,143 @@ using namespace rapidjson;
 
 
 
+long long GetMilliFromDuration(auto time1, auto time2)
+{
+    auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(time2 - time1).count();
+
+    return delta;
+}
+
+std::string GetDurationinString(auto time1, auto time2)
+{
+    auto duration = GetMilliFromDuration(time1, time2);
+    if (duration < 0)
+    {
+        return "[0?]";
+	}
+    else if (duration < 1000)
+    {
+        return std::to_string(duration) + " mSec";
+    }
+    else
+    {
+        return std::to_string(duration / 1000) + " sec";
+    }
+}
+
+
+bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata) {
+    
+    std::chrono::steady_clock::time_point startTimePoint = std::chrono::steady_clock::now();
+	//std::chrono::steady_clock::time_point endLoadTime = startLoadTime;
+    spdlog::info("===Loading album collection from storage===");
+
+    // Clear existing albums
+    _AlbumList.clear();
+
+    // Map to collect tracks per folder
+    std::map<fs::path, TrackInfoList> albumMap;
+
+    try {
+        spdlog::info("First pass: Find all folders...");
+
+        // First pass: Find all folders
+        for (const auto& entry : fs::recursive_directory_iterator(
+            albumCollectionDirPath, fs::directory_options::skip_permission_denied)) {
+            try {
+                auto relativePath = fs::relative(entry.path(), albumCollectionDirPath);
+                int depth = std::distance(relativePath.begin(), relativePath.end());
+                if (depth > AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth) {
+                    continue;
+                }
+                if (entry.is_directory()) {
+                    albumMap[entry.path()];
+                }
+            }
+            catch (const fs::filesystem_error& e) {
+                spdlog::error("Error accessing {}: {}",
+                    CommonUtils::utf8string_to_string(entry.path().u8string()), e.what());
+            }
+        }
+
+        spdlog::info("First pass: Completed, found {} albums [{}]", albumMap.size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        startTimePoint = std::chrono::steady_clock::now();
+
+
+        spdlog::info("Second pass: Collect tracks one level deep...");
+        // Second pass: Collect files one level deep
+        for (auto& [folderPath, trackList] : albumMap) {
+            try {
+                for (const auto& entry : fs::directory_iterator(
+                    folderPath, fs::directory_options::skip_permission_denied)) {
+                    if (entry.is_regular_file() && MediaTrack::IsFileAcceptedAudioFile(entry)) {
+                        uintmax_t fileSize = 0;
+                        try {
+                            fileSize = fs::file_size(entry.path());
+                        }
+                        catch (const fs::filesystem_error& e) {
+                            spdlog::error("Error getting file size for {}: {}",
+                                CommonUtils::utf8string_to_string(entry.path().u8string()), e.what());
+                        }
+                        trackList.push_back({
+                            entry.path().filename().wstring(),
+                            fileSize,
+                            FFprobeOutput{},
+                            L"{}",
+                            std::nullopt
+                            });
+                    }
+                }
+            }
+            catch (const fs::filesystem_error& e) {
+                spdlog::error("Error iterating {}: {}",
+                    CommonUtils::utf8string_to_string(folderPath.u8string()), e.what());
+            }
+        }
+
+        // Convert map to _AlbumList
+        for (auto& [albumPath, trackList] : albumMap) {
+            if (!trackList.empty()) {
+                _AlbumList.emplace_back(fs::directory_entry(albumPath), std::move(trackList));
+            }
+        }
+
+        spdlog::info("Second pass: Completed, {} Albums [{}]", _AlbumList.size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        startTimePoint = std::chrono::steady_clock::now();
+
+    }
+    catch (const fs::filesystem_error& e) {
+        spdlog::error("Error iterating {}: {}",
+            CommonUtils::utf8string_to_string(albumCollectionDirPath.u8string()), e.what());
+        return false;
+    }
+
+
+    if (bIncludeMetadata) {
+        spdlog::info("Third pass: Collecting Metadata...");
+        auto nAlbums = LoadAllMetadata(AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+
+        spdlog::info("Third pass: Completed, {} Albums [{}]", _AlbumList.size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        startTimePoint = std::chrono::steady_clock::now();
+    }
+    else
+    {
+        spdlog::warn("Third pass: [skipped]");
+    }
+
+    return true;
+}
+
 //Load album collection from a directory into _AlbumList
 // 1. loads album and media tracs
 // 2. [Optionally] load metadat for individual tracks
-bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata)
+bool AlbumCollection::LoadAlbumCollection_OLD(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata)
 {
     auto startTime = std::chrono::steady_clock::now();
     
     spdlog::info("Scanning collection...");
+
+	GetNumberOfItemsInFolder(albumCollectionDirPath, AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth);
 
     //Scan directory and load all tracks location
     LoadAlbumCollectionRecursively(albumCollectionDirPath, AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth);
@@ -54,6 +183,64 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
     return true;
 }
 
+struct DirectoryContents {
+    std::vector<fs::path> files;
+    std::vector<fs::path> folders;
+    std::mutex mutex;
+
+    void add_file(const fs::path& path) {
+        std::lock_guard<std::mutex> lock(mutex);
+        files.push_back(path);
+    }
+
+    void add_folder(const fs::path& path) {
+        std::lock_guard<std::mutex> lock(mutex);
+        folders.push_back(path);
+    }
+};
+
+
+#include <filesystem>
+#include <vector>
+#include <string>
+#include <execution>
+#include <mutex>
+#include <iostream>
+
+
+std::pair<long long, long long> AlbumCollection::GetNumberOfItemsInFolder(std::filesystem::path rootPath, int depth)
+{
+    DirectoryContents contents;
+    std::vector<fs::path> entries;
+
+    // Collect all entries first
+    try {
+        for (const auto& entry : fs::recursive_directory_iterator(
+            rootPath, fs::directory_options::skip_permission_denied)) {
+            entries.push_back(entry.path());
+        }
+    }
+    catch (const fs::filesystem_error& e) {
+        std::cerr << "Error iterating " << rootPath.string() << ": " << e.what() << '\n';
+    }
+
+    // Process entries in parallel
+    std::for_each(std::execution::par, entries.begin(), entries.end(), [&](const fs::path& path) {
+        try {
+            if (fs::is_regular_file(path)) {
+                contents.add_file(path);
+            }
+            else if (fs::is_directory(path)) {
+                contents.add_folder(path);
+            }
+        }
+        catch (const fs::filesystem_error& e) {
+            std::cerr << "Error accessing " << path.string() << ": " << e.what() << '\n';
+        }
+        });
+
+    return { contents.folders.size(), contents.files.size() };
+}
 
 
 

@@ -69,6 +69,20 @@ namespace CommonUtils {
         return emptyLastLineString;
 	}
 
+    //void update_progress(spdlog::logger& logger, float progress) {
+    //    static std::mutex mtx;
+    //    std::lock_guard<std::mutex> lock(mtx);
+
+    //    int bar_width = 20;
+    //    int pos = bar_width * progress;
+
+    //    logger.info("\r[{0:.<{1}}] {2:>3}%",
+    //        std::string(pos, '='),
+    //        bar_width,
+    //        int(progress * 100.0));
+
+    //    std::fflush(stdout);
+    //}
 
     void show_progress_bar(int total, std::string prefix, size_t count, size_t size, std::string name) {
         const char* spinner = "|/-\\";
