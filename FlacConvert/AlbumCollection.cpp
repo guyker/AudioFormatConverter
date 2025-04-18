@@ -155,7 +155,10 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
 
     if (bIncludeMetadata) {
         spdlog::info("Third pass: Collecting Metadata...");
-        auto nAlbums = LoadAllMetadata(_AlbumList, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+
+		auto albumListPtr = std::make_shared<DirectoryContentEntryList>(_AlbumList);
+
+        auto nAlbums = LoadAllMetadata(albumListPtr, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
 
         spdlog::info("Third pass: Completed, ffmpeg issues: {} [{}]", FFmpeg::get_ffmpeg_logs().size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();
@@ -283,11 +286,11 @@ TrackInfoList AlbumCollection::LoadAlbumCollectionRecursively(std::filesystem::p
 //currently I have a list of async objects that fills up when I scan each album, at the end of each album, I wait for the completion of all tracks, I want something similar but at the Album list level.in another words I want to improve performance by keeping the track processing queue lenght to N(pre defince number)
 
 //Load all media media information from the preloaded album list (albumList)
-size_t AlbumCollection::LoadAllMetadata(DirectoryContentEntryList albumList, bool bAsync)
+size_t AlbumCollection::LoadAllMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool bAsync)
 {
     size_t albumCount = 0;
        
-    for (auto& [albumPath, trackList] : albumList)
+    for (auto& [albumPath, trackList] : *albumListPtr)
     {
         std::string name = "N/A";
         if (albumPath.is_directory() && albumPath.path().has_filename())
@@ -300,7 +303,7 @@ size_t AlbumCollection::LoadAllMetadata(DirectoryContentEntryList albumList, boo
         }
 
 
-        CommonUtils::show_progress_bar(20, "Processing...", ++albumCount, albumList.size(), name);
+        CommonUtils::show_progress_bar(20, "Processing...", ++albumCount, albumListPtr->size(), name);
         //Update progress indicator
     //    CommonUtils::show_circular_progress(std::format("Processing... {}/{} - {}", ++albumCount, albumList.size(), name));
 
@@ -340,11 +343,16 @@ size_t AlbumCollection::LoadAllMetadata(DirectoryContentEntryList albumList, boo
         }
     }
 
-    CommonUtils::show_progress_bar(20, "Processing...", ++albumCount, albumList.size(), std::string{});
+    CommonUtils::show_progress_bar(20, "Processing...", ++albumCount, albumListPtr->size(), std::string{});
 
     std::cout << std::endl;
 
-    return albumList.size();
+
+    //ac.SaveAlbumsAsJSON(mediaEntry.resultPath); // save to json
+	_AlbumList = *albumListPtr; /// tmp UNTILL WE SAVE IN PARTS
+
+
+    return albumListPtr->size();
 }
 
 void SaveAlbumsAsJSONFile_FFmpegError(std::filesystem::path outPath)
