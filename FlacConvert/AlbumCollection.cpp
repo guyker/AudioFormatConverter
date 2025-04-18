@@ -86,9 +86,9 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
     std::map<fs::path, TrackInfoList> albumMap;
 
     try {
-        spdlog::info("First pass: Find all folders...");
+        spdlog::info("First pass: Find all folders, Please wait (might take a few minutes)...");
 
-        // First pass: Find all folders
+		// First pass: Find all folders - Discove folders
         for (const auto& entry : fs::recursive_directory_iterator(
             albumCollectionDirPath, fs::directory_options::skip_permission_denied)) {
             try {
@@ -102,8 +102,7 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
                 }
             }
             catch (const fs::filesystem_error& e) {
-                spdlog::error("Error accessing {}: {}",
-                    CommonUtils::utf8string_to_string(entry.path().u8string()), e.what());
+                spdlog::error("Error accessing {}: {}", CommonUtils::utf8string_to_string(entry.path().u8string()), e.what());
             }
         }
 
@@ -118,21 +117,15 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
                 for (const auto& entry : fs::directory_iterator(
                     folderPath, fs::directory_options::skip_permission_denied)) {
                     if (entry.is_regular_file() && MediaTrack::IsFileAcceptedAudioFile(entry)) {
-                        uintmax_t fileSize = 0;
+                        uintmax_t fileSize{ 0 };
                         try {
                             fileSize = fs::file_size(entry.path());
                         }
                         catch (const fs::filesystem_error& e) {
-                            spdlog::error("Error getting file size for {}: {}",
-                                CommonUtils::utf8string_to_string(entry.path().u8string()), e.what());
+                            spdlog::error("Error getting file size for {}: {}", CommonUtils::utf8string_to_string(entry.path().u8string()), e.what());
                         }
-                        trackList.push_back({
-                            entry.path().filename().wstring(),
-                            fileSize,
-                            FFprobeOutput{},
-                            L"{}",
-                            std::nullopt
-                            });
+
+                        trackList.push_back({ entry.path().filename().wstring(), fileSize, FFprobeOutput{}, L"{}", std::nullopt });
                     }
                 }
             }
@@ -162,7 +155,7 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
 
     if (bIncludeMetadata) {
         spdlog::info("Third pass: Collecting Metadata...");
-        auto nAlbums = LoadAllMetadata(AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+        auto nAlbums = LoadAllMetadata(_AlbumList, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
 
         spdlog::info("Third pass: Completed, ffmpeg issues: {} [{}]", FFmpeg::get_ffmpeg_logs().size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();
@@ -175,34 +168,7 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
     return true;
 }
 
-//Load album collection from a directory into _AlbumList
-// 1. loads album and media tracs
-// 2. [Optionally] load metadat for individual tracks
-bool AlbumCollection::LoadAlbumCollection_OLD(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata)
-{
-    auto startTime = std::chrono::steady_clock::now();
-    
-    spdlog::info("Scanning collection...");
 
-	GetNumberOfItemsInFolder(albumCollectionDirPath, AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth);
-
-    //Scan directory and load all tracks location
-    LoadAlbumCollectionRecursively(albumCollectionDirPath, AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth);
-
-    auto endLoadTime = std::chrono::steady_clock::now();    
-    spdlog::info("Completed, Found {} Albums, processing time: [{}ms]", _AlbumList.size(), std::chrono::duration_cast<std::chrono::milliseconds>(endLoadTime - startTime).count());;
-
-	if (bIncludeMetadata)
-	{
-		//Load metadata for all media files in the album collection
-		spdlog::info("Loading Albums metadata... ");
-		auto nAlbums = LoadAllMetadata(AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls); //load media metadate
-		auto endLoadMEtadataTime = std::chrono::steady_clock::now();
-		spdlog::info("Completed (Loading Albums metadata) Found {} Albums, processing time: [{}ms]", nAlbums, std::chrono::duration_cast<std::chrono::milliseconds>(endLoadMEtadataTime - endLoadTime).count());
-	}
-
-    return true;
-}
 
 struct DirectoryContents {
     std::vector<fs::path> files;
@@ -316,12 +282,12 @@ TrackInfoList AlbumCollection::LoadAlbumCollectionRecursively(std::filesystem::p
 
 //currently I have a list of async objects that fills up when I scan each album, at the end of each album, I wait for the completion of all tracks, I want something similar but at the Album list level.in another words I want to improve performance by keeping the track processing queue lenght to N(pre defince number)
 
-//Load all media media information from the preloaded album list (_AlbumList)
-size_t AlbumCollection::LoadAllMetadata(bool bAsync)
+//Load all media media information from the preloaded album list (albumList)
+size_t AlbumCollection::LoadAllMetadata(DirectoryContentEntryList albumList, bool bAsync)
 {
     size_t albumCount = 0;
        
-    for (auto& [albumPath, trackList] : _AlbumList)
+    for (auto& [albumPath, trackList] : albumList)
     {
         std::string name = "N/A";
         if (albumPath.is_directory() && albumPath.path().has_filename())
@@ -334,9 +300,9 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
         }
 
 
-        CommonUtils::show_progress_bar(20, "Processing...", ++albumCount, _AlbumList.size(), name);
+        CommonUtils::show_progress_bar(20, "Processing...", ++albumCount, albumList.size(), name);
         //Update progress indicator
-    //    CommonUtils::show_circular_progress(std::format("Processing... {}/{} - {}", ++albumCount, _AlbumList.size(), name));
+    //    CommonUtils::show_circular_progress(std::format("Processing... {}/{} - {}", ++albumCount, albumList.size(), name));
 
         //Album tracks list holder 
         std::vector<std::tuple<MediaLoadingFuture, FFprobeOutput&, std::wstring&>> asyncFutureList;
@@ -374,11 +340,11 @@ size_t AlbumCollection::LoadAllMetadata(bool bAsync)
         }
     }
 
-    CommonUtils::show_progress_bar(20, "Processing...", ++albumCount, _AlbumList.size(), std::string{});
+    CommonUtils::show_progress_bar(20, "Processing...", ++albumCount, albumList.size(), std::string{});
 
     std::cout << std::endl;
 
-    return _AlbumList.size();
+    return albumList.size();
 }
 
 void SaveAlbumsAsJSONFile_FFmpegError(std::filesystem::path outPath)
