@@ -73,6 +73,7 @@ struct AppSettingsJson
 	int MinMatchingTracksForDuplicate{ 1 };
 	int SizeMatchPercentageThreshold{ 3 }; // tracks are identical if the size difference is less than 3%
 	int RecursionDirectorySearchDepth{ 10 }; // max depth for recursive search
+	int AlbumsSplitThreshold{ 2000 }; // max number of album in each chunk (this help with memory usage and performance)
 
 	FLACEncodingSettings FLACSettings{};
 	std::vector<MediaDirectoryElement> MediaDirectoryList{};
@@ -99,6 +100,7 @@ struct AppSettingsJson
 			1, //MinMatchingTracksForDuplicate
 			3, //SizeMatchPercentageThreshold
 			10, //RecursionDirectorySearchDepth
+			2000,
 			{
 				 L"ffmpeg",
 				 L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats",
