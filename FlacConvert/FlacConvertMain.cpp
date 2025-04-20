@@ -103,7 +103,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         auto albumListPtr = ac.LoadAlbumCollection(mediaEntry.mediaPath, true); //load albume list from directory path
         ac.SortByNumberOfTracks();         // sort by album size - optional
 
-        ac.SaveAlbumsAsJSON(mediaEntry.resultPath); // save to json
+        ac.SaveAlbumsAsJSON(albumListPtr, mediaEntry.resultPath); // save to json
 
         auto endTime = std::chrono::steady_clock::now();
         
@@ -127,7 +127,7 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
         std::cout << "Processing: {}" << mediaEntry.resultPath << std::endl;
 
 
-        bool resul = albumCollection.RestoreAlbumCollectionFromJSON(mediaEntry.resultPath);
+        auto resul = albumCollection.RestoreAlbumCollectionFromJSON(mediaEntry.resultPath);
 //        auto const& accumulatedList = AlbumCollection::RestoreAlbumCollectionFromJSON(mediaEntry.resultPath);
 //        medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
     }

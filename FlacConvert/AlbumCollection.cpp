@@ -298,12 +298,7 @@ size_t AlbumCollection::LoadAllMetadata(std::shared_ptr<DirectoryContentEntryLis
 
     std::cout << std::endl;
 
-
-    //ac.SaveAlbumsAsJSON(mediaEntry.resultPath); // save to json
-	_AlbumList = *albumListPtr; /// tmp UNTILL WE SAVE IN PARTS
-
-
-    return albumListPtr->size();
+    return albumCount;
 }
 
 void SaveAlbumsAsJSONFile_FFmpegError(std::filesystem::path outPath)
@@ -410,13 +405,13 @@ void SaveAlbumsAsJSONFile_LasrError(std::list<MediaTrack> mediaTracks, std::file
 
 
 
-bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
+bool AlbumCollection::SaveAlbumsAsJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path)
 {
     rapidjson::Document mediaDoc;
     mediaDoc.SetArray(); // Top-level array for albums
     rapidjson::Document::AllocatorType& allocator = mediaDoc.GetAllocator();
 
-    for (auto [albumPath, trackList] : _AlbumList)
+    for (auto [albumPath, trackList] : *albumListPtr)
     {
         // Create album object
         rapidjson::Value albumObj(rapidjson::kObjectType);
@@ -530,19 +525,19 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::filesystem::path path)
 
 
 //ststic function that loads album list from a Json file and returns a DirectoryContentEntryList object
-bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
+std::shared_ptr<DirectoryContentEntryList> AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
 {
-  //  DirectoryContentEntryList albumList;
+	std::shared_ptr<DirectoryContentEntryList> albumListPtr = std::make_shared<DirectoryContentEntryList>();
 
     if (!fs::exists(path)) {
         std::cout << "**** no file - json file not found Error parsing JSON: " << std::endl;
-        return false;
+        return nullptr;
     }
 
     std::ifstream file(path, std::ios::binary);
     if (!file) {
         std::cout << "****Error file=null - parsing JSON: " << std::endl;
-        return false;
+        return nullptr;
     }
 
     std::stringstream buffer;
@@ -563,7 +558,7 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
         rapidjson::ParseErrorCode errorCode = doc.GetParseError();
         spdlog::error("Error parsing JSON: ", rapidjson::GetParseError_En(errorCode));
 
-        return false;
+        return nullptr;
     }
 
     //bool isObject = doc.IsObject();
@@ -572,7 +567,7 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
     //Check for array instead of object to match new JSON structure
     if (!doc.IsArray()) {
         spdlog::error("JSON root is not an array");
-        return false;
+        return nullptr;
     }
 
     //Albums
@@ -628,12 +623,12 @@ bool AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
 
         if (trackList.size() > 0) {
             std::filesystem::directory_entry entry{ albumpath };
-            _AlbumList.push_back({ entry, trackList });
+            albumListPtr->push_back({ entry, trackList });
         }
 
     }
 
-    return true;
+    return albumListPtr;
 }
 
 
