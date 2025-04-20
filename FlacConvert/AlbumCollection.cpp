@@ -73,14 +73,15 @@ std::string GetDurationinString(auto time1, auto time2)
 }
 
 
-bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata) {
+MediaAlbumListPtr AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata) {
     
     std::chrono::steady_clock::time_point startTimePoint = std::chrono::steady_clock::now();
 	//std::chrono::steady_clock::time_point endLoadTime = startLoadTime;
     spdlog::info("===Loading album collection from storage===");
 
     // Clear existing albums
-    _AlbumList.clear();
+    //_AlbumList.clear();
+	MediaAlbumListPtr albumListPtr = std::make_shared<std::vector<MediaAlbum>>();
 
     // Map to collect tracks per folder
     std::map<fs::path, TrackInfoList> albumMap;
@@ -138,25 +139,23 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
         // Convert map to _AlbumList
         for (auto& [albumPath, trackList] : albumMap) {
             if (!trackList.empty()) {
-                _AlbumList.emplace_back(fs::directory_entry(albumPath), std::move(trackList));
+                albumListPtr->emplace_back(fs::directory_entry(albumPath), std::move(trackList));
             }
         }
 
-        spdlog::info("Second pass: Completed, {} Albums [{}]", _AlbumList.size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        spdlog::info("Second pass: Completed, {} Albums [{}]", albumListPtr->size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();
 
     }
     catch (const fs::filesystem_error& e) {
         spdlog::error("Error iterating {}: {}",
             CommonUtils::utf8string_to_string(albumCollectionDirPath.u8string()), e.what());
-        return false;
+        return albumListPtr;
     }
 
 
     if (bIncludeMetadata) {
         spdlog::info("Third pass: Collecting Metadata...");
-
-		auto albumListPtr = std::make_shared<DirectoryContentEntryList>(_AlbumList);
 
         auto nAlbums = LoadAllMetadata(albumListPtr, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
 
@@ -168,7 +167,7 @@ bool AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionD
         spdlog::warn("Third pass: [skipped]");
     }
 
-    return true;
+    return albumListPtr;
 }
 
 
@@ -234,54 +233,6 @@ std::pair<long long, long long> AlbumCollection::GetNumberOfItemsInFolder(std::f
 
 
 
-TrackInfoList AlbumCollection::LoadAlbumCollectionRecursively(std::filesystem::path path, int depth)
-{
-    //Empty list to store all potential tracks under the current directory (path)
-    TrackInfoList currentDirTrackList;
-
-    if (depth == 0) // reached max recursive depth
-    {
-        return currentDirTrackList;
-    }
-
-    if (fs::exists(path)) {
-        for (const fs::directory_entry& entry : fs::directory_iterator(path)) {
-            if (entry.is_directory()) {
-                //Scan directory and return the list of files under the directory entry (one level).
-
-                auto trackList = LoadAlbumCollectionRecursively(entry.path(), depth - 1);
-
-                //check if the current folder has at least one track and add it to a new Album
-                if (trackList.size() > 0)
-                {
-                    _AlbumList.push_back({ entry, trackList });
-                }
-            }
-            else {
-                if (MediaTrack::IsFileAcceptedAudioFile(entry))
-                {
-                    auto path2Fixed = entry.path().lexically_normal().native();
-                    uintmax_t fs_fileSize;
-                    try {
-                        fs_fileSize = fs::file_size(path2Fixed);
-                    }
-                    catch (const fs::filesystem_error& e) {
-						spdlog::error("Error getting file size for {}: {}", PlatformUtils::WideToUTF8(path2Fixed), e.what());
-                        fs_fileSize = 0; // Default value or skip
-                    }
-                    auto fileName = entry.path().filename();
-                    currentDirTrackList.push_back({ fileName, fs_fileSize, FFprobeOutput{}, std::wstring{L"{}"}});
-                }
-            }
-        }
-    }
-    else
-    {
-        std::cout << std::format("***Error: Media library not found: : {}", path.string()) << std::endl;
-    }
-
-    return currentDirTrackList;
-}
 
 //currently I have a list of async objects that fills up when I scan each album, at the end of each album, I wait for the completion of all tracks, I want something similar but at the Album list level.in another words I want to improve performance by keeping the track processing queue lenght to N(pre defince number)
 

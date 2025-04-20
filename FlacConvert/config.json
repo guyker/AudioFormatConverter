@@ -31,5 +31,6 @@
   "UseFFmpegLibraryAPI": true,
   "MinMatchingTracksForDuplicate": 1,
   "SizeMatchPercentageThreshold": 3,
-  "RecursionDirectorySearchDepth": 10
+  "RecursionDirectorySearchDepth": 10,
+  "AlbumsSplitThreshold": 2000
 }

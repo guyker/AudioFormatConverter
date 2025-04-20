@@ -100,7 +100,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         spdlog::info("===>ScanFolderAndCreateJSON - Processing new collection: {}...", mediaEntry.mediaPath);
 
         AlbumCollection ac;
-        ac.LoadAlbumCollection(mediaEntry.mediaPath, true); //load albume list from directory path
+        auto albumListPtr = ac.LoadAlbumCollection(mediaEntry.mediaPath, true); //load albume list from directory path
         ac.SortByNumberOfTracks();         // sort by album size - optional
 
         ac.SaveAlbumsAsJSON(mediaEntry.resultPath); // save to json

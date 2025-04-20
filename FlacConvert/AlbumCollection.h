@@ -48,7 +48,7 @@ public:
 
 	// load albums from directory / Directly from media files FLAC/MP3
 	// bIncludeMetadata = true - load media metadata / Calling LoadAllMetadata
-	bool LoadAlbumCollection(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata = false);
+	MediaAlbumListPtr LoadAlbumCollection(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata = false);
 
 	//Import/update Media Metadata from the current loaded Album Collection (get JSON from media files)
 	//Normally this function should be called after LoadAlbumCollection
@@ -81,7 +81,6 @@ private:
 
 	//private Helpers
 	std::pair<long long, long long> GetNumberOfItemsInFolder(std::filesystem::path path, int depth);
-	TrackInfoList LoadAlbumCollectionRecursively(std::filesystem::path path, int depth);
 
 	
 	DirectoryContentEntryList _AlbumList;
