@@ -56,7 +56,7 @@ public:
 
 
 	//Export albums tracks information to a Database
-	bool SaveToSQLDatabase(std::filesystem::path path);
+	bool SaveToSQLDatabase(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path);
 
 	// load albums from a Json file
 	std::shared_ptr<DirectoryContentEntryList> RestoreAlbumCollectionFromJSON(std::filesystem::path dirPath);
@@ -66,15 +66,14 @@ public:
 
 
 	//compare
-	void SortByNumberOfTracks(bool ascending = true);
-	SimilarDirectoryEntryList FindDuplicatedAlbums();
-	SimilarDirectoryEntryList FindDuplicatedAlbums2();
+	void SortByNumberOfTracks(std::shared_ptr<std::vector<MediaAlbum>>, bool ascending = true);
+	SimilarDirectoryEntryList FindDuplicatedAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr);
 
 	
 private:
 		
 	//sort and find duplications
-	SimilarDirectoryEntryList FindDuplicationInGroup(const std::vector<DirectoryContentEntryList::const_iterator>& group);
+	SimilarDirectoryEntryList FindDuplicationInGroup(std::shared_ptr<DirectoryContentEntryList> albumListPtr, const std::vector<DirectoryContentEntryList::const_iterator>& group);
 
 	SimilarDirectoryEntryList FindDuplicationInGroup2(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt);
 
@@ -82,6 +81,6 @@ private:
 	std::pair<long long, long long> GetNumberOfItemsInFolder(std::filesystem::path path, int depth);
 
 	
-	DirectoryContentEntryList _AlbumList;
+	//DirectoryContentEntryList _AlbumList;
 };
 

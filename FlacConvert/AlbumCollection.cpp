@@ -136,7 +136,7 @@ MediaAlbumListPtr AlbumCollection::LoadAlbumCollection(std::filesystem::path alb
             }
         }
 
-        // Convert map to _AlbumList
+        // Convert map to std::shared_ptr<std::vector<MediaAlbum>>
         for (auto& [albumPath, trackList] : albumMap) {
             if (!trackList.empty()) {
                 albumListPtr->emplace_back(fs::directory_entry(albumPath), std::move(trackList));
@@ -640,21 +640,21 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::RestoreAlbumCollecti
 //-------------COMPARE
 
 
-void AlbumCollection::SortByNumberOfTracks(bool ascending)
+void AlbumCollection::SortByNumberOfTracks(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool ascending)
 {
-    std::ranges::stable_sort(_AlbumList, SortByTracks<SortOrder::Ascending>{});
+    std::ranges::stable_sort(*albumListPtr, SortByTracks<SortOrder::Ascending>{});
 }
 
 
 
 
-SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums() {
+SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr) {
     auto logger = spdlog::get("console");
     if (!logger) logger = spdlog::stdout_color_mt("console");
 
     SimilarDirectoryEntryList duplicatedAlbumList;
-    if (_AlbumList.size() < 2) {
-        logger->info("Album list too small: {}", _AlbumList.size());
+    if (albumListPtr->size() < 2) {
+        logger->info("Album list too small: {}", albumListPtr->size());
         return duplicatedAlbumList;
     }
 
@@ -663,7 +663,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums() {
 
     // Group by track count
     std::map<size_t, std::vector<DirectoryContentEntryList::const_iterator>> trackCountGroups;
-    for (auto it = _AlbumList.begin(); it != _AlbumList.end(); ++it) {
+    for (auto it = albumListPtr->begin(); it != albumListPtr->end(); ++it) {
         auto tracks = (*it).trackList.size();
         if (tracks >= minMatchingTracks) {
             trackCountGroups[tracks].push_back(it);
@@ -677,7 +677,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums() {
             continue;
         }
         logger->debug("Checking {} albums with {} tracks", group.size(), trackCount);
-        auto dupAlbums = FindDuplicationInGroup(group);
+        auto dupAlbums = FindDuplicationInGroup(albumListPtr, group);
         duplicatedAlbumList.insert(duplicatedAlbumList.end(), dupAlbums.begin(), dupAlbums.end());
     }
 
@@ -687,7 +687,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums() {
 
 
 
-SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(const std::vector<DirectoryContentEntryList::const_iterator>& group) {
+SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_ptr<DirectoryContentEntryList> albumListPtr, const std::vector<DirectoryContentEntryList::const_iterator>& group) {
     auto logger = spdlog::get("console");
     if (!logger) {
         logger = spdlog::stdout_color_mt("console");
@@ -713,18 +713,18 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(const std::vec
     std::map<AlbumKey, std::vector<std::pair<fs::directory_entry, std::vector<double>>>> albumGroups;
 
     for (const auto& it : group) {
-        if (it == _AlbumList.end()) {
+        if (it == albumListPtr->end()) {
             logger->warn("Invalid iterator in group");
             continue;
         }
         const auto& [dirEntry, trackList] = *it;
         if (trackList.empty()) {
-            logger->warn("Empty track list for album at iterator index {}", std::distance(_AlbumList.cbegin(), it));
+            logger->warn("Empty track list for album at iterator index {}", std::distance(albumListPtr->cbegin(), it));
             continue;
         }
 
         // Extract album name with robust error handling
-        std::string albumName = "unknown_album_" + std::to_string(std::distance(_AlbumList.cbegin(), it));
+        std::string albumName = "unknown_album_" + std::to_string(std::distance(albumListPtr->cbegin(), it));
         try {
             if (fs::exists(dirEntry.path()) && dirEntry.is_directory()) {
                 // Use wstring to avoid UTF-8 conversion issues
@@ -740,7 +740,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(const std::vec
                 }
                 if (invalid) {
                     logger->warn("Invalid characters in album name: {}", dirEntry.path().string());
-                    albumName = "sanitized_album_" + std::to_string(std::distance(_AlbumList.cbegin(), it));
+                    albumName = "sanitized_album_" + std::to_string(std::distance(albumListPtr->cbegin(), it));
                 }
             }
             else {
@@ -754,7 +754,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(const std::vec
             logger->error("Unexpected error accessing filename: {} ({})", dirEntry.path().string(), e.what());
         }
         catch (...) {
-            logger->error("Unknown error accessing filename for iterator index {}", std::distance(_AlbumList.cbegin(), it));
+            logger->error("Unknown error accessing filename for iterator index {}", std::distance(albumListPtr->cbegin(), it));
         }
 
         // Extract metadata from first track
@@ -778,7 +778,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(const std::vec
                     albumName = PlatformUtils::wstringToUtf8_ver2(dirEntry.path().filename().wstring());
                 }
                 catch (...) {
-                    albumName = "sanitized_album_" + std::to_string(std::distance(_AlbumList.cbegin(), it));
+                    albumName = "sanitized_album_" + std::to_string(std::distance(albumListPtr->cbegin(), it));
                 }
             }
             for (char c : artist) {
@@ -851,63 +851,6 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(const std::vec
 }
 
 
-
-
-SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums2()
-{
-    SimilarDirectoryEntryList duplicatedAlbumList;
-
-    if (_AlbumList.size() < 2)
-    {
-        return duplicatedAlbumList;
-    }
-
-    auto firstIt = _AlbumList.begin();
-    auto secondIt = firstIt;
-    secondIt++;
-
-    auto appSettingPtr = AppSettingsJson::AppSetting();
-    auto minMatchingTracksForDuplicate = appSettingPtr->MinMatchingTracksForDuplicate;
-    while (firstIt != _AlbumList.end() && secondIt != _AlbumList.end())
-    {
-        bool bFound = false;
-        auto& [dirEntry1, fileList1] = *firstIt;
-        auto& [dirEntry2, fileList2] = *secondIt;
-
-        auto pushedEndGroupIt = secondIt;
-        int itemsInGroup{ 0 };
-        auto fileList1Seize{ fileList1.size() };
-        while (secondIt != _AlbumList.end() && fileList1.size() == fileList2.size() && fileList1.size() >= minMatchingTracksForDuplicate)
-        {
-            pushedEndGroupIt = secondIt;
-            auto& [dirEntry2, fileList2] = *secondIt;
-
-            secondIt++;
-            bFound = true;
-            itemsInGroup++;
-        }
-
-        secondIt = pushedEndGroupIt;
-
-        auto firstIndex = std::ranges::distance(_AlbumList.cbegin(), firstIt);
-        auto lastIndex = std::ranges::distance(_AlbumList.cbegin(), secondIt);
-
-        if (bFound)
-        {
-            auto dupAlbums = FindDuplicationInGroup2(_AlbumList, firstIt, secondIt);
-            duplicatedAlbumList.insert(duplicatedAlbumList.end(), dupAlbums.begin(), dupAlbums.end());
-            firstIt = secondIt;;
-            secondIt++;
-        }
-        else
-        {
-            firstIt++;
-            secondIt++;
-        }
-    }
-
-    return duplicatedAlbumList;
-}
 
 SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup2(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt)
 {
@@ -984,7 +927,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup2(DirectoryCont
 
 
 
-bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
+bool AlbumCollection::SaveToSQLDatabase(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path)
 {
     // Convert the path to string
     const std::string dbPath{ path.generic_string() };
@@ -1100,7 +1043,7 @@ bool AlbumCollection::SaveToSQLDatabase(std::filesystem::path path)
     }
 
     // Iterate over each album and its tracks.
-    for (auto& [dirPath, trackList] : _AlbumList) {
+    for (auto& [dirPath, trackList] : *albumListPtr) {
         // Convert album path once per album.
         std::wstring albumPathW = dirPath.path().wstring();
         std::string albumPathUtf8 = PlatformUtils::wstringToUtf8_ver2(albumPathW);
