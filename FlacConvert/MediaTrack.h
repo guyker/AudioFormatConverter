@@ -21,7 +21,7 @@
 #include "rapidjson/ostreamwrapper.h"
 
 #include "MediaInformation.h"
-
+#include "SQLite/sqlite-amalgamation/sqlite3.h"
 
 namespace fs = std::filesystem;
 
@@ -89,6 +89,10 @@ struct MediaTrack
 
 	//returns media information (json string and media objec) from a media file (on file system)
 	static std::tuple<FFprobeOutput, std::wstring> ReadMediaInfoFromJsonFile(std::filesystem::path mediaFilePath);
+
+
+	static bool ExportToDatabase(sqlite3_stmt* stmt, const std::wstring& albumPath, const MediaTrack& track);
+
 
 	//parse media information from a json string
 	static FFprobeOutput ParseFFprobeInformation(const Value& formatTag);

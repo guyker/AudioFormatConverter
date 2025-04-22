@@ -855,27 +855,17 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
 }
 
 
-
-bool AlbumCollection::ExportToDatabase(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path)
+bool AlbumCollection::ExportToDatabase(std::shared_ptr<DirectoryContentEntryList> albums, std::filesystem::path databasePath)
 {
-    // Convert the path to string
-    const std::string dbPath{ path.generic_string() };
-
     sqlite3* db = nullptr;
-    int rc = sqlite3_open(dbPath.c_str(), &db);
+    int rc = sqlite3_open(databasePath.generic_string().c_str(), &db);
     if (rc != SQLITE_OK) {
         spdlog::error("Cannot open database: {}", sqlite3_errmsg(db));
-        return false;
-    }
-
-    // Drop table if it exists
-    rc = sqlite3_exec(db, "DROP TABLE IF EXISTS TracksDB;", nullptr, nullptr, nullptr);
-    if (rc != SQLITE_OK) {
-        spdlog::error("Cannot drop TracksDB table: {}", sqlite3_errmsg(db));
         sqlite3_close(db);
         return false;
     }
 
+    // Create table
     // Create table statement (use the same table definition as before)
     const char* createTableSQL = R"(
         CREATE TABLE IF NOT EXISTS TracksDB (
@@ -935,6 +925,7 @@ bool AlbumCollection::ExportToDatabase(std::shared_ptr<DirectoryContentEntryList
             stream2_tag1 TEXT
         )
     )";
+
     rc = sqlite3_exec(db, createTableSQL, nullptr, nullptr, nullptr);
     if (rc != SQLITE_OK) {
         spdlog::error("Failed to create TracksDB table: {}", sqlite3_errmsg(db));
@@ -942,7 +933,6 @@ bool AlbumCollection::ExportToDatabase(std::shared_ptr<DirectoryContentEntryList
         return false;
     }
 
-    // Start a transaction for faster bulk inserts.
     rc = sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
     if (rc != SQLITE_OK) {
         spdlog::error("BEGIN TRANSACTION failed: {}", sqlite3_errmsg(db));
@@ -971,149 +961,19 @@ bool AlbumCollection::ExportToDatabase(std::shared_ptr<DirectoryContentEntryList
         return false;
     }
 
-    // Iterate over each album and its tracks.
-    for (auto& [dirPath, trackList] : *albumListPtr) {
-        // Convert album path once per album.
-        std::wstring albumPathW = dirPath.path().wstring();
-        std::string albumPathUtf8 = PlatformUtils::wstringToUtf8_ver2(albumPathW);
-
-
-        std::optional<std::string> stream1Tag1;
-        //if (stream1.has_value() && stream1->tags.has_value())
-//{
-//	auto tags = stream1->tags.value();
-//	//if (tags.HasMember("language"))
-//	//{
-//	//	stream1Tag2 = tags["language"].GetString();
-//	//}
-
-
-        std::optional<std::string> stream2Tag1;
-        //if (stream2.has_value() && stream2->tags.has_value())
-        //{
-        //    stream2Tag1 = std::optional<std::string>{ stream2->tags.value()[0] };
-        //}
-
-
-        for (auto& [trackName, size, mediaInfo, mediaInfoString, lastError] : trackList) {
-
-            int bindIndex = 1;
-            // id (auto-incremented)
-            sqlite3_bind_null(stmt, bindIndex++);
-            // album_path
-            sqlite3_bind_text(stmt, bindIndex++, albumPathUtf8.c_str(), -1, SQLITE_TRANSIENT);
-            // nb_streams
-            sqlite3_bind_int(stmt, bindIndex++, mediaInfo.format.nb_streams);
-            // nb_programs
-            sqlite3_bind_int(stmt, bindIndex++, mediaInfo.format.nb_programs);
-            // nb_stream_groups
-            sqlite3_bind_int(stmt, bindIndex++, mediaInfo.format.nb_stream_groups);
-            // format_name
-            sqlite3_bind_text(stmt, bindIndex++, mediaInfo.format.format_name.c_str(), -1, SQLITE_TRANSIENT);
-            // format_long_name
-            sqlite3_bind_text(stmt, bindIndex++, mediaInfo.format.format_long_name.c_str(), -1, SQLITE_TRANSIENT);
-            // start_time
-            sqlite3_bind_int64(stmt, bindIndex++, mediaInfo.format.start_time.value_or(0));
-            // duration
-            sqlite3_bind_double(stmt, bindIndex++, mediaInfo.format.duration.value_or(0.0));
-            // size (assumed text; adjust if needed)
-            sqlite3_bind_text(stmt, bindIndex++, mediaInfo.format.size.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-            // bit_rate
-            sqlite3_bind_int64(stmt, bindIndex++, mediaInfo.format.bit_rate.value_or(0));
-            // probe_score
-            sqlite3_bind_int(stmt, bindIndex++, mediaInfo.format.probe_score);
-            // album tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.album).c_str(), -1, SQLITE_TRANSIENT);
-            // artist tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.artist).c_str(), -1, SQLITE_TRANSIENT);
-            // album_artist tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.album_artist).c_str(), -1, SQLITE_TRANSIENT);
-            // genre tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.genre).c_str(), -1, SQLITE_TRANSIENT);
-            // disc tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.disc).c_str(), -1, SQLITE_TRANSIENT);
-            // title tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.title).c_str(), -1, SQLITE_TRANSIENT);
-            // track tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.track).c_str(), -1, SQLITE_TRANSIENT);
-            // track_total tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.track_total).c_str(), -1, SQLITE_TRANSIENT);
-            // date tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.date).c_str(), -1, SQLITE_TRANSIENT);
-            // comment tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.comment).c_str(), -1, SQLITE_TRANSIENT);
-            // publisher tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.publisher).c_str(), -1, SQLITE_TRANSIENT);
-            // encoder tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.encoder).c_str(), -1, SQLITE_TRANSIENT);
-            // encoded_by tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.encoded_by).c_str(), -1, SQLITE_TRANSIENT);
-            // organization tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.organization).c_str(), -1, SQLITE_TRANSIENT);
-            // composer tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.composer).c_str(), -1, SQLITE_TRANSIENT);
-            // copyright tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.copyright).c_str(), -1, SQLITE_TRANSIENT);
-            // album_dynamic_range tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.album_dynamic_range).c_str(), -1, SQLITE_TRANSIENT);
-            // dynamic_range tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.dynamic_range).c_str(), -1, SQLITE_TRANSIENT);
-            // label tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.label).c_str(), -1, SQLITE_TRANSIENT);
-            // year tag
-            sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.year).c_str(), -1, SQLITE_TRANSIENT);
-
-            // Bind stream1 data if available.
-            if (auto stream1 = mediaInfo.streams.size() > 0 ? std::optional<Stream>{mediaInfo.streams[0]} : std::nullopt; stream1.has_value())
-            {
-                sqlite3_bind_int(stmt, bindIndex++, stream1->index);
-                sqlite3_bind_text(stmt, bindIndex++, stream1->codec_name.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt, bindIndex++, stream1->codec_type.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt, bindIndex++, stream1->sample_rate.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(stmt, bindIndex++, stream1->channels.value_or(0));
-                sqlite3_bind_text(stmt, bindIndex++, stream1->channel_layout.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int64(stmt, bindIndex++, stream1->bit_rate.value_or(0));
-                sqlite3_bind_int(stmt, bindIndex++, stream1->frame_size.value_or(0));
-                sqlite3_bind_text(stmt, bindIndex++, stream1->duration.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int64(stmt, bindIndex++, stream1->start_time.value_or(0));
-                sqlite3_bind_text(stmt, bindIndex++, stream1Tag1.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-            }
-            // Bind stream2 data if available.
-            if (auto stream2 = mediaInfo.streams.size() > 1 ? std::optional<Stream>{mediaInfo.streams[1]} : std::nullopt; stream2.has_value())
-            {
-                sqlite3_bind_int(stmt, bindIndex++, stream2->index);
-                sqlite3_bind_text(stmt, bindIndex++, stream2->codec_name.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt, bindIndex++, stream2->codec_type.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt, bindIndex++, stream2->sample_rate.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(stmt, bindIndex++, stream2->channels.value_or(0));
-                sqlite3_bind_text(stmt, bindIndex++, stream2->channel_layout.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int64(stmt, bindIndex++, stream2->bit_rate.value_or(0));
-                sqlite3_bind_int(stmt, bindIndex++, stream2->frame_size.value_or(0));
-                sqlite3_bind_text(stmt, bindIndex++, stream2->duration.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int64(stmt, bindIndex++, stream2->start_time.value_or(0));
-                sqlite3_bind_text(stmt, bindIndex++, stream2Tag1.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-            }
-
-            // Execute the prepared statement.
-            rc = sqlite3_step(stmt);
-            if (rc != SQLITE_DONE) {
-                spdlog::error("***ERROR - Database error: {}", sqlite3_errmsg(db));
+    for (const auto& [dirPath, trackList] : *albums) {
+        std::wstring albumPath = dirPath.path().wstring();
+        for (const auto& track : trackList) {
+            if (!MediaTrack::ExportToDatabase(stmt, albumPath, track)) {
                 sqlite3_finalize(stmt);
                 sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
                 sqlite3_close(db);
                 return false;
             }
-
-            // Reset the statement to reuse it in the next iteration.
-            sqlite3_reset(stmt);
-            sqlite3_clear_bindings(stmt);
         }
     }
 
-    // Finalize the prepared statement.
     sqlite3_finalize(stmt);
-
-    // Commit the transaction.
     rc = sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
     if (rc != SQLITE_OK) {
         spdlog::error("COMMIT failed: {}", sqlite3_errmsg(db));

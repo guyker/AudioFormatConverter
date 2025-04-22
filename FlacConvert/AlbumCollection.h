@@ -79,6 +79,6 @@ private:
 	std::pair<long long, long long> GetNumberOfItemsInFolder(std::filesystem::path path, int depth);
 
 	
-	//DirectoryContentEntryList _AlbumList;
+//	MediaAlbumListPtr _AlbumList;
 };
 
