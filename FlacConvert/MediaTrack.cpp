@@ -136,7 +136,7 @@ std::string toJsonString(const FFprobeOutput& output) {
 
 
 //returns media information (json string and media objec) from a media file (on file system)
-std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::filesystem::path mediaFilePath)
+std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromJsonFile(std::filesystem::path mediaFilePath)
 {
     try
     {
@@ -152,15 +152,15 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromFile(std::f
         }
     }
     catch (const std::exception& ex) {
-		spdlog::error("Error (ReadMediaInfoFromFile): ", ex.what());
+		spdlog::error("Error (ReadMediaInfoFromJsonFile): ", ex.what());
         //try
         //{
         //    auto mediaInfo = FFmpeg::GetFFprobeMetadataShell(mediaFilePath);
-        //    spdlog::info("Fixed by shell execution (ReadMediaInfoFromFile-#2)");
+        //    spdlog::info("Fixed by shell execution (ReadMediaInfoFromJsonFile-#2)");
         //    return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJsonString(mediaInfo)));
         //}
         //catch (const std::exception& ex) {
-        //    spdlog::error("Error (ReadMediaInfoFromFile-#2): ", ex.what());
+        //    spdlog::error("Error (ReadMediaInfoFromJsonFile-#2): ", ex.what());
         //}
     }
 

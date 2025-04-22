@@ -274,13 +274,13 @@ size_t AlbumCollection::LoadAllMetadata(std::shared_ptr<DirectoryContentEntryLis
 
                 if (bAsync)
                 {
-                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMediaInfoFromFile, path2Fixed);
+                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMediaInfoFromJsonFile, path2Fixed);
                     asyncFutureList.push_back({ std::move(miFuture), mediaInfo, mediaInfoString });
 
                 }
                 else
                 {
-                    auto [mi_ret, jsonString_ret] = MediaTrack::ReadMediaInfoFromFile(path2Fixed);
+                    auto [mi_ret, jsonString_ret] = MediaTrack::ReadMediaInfoFromJsonFile(path2Fixed);
                     mediaInfoString = jsonString_ret;
                     mediaInfo = mi_ret;
                 }
