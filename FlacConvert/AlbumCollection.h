@@ -75,8 +75,6 @@ private:
 	//sort and find duplications
 	SimilarDirectoryEntryList FindDuplicationInGroup(std::shared_ptr<DirectoryContentEntryList> albumListPtr, const std::vector<DirectoryContentEntryList::const_iterator>& group);
 
-	SimilarDirectoryEntryList FindDuplicationInGroup2(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt);
-
 	//private Helpers
 	std::pair<long long, long long> GetNumberOfItemsInFolder(std::filesystem::path path, int depth);
 

@@ -1,11 +1,17 @@
 ﻿
 
+
+
+#include <filesystem>
 #include <vector>
+#include <string>
+#include <execution>
+#include <mutex>
+#include <iostream>
 #include <map>
 #include <algorithm>
 #include <ranges>
 #include <format>
-#include <filesystem>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include "rapidjson/document.h"
@@ -21,6 +27,9 @@
 
 #include "CommonUtils.h"
 #include "FFmpeg.h"
+
+#include "SQLite/sqlite-amalgamation/sqlite3.h"
+
 
 namespace fs = std::filesystem;
 using namespace rapidjson;
@@ -172,33 +181,28 @@ MediaAlbumListPtr AlbumCollection::LoadAlbumCollection(std::filesystem::path alb
 
 
 
-struct DirectoryContents {
-    std::vector<fs::path> files;
-    std::vector<fs::path> folders;
-    std::mutex mutex;
 
-    void add_file(const fs::path& path) {
-        std::lock_guard<std::mutex> lock(mutex);
-        files.push_back(path);
-    }
-
-    void add_folder(const fs::path& path) {
-        std::lock_guard<std::mutex> lock(mutex);
-        folders.push_back(path);
-    }
-};
-
-
-#include <filesystem>
-#include <vector>
-#include <string>
-#include <execution>
-#include <mutex>
-#include <iostream>
 
 
 std::pair<long long, long long> AlbumCollection::GetNumberOfItemsInFolder(std::filesystem::path rootPath, int depth)
 {
+
+    struct DirectoryContents {
+        std::vector<fs::path> files;
+        std::vector<fs::path> folders;
+        std::mutex mutex;
+
+        void add_file(const fs::path& path) {
+            std::lock_guard<std::mutex> lock(mutex);
+            files.push_back(path);
+        }
+
+        void add_folder(const fs::path& path) {
+            std::lock_guard<std::mutex> lock(mutex);
+            folders.push_back(path);
+        }
+    };
+
     DirectoryContents contents;
     std::vector<fs::path> entries;
 
@@ -852,76 +856,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
 
 
 
-SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup2(DirectoryContentEntryList& albumList, DirectoryContentEntryList::iterator firstIt, DirectoryContentEntryList::iterator lastIt)
-{
-    auto appSettingPtr = AppSettingsJson::AppSetting();
-    auto sizeMatchPercentageThreshold = appSettingPtr->SizeMatchPercentageThreshold;
 
-    SimilarDirectoryEntryList duplicatedAlbumList;
-
-    if (firstIt != lastIt && firstIt != albumList.end() && lastIt != albumList.end())
-    {
-        auto currentIt = firstIt;
-        while (currentIt != lastIt)
-        {
-            auto currentIt2 = currentIt;
-            while (currentIt2 != lastIt)
-            {
-                currentIt2++;
-
-                auto& [albumName1, trackList1] = *currentIt;
-                auto& [albumName2, trackList2] = *currentIt2;
-
-                if (trackList1.size() == trackList2.size())
-                {
-                    bool bPotentialSimilar = true;
-                    for (int i = 0; i < trackList1.size(); i++)
-                    {
-                        auto& [trackName1, size1, mediaInfo1, mediaInfoString1, lastError1] = trackList1[i];
-                        auto& [trackName2, size2, mediaInfo2, mediaInfoString2, lastError2] = trackList2[i];
-
-                        if (mediaInfo1.format.duration.has_value() && mediaInfo2.format.duration.has_value())
-                        {
-                            auto minSize = (std::min)(mediaInfo1.format.duration.value(), mediaInfo2.format.duration.value());
-                            auto maxSize = (std::max)(mediaInfo1.format.duration.value(), mediaInfo2.format.duration.value());
-
-                            double diffPercentage = 100 * (maxSize - minSize) / maxSize;
-
-                            if (diffPercentage > sizeMatchPercentageThreshold)
-                            {
-                                bPotentialSimilar = false;
-                            }
-                        }
-                        else
-                        {
-                            if (!mediaInfo1.format.duration.has_value() && !mediaInfo2.format.duration.has_value())
-                            {
-                                bPotentialSimilar = false;
-                            }
-                        }
-                    }
-
-                    if (bPotentialSimilar)
-                    {
-                        duplicatedAlbumList.push_back({ albumName1.path().generic_wstring(), albumName2.path().generic_wstring() });
-                    }
-                }
-            }
-            currentIt++;
-        }
-    }
-
-    return duplicatedAlbumList;
-}
-
-
-
-
-//--------------------DB
-
-
-
-#include "SQLite/sqlite-amalgamation/sqlite3.h"
 
 
 
