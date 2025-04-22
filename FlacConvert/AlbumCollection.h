@@ -47,27 +47,27 @@ public:
 	AlbumCollection() = default;
 
 	// load albums from directory / Directly from media files FLAC/MP3
-	// bIncludeMetadata = true - load media metadata / Calling LoadAllMetadata
-	MediaAlbumListPtr LoadAlbumCollection(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata = false);
+	// bIncludeMetadata = true - load media metadata / Calling ImportMetadata
+	MediaAlbumListPtr LoadAlbums(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata = false);
 
 	//Import/update Media Metadata from the current loaded Album Collection (get JSON from media files)
-	//Normally this function should be called after LoadAlbumCollection
-	size_t LoadAllMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool bAsync = true);
+	//Normally this function should be called after LoadAlbums
+	size_t ImportMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool bAsync = true);
 
 
 	//Export albums tracks information to a Database
-	bool SaveToSQLDatabase(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path);
+	bool ExportToDatabase(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path);
 
 	// load albums from a Json file
-	std::shared_ptr<DirectoryContentEntryList> RestoreAlbumCollectionFromJSON(std::filesystem::path dirPath);
+	std::shared_ptr<DirectoryContentEntryList> LoadAlbumsFromJSON(std::filesystem::path dirPath);
 	//Save album list and metadata to JSON file
-	bool SaveAlbumsAsJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path);
+	bool SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path);
 
 
 
 	//compare
-	void SortByNumberOfTracks(std::shared_ptr<std::vector<MediaAlbum>>, bool ascending = true);
-	SimilarDirectoryEntryList FindDuplicatedAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr);
+	void SortAlbums(std::shared_ptr<std::vector<MediaAlbum>>, bool ascending = true);
+	SimilarDirectoryEntryList FindDuplicateAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr);
 
 	
 private:

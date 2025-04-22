@@ -82,7 +82,7 @@ std::string GetDurationinString(auto time1, auto time2)
 }
 
 
-MediaAlbumListPtr AlbumCollection::LoadAlbumCollection(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata) {
+MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata) {
     
     std::chrono::steady_clock::time_point startTimePoint = std::chrono::steady_clock::now();
 	//std::chrono::steady_clock::time_point endLoadTime = startLoadTime;
@@ -166,7 +166,7 @@ MediaAlbumListPtr AlbumCollection::LoadAlbumCollection(std::filesystem::path alb
     if (bIncludeMetadata) {
         spdlog::info("Third pass: Collecting Metadata...");
 
-        auto nAlbums = LoadAllMetadata(albumListPtr, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+        auto nAlbums = ImportMetadata(albumListPtr, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
 
         spdlog::info("Third pass: Completed, ffmpeg issues: {} [{}]", FFmpeg::get_ffmpeg_logs().size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();
@@ -241,7 +241,7 @@ std::pair<long long, long long> AlbumCollection::GetNumberOfItemsInFolder(std::f
 //currently I have a list of async objects that fills up when I scan each album, at the end of each album, I wait for the completion of all tracks, I want something similar but at the Album list level.in another words I want to improve performance by keeping the track processing queue lenght to N(pre defince number)
 
 //Load all media media information from the preloaded album list (albumList)
-size_t AlbumCollection::LoadAllMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool bAsync)
+size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool bAsync)
 {
     size_t albumCount = 0;
        
@@ -305,7 +305,7 @@ size_t AlbumCollection::LoadAllMetadata(std::shared_ptr<DirectoryContentEntryLis
     return albumCount;
 }
 
-void SaveAlbumsAsJSONFile_FFmpegError(std::filesystem::path outPath)
+void SaveAlbumsToJSON_FFmpegError(std::filesystem::path outPath)
 {
     std::vector<FFmpeg::FFmpegLogItem> ffmpegErrorList = FFmpeg::get_ffmpeg_logs();
 
@@ -347,9 +347,9 @@ void SaveAlbumsAsJSONFile_FFmpegError(std::filesystem::path outPath)
     std::cout << "JSON file created successfully as tracks.json" << std::endl;
 }
 
-std::list<MediaTrack> SaveAlbumsAsJSON_LasrError;
+std::list<MediaTrack> SaveAlbumsToJSON_LasrErrorList;
 
-void SaveAlbumsAsJSONFile_LasrError(std::list<MediaTrack> mediaTracks, std::filesystem::path outPath)
+void SaveAlbumsToJSON_LasrError(std::list<MediaTrack> mediaTracks, std::filesystem::path outPath)
 {
 
     // Create a RapidJSON Document and set it as an array.
@@ -409,7 +409,7 @@ void SaveAlbumsAsJSONFile_LasrError(std::list<MediaTrack> mediaTracks, std::file
 
 
 
-bool AlbumCollection::SaveAlbumsAsJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path)
+bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path)
 {
     rapidjson::Document mediaDoc;
     mediaDoc.SetArray(); // Top-level array for albums
@@ -455,7 +455,7 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::shared_ptr<DirectoryContentEntryList
                     const char* errorMsg = rapidjson::GetParseError_En(errorCode);
                     size_t errorOffset = trackDoc.GetErrorOffset();
                     item.LastErroString = errorMsg;
-					SaveAlbumsAsJSON_LasrError.push_back(item);
+                    SaveAlbumsToJSON_LasrErrorList.push_back(item);
                     spdlog::error("Error parsing JSON: ", errorMsg);
                     continue;
                 }
@@ -518,8 +518,8 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::shared_ptr<DirectoryContentEntryList
     }
 
 
-    SaveAlbumsAsJSONFile_LasrError(SaveAlbumsAsJSON_LasrError, path);
-    SaveAlbumsAsJSONFile_FFmpegError(path);
+    SaveAlbumsToJSON_LasrError(SaveAlbumsToJSON_LasrErrorList, path);
+    SaveAlbumsToJSON_FFmpegError(path);
 
 
     return true;
@@ -529,7 +529,7 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::shared_ptr<DirectoryContentEntryList
 
 
 //ststic function that loads album list from a Json file and returns a DirectoryContentEntryList object
-std::shared_ptr<DirectoryContentEntryList> AlbumCollection::RestoreAlbumCollectionFromJSON(std::filesystem::path path)
+std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(std::filesystem::path path)
 {
 	std::shared_ptr<DirectoryContentEntryList> albumListPtr = std::make_shared<DirectoryContentEntryList>();
 
@@ -644,7 +644,7 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::RestoreAlbumCollecti
 //-------------COMPARE
 
 
-void AlbumCollection::SortByNumberOfTracks(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool ascending)
+void AlbumCollection::SortAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool ascending)
 {
     std::ranges::stable_sort(*albumListPtr, SortByTracks<SortOrder::Ascending>{});
 }
@@ -652,7 +652,7 @@ void AlbumCollection::SortByNumberOfTracks(std::shared_ptr<DirectoryContentEntry
 
 
 
-SimilarDirectoryEntryList AlbumCollection::FindDuplicatedAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr) {
+SimilarDirectoryEntryList AlbumCollection::FindDuplicateAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr) {
     auto logger = spdlog::get("console");
     if (!logger) logger = spdlog::stdout_color_mt("console");
 
@@ -856,13 +856,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
 
 
 
-
-
-
-
-
-
-bool AlbumCollection::SaveToSQLDatabase(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path)
+bool AlbumCollection::ExportToDatabase(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path)
 {
     // Convert the path to string
     const std::string dbPath{ path.generic_string() };

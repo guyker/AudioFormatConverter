@@ -100,10 +100,10 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         spdlog::info("===>ScanFolderAndCreateJSON - Processing new collection: {}...", mediaEntry.mediaPath);
 
         AlbumCollection ac;
-        auto albumListPtr = ac.LoadAlbumCollection(mediaEntry.mediaPath, true); //load albume list from directory path
-        ac.SortByNumberOfTracks(albumListPtr);         // sort by album size - optional
+        auto albumListPtr = ac.LoadAlbums(mediaEntry.mediaPath, true); //load albume list from directory path
+        ac.SortAlbums(albumListPtr);         // sort by album size - optional
 
-        ac.SaveAlbumsAsJSON(albumListPtr, mediaEntry.resultPath); // save to json
+        ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.resultPath); // save to json
 
         auto endTime = std::chrono::steady_clock::now();
         
@@ -129,21 +129,21 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
         std::cout << "Processing: {}" << mediaEntry.resultPath << std::endl;
 
 
-        auto albumListChunk = albumCollection.RestoreAlbumCollectionFromJSON(mediaEntry.resultPath);
+        auto albumListChunk = albumCollection.LoadAlbumsFromJSON(mediaEntry.resultPath);
         albumListPtr->insert(albumListPtr->end(), albumListChunk->begin(), albumListChunk->end());
 
-        //albumListPtr = albumCollection.RestoreAlbumCollectionFromJSON(mediaEntry.resultPath);
-//        auto const& accumulatedList = AlbumCollection::RestoreAlbumCollectionFromJSON(mediaEntry.resultPath);
+        //albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaEntry.resultPath);
+//        auto const& accumulatedList = AlbumCollection::LoadAlbumsFromJSON(mediaEntry.resultPath);
 //        medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
     }
 
     //AlbumCollection ac(std::move(medialList));
     //AlbumCollection ac;
-	//ac.LoadAlbumCollection(medialList);
+	//ac.LoadAlbums(medialList);
     // ***by know medialList should contain an empty list***
 
-    albumCollection.SortByNumberOfTracks(albumListPtr);
-    auto dupList = albumCollection.FindDuplicatedAlbums(albumListPtr);
+    albumCollection.SortAlbums(albumListPtr);
+    auto dupList = albumCollection.FindDuplicateAlbums(albumListPtr);
 
     auto iCount = dupList.size();
     int iCurrent = 0;
@@ -181,8 +181,8 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
 
     for (auto& mediaEntry : mediaDirectoryList)
     {
-        auto albumListPtr = albumCollection.RestoreAlbumCollectionFromJSON(mediaEntry.resultPath);
-        albumCollection.SaveToSQLDatabase(albumListPtr, mediaEntry.dbPath);
+        auto albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaEntry.resultPath);
+        albumCollection.ExportToDatabase(albumListPtr, mediaEntry.dbPath);
     }
 
     return 0;
