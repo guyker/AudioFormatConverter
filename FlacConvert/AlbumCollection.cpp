@@ -103,7 +103,7 @@ MediaAlbumListPtr AlbumCollection::LoadAlbumCollection(std::filesystem::path alb
             albumCollectionDirPath, fs::directory_options::skip_permission_denied)) {
             try {
                 auto relativePath = fs::relative(entry.path(), albumCollectionDirPath);
-                int depth = std::distance(relativePath.begin(), relativePath.end());
+                auto depth = std::distance(relativePath.begin(), relativePath.end());
                 if (depth > AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth) {
                     continue;
                 }
@@ -425,11 +425,11 @@ bool AlbumCollection::SaveAlbumsAsJSON(std::shared_ptr<DirectoryContentEntryList
         std::string albumFolderString = CommonUtils::utf8string_to_string(albumPath.path().filename().u8string());
         
         rapidjson::Value albumPathStringVal;
-        albumPathStringVal.SetString(albumPathString.c_str(), albumPathString.size(), allocator);
+        albumPathStringVal.SetString(albumPathString.c_str(), static_cast<SizeType>(albumPathString.size()), allocator);
         albumObj.AddMember("Album Path", albumPathStringVal, allocator);
 
         rapidjson::Value albumFolderStringVal;
-        albumFolderStringVal.SetString(albumFolderString.c_str(), albumFolderString.size(), allocator);
+        albumFolderStringVal.SetString(albumFolderString.c_str(), static_cast<SizeType>(albumFolderString.size()), allocator);
         albumObj.AddMember("Folder", albumFolderStringVal, allocator);
 
         //Album tracks list holder 
