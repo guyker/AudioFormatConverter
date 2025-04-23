@@ -26,6 +26,7 @@
 #include "PlatformUtils.h"
 #include <spdlog/spdlog.h>
 
+#include "JsonUtils.h"
 
 
 std::string toJsonString(const FFprobeOutput& output) {
@@ -195,32 +196,6 @@ bool TryParseFFprobeFormat(const Value& doc, FFprobeOutput &mediaInfo)
         if (formatTag.HasMember("tags") && formatTag["tags"].IsObject()) {
             const rapidjson::Value& jsonValue = formatTag["tags"];
             format.tags = JsonUtils::GetKeyValueMap(jsonValue);
-
-            {
-                //OPTIONAL - ADD popular / most used tags to direct fields
-                //=============================================================
-                auto tags = formatTag["tags"].GetObj();
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "album")) { mediaInfo.format_tags.album = *val;; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "artist")) { mediaInfo.format_tags.artist = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "album_artist")) { mediaInfo.format_tags.album_artist = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "genre")) { mediaInfo.format_tags.genre = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "disc")) { mediaInfo.format_tags.disc = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "title")) { mediaInfo.format_tags.title = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "track")) { mediaInfo.format_tags.track = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "track_total")) { mediaInfo.format_tags.track_total = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "date")) { mediaInfo.format_tags.date = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "comment")) { mediaInfo.format_tags.comment = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "publisher")) { mediaInfo.format_tags.publisher = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "encoder")) { mediaInfo.format_tags.encoder = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "encoded_by")) { mediaInfo.format_tags.encoded_by = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "organization")) { mediaInfo.format_tags.organization = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "composer")) { mediaInfo.format_tags.composer = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "copyright")) { mediaInfo.format_tags.copyright = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "album_dynamic_range")) { mediaInfo.format_tags.album_dynamic_range = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "dynamic_range")) { mediaInfo.format_tags.dynamic_range = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "label")) { mediaInfo.format_tags.label = *val; }
-                if (auto val = JsonUtils::tryParseMember<std::wstring>(tags, "year")) { mediaInfo.format_tags.year = *val; }
-            }
         }
 
         return true;
@@ -304,26 +279,38 @@ bool MediaTrack::ExportToDatabase(sqlite3_stmt* stmt, const std::wstring& albumP
     sqlite3_bind_text(stmt, bindIndex++, mediaInfo.format.size.value_or("").c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, bindIndex++, mediaInfo.format.bit_rate.value_or(0));
     sqlite3_bind_int(stmt, bindIndex++, mediaInfo.format.probe_score);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.album).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.artist).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.album_artist).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.genre).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.disc).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.title).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.track).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.track_total).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.date).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.comment).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.publisher).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.encoder).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.encoded_by).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.organization).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.composer).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.copyright).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.album_dynamic_range).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.dynamic_range).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.label).c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, bindIndex++, PlatformUtils::wstringToUtf8_ver2(mediaInfo.format_tags.year).c_str(), -1, SQLITE_TRANSIENT);
+
+    auto& tags = mediaInfo.format.tags;
+    if (tags.has_value())
+    {
+		auto& tagsObj = tags.value();
+        
+        auto getValue = [](const JsonUtils::Tags& map, const std::string& key) -> std::string {
+                auto it = map.find(key);
+                return (it != map.end()) ? it->second : "";
+            };
+
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "album").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "artist").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "album_artist").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "genre").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "disc").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "title").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "track").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "track_total").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "date").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "comment").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "publisher").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "encoder").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "encoded_by").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "organization").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "composer").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "copyright").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "album_dynamic_range").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "dynamic_range").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "label").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, "year").c_str(), -1, SQLITE_TRANSIENT);
+    }
 
     if (auto stream1 = mediaInfo.streams.size() > 0 ? std::optional<Stream>{mediaInfo.streams[0]} : std::nullopt; stream1.has_value()) {
         sqlite3_bind_int(stmt, bindIndex++, stream1->index);

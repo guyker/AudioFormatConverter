@@ -198,35 +198,6 @@ struct FFprobeOutput {
     std::map<std::string, LibraryVersion> library_versions; // Library versions from -show_versions, key is library name
     std::vector<PixelFormat> pixel_formats; // Pixel formats array from -show_pixel_formats
 */
-
-	//for debuging / easy access
-	struct format_tags_debug
-	{
-		//for easy access and debugging
-	    std::wstring album;
-		std::wstring artist;
-		std::wstring album_artist;
-
-		std::wstring genre;
-		std::wstring disc;
-		std::wstring title;
-		std::wstring track;
-		std::wstring track_total;
-		std::wstring date;
-		std::wstring comment;
-		std::wstring publisher;
-		std::wstring encoder;
-		std::wstring encoded_by;
-		std::wstring organization;
-		std::wstring composer;
-		std::wstring copyright;
-
-		std::wstring album_dynamic_range;
-		std::wstring dynamic_range;
-
-		std::wstring label;
-		std::wstring year;
-	} format_tags;
 };
 
 

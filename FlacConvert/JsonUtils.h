@@ -14,9 +14,22 @@
 
 
 namespace JsonUtils {
+
+    struct CaseInsensitiveCompare {
+        bool operator()(const std::string& a, const std::string& b) const {
+            return std::lexicographical_compare(
+                a.begin(), a.end(),
+                b.begin(), b.end(),
+                [](char c1, char c2) {
+                    return tolower(c1) < tolower(c2);
+                });
+        }
+    };
+
     //Represents dynamic metadata tags (key-value pairs)
     // Key-value map, keys lowercase (e.g., "artist"), values strings (e.g., "The Beatles"), from file metadata
-    using Tags = std::map<std::string, std::string>;
+    //using Tags = std::map<std::string, std::string>;
+    using Tags = std::map<std::string, std::string, CaseInsensitiveCompare>;
 
 
     // Attempts to parse a RapidJSON member into the specified type T
