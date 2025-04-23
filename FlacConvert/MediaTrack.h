@@ -55,7 +55,7 @@ struct MediaTrack
 	std::filesystem::path trackPath; //media file path / location
 	uintmax_t fs_fileSize{ 0 };	//file size in bytes - calculated from File System
 	FFprobeOutput formatInfo;	//media information / tags
-	std::wstring mediaInfoString;	//media information / tags in json string
+	std::optional<std::wstring> mediaInfoString;	//media information / tags in json string
 
 	//keep it last for agregation
 	std::optional<std::string> LastErroString;
@@ -111,8 +111,9 @@ struct MediaTrack
 	}
 
 	//returns media information (json string and media objec) from a media file (on file system)
-	static std::tuple<FFprobeOutput, std::wstring> ReadMediaInfoFromJsonFile(std::filesystem::path mediaFilePath);
+	static std::tuple<FFprobeOutput, std::optional<std::wstring>> ReadMediaInfoFromJsonFile(std::filesystem::path mediaFilePath);
 
+	static std::string toJsonString(const FFprobeOutput& output);
 
 	static const std::string GetCreateTableSQL();
 	static const std::string GetInsertSQLStatement();

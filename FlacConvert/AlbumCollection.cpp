@@ -135,7 +135,7 @@ MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollect
                             spdlog::error("Error getting file size for {}: {}", CommonUtils::utf8string_to_string(entry.path().u8string()), e.what());
                         }
 
-                        trackList.push_back({ entry.path().filename().wstring(), fileSize, FFprobeOutput{}, L"{}", std::nullopt });
+                        trackList.push_back({ entry.path().filename().wstring(), fileSize, FFprobeOutput{}, std::nullopt, std::nullopt });
                     }
                 }
             }
@@ -263,7 +263,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
     //    CommonUtils::show_circular_progress(std::format("Processing... {}/{} - {}", ++albumCount, albumList.size(), name));
 
         //Album tracks list holder 
-        std::vector<std::tuple<MediaLoadingFuture, FFprobeOutput&, std::wstring&>> asyncFutureList;
+        std::vector<std::tuple<MediaLoadingFuture, FFprobeOutput&, std::optional<std::wstring>>> asyncFutureList;
 
         for (auto& [trackName, size, mediaInfo, mediaInfoString, lastError] : trackList)
         {
@@ -447,8 +447,18 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
 
                 rapidjson::Document trackDoc;
 
-                std::string utf8Json = PlatformUtils::wstringToUtf8_ver2(mediaInfoString);
-                trackDoc.Parse(utf8Json.c_str());
+                std::string jsonString{};
+				if (mediaInfoString.has_value())
+				{
+                    jsonString = PlatformUtils::wstringToUtf8_ver2(mediaInfoString.value());
+				}
+				else
+				{
+					jsonString = MediaTrack::toJsonString(item.formatInfo);
+				}
+
+              //  std::string utf8Json = PlatformUtils::wstringToUtf8_ver2(mediaInfoString);
+                trackDoc.Parse(jsonString.c_str());
                 if (trackDoc.HasParseError()) {
                     // Get error code and message
                     rapidjson::ParseErrorCode errorCode = trackDoc.GetParseError();
@@ -620,7 +630,7 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
                 trackFilename,
                 CommonUtils::stringToUintmax(mi.format.size.value_or("0")),
                 mi,
-                L"{}", // mediaInfoString (empty, as JSON is parsed into FFprobeOutput)
+                std::nullopt, // mediaInfoString (empty, as JSON is parsed into FFprobeOutput)
                 std::nullopt // lastError
                 });
         }
