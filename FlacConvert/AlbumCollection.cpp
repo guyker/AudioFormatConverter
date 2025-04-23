@@ -865,89 +865,7 @@ bool AlbumCollection::ExportToDatabase(std::shared_ptr<DirectoryContentEntryList
         return false;
     }
 
-    // Create table statement (use the same table definition as before)
-    std::string createTableSQL = std::format(
-        R"(
-        CREATE TABLE IF NOT EXISTS TracksDB (
-            ID INTEGER PRIMARY KEY,
-            album_path TEXT NOT NULL,
-            nb_streams INTEGER,
-            nb_programs INTEGER,
-            nb_stream_groups INTEGER,
-            format_name TEXT,
-            format_long_name TEXT,
-            start_time INTEGER,
-            duration REAL,
-            size TEXT,
-            bit_rate INTEGER,
-            probe_score INTEGER,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            {} TEXT,
-            stream1_index INTEGER,
-            stream1_codec_name TEXT,
-            stream1_codec_type TEXT,
-            stream1_sample_rate TEXT,
-            stream1_channels INTEGER,
-            stream1_channel_layout TEXT,
-            stream1_bit_rate INTEGER,
-            stream1_frame_size INTEGER,
-            stream1_duration REAL,
-            stream1_start_time INTEGER,
-            stream1_tag1 TEXT,
-            stream2_index INTEGER,
-            stream2_codec_name TEXT,
-            stream2_codec_type TEXT,
-            stream2_sample_rate TEXT,
-            stream2_channels INTEGER,
-            stream2_channel_layout TEXT,
-            stream2_bit_rate INTEGER,
-            stream2_frame_size INTEGER,
-            stream2_duration REAL,
-            stream2_start_time INTEGER,
-            stream2_tag1 TEXT
-        )
-    )",
-        kFormatTag_album,
-        kFormatTag_artist,
-        kFormatTag_album_artist,
-        kFormatTag_genre,
-        kFormatTag_disc,
-        kFormatTag_title,
-        kFormatTag_track,
-        kFormatTag_track_total,
-        kFormatTag_date,
-        kFormatTag_comment,
-        kFormatTag_publisher,
-        kFormatTag_encoder,
-        kFormatTag_encoded_by,
-        kFormatTag_organization,
-        kFormatTag_composer,
-        kFormatTag_copyright,
-        kFormatTag_album_dynamic_range,
-        kFormatTag_dynamic_range,
-        kFormatTag_label,
-        kFormatTag_year
-    );
-
-    rc = sqlite3_exec(db, createTableSQL.c_str(), nullptr, nullptr, nullptr);
+    rc = sqlite3_exec(db, MediaTrack::GetCreateTableSQL().c_str(), nullptr, nullptr, nullptr);
     if (rc != SQLITE_OK) {
         spdlog::error("Failed to create TracksDB table: {}", sqlite3_errmsg(db));
         sqlite3_close(db);
@@ -961,44 +879,8 @@ bool AlbumCollection::ExportToDatabase(std::shared_ptr<DirectoryContentEntryList
         return false;
     }
 
-    // Prepare the insert statement once.
-    // Define the format string as a const char* literal
-    // Format at runtime (e.g., inside a function)
-    std::string insertSQLFormat = std::format(
-        R"(
-        INSERT OR REPLACE INTO TracksDB (
-            id, album_path, nb_streams, nb_programs, nb_stream_groups, format_name, format_long_name,
-            start_time, duration, size, bit_rate, probe_score,
-            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
-            stream1_index, stream1_codec_name, stream1_codec_type, stream1_sample_rate, stream1_channels, stream1_channel_layout, stream1_bit_rate, stream1_frame_size, stream1_duration, stream1_start_time, stream1_tag1,
-            stream2_index, stream2_codec_name, stream2_codec_type, stream2_sample_rate, stream2_channels, stream2_channel_layout, stream2_bit_rate, stream2_frame_size, stream2_duration, stream2_start_time, stream2_tag1
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    )",
-        kFormatTag_album,
-        kFormatTag_artist,
-        kFormatTag_album_artist,
-        kFormatTag_genre,
-        kFormatTag_disc,
-        kFormatTag_title,
-        kFormatTag_track,
-        kFormatTag_track_total,
-        kFormatTag_date,
-        kFormatTag_comment,
-        kFormatTag_publisher,
-        kFormatTag_encoder,
-        kFormatTag_encoded_by,
-        kFormatTag_organization,
-        kFormatTag_composer,
-        kFormatTag_copyright,
-        kFormatTag_album_dynamic_range,
-        kFormatTag_dynamic_range,
-        kFormatTag_label,
-        kFormatTag_year
-    );
-
-
     sqlite3_stmt* stmt = nullptr;
-    rc = sqlite3_prepare_v2(db, insertSQLFormat.c_str(), -1, &stmt, nullptr);
+    rc = sqlite3_prepare_v2(db, MediaTrack::GetInsertSQLStatement().c_str(), -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
         spdlog::error("Failed to prepare insert statement: {}", sqlite3_errmsg(db));
         sqlite3_close(db);

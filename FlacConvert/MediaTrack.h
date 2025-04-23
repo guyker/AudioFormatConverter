@@ -25,6 +25,29 @@
 
 namespace fs = std::filesystem;
 
+// Define kFormatTag_* constants (adjust if defined elsewhere)
+namespace MediaTrackConstants {
+	constexpr const char* kFormatTag_album = "album";
+	constexpr const char* kFormatTag_artist = "artist";
+	constexpr const char* kFormatTag_album_artist = "album_artist";
+	constexpr const char* kFormatTag_genre = "genre";
+	constexpr const char* kFormatTag_disc = "disc";
+	constexpr const char* kFormatTag_title = "title";
+	constexpr const char* kFormatTag_track = "track";
+	constexpr const char* kFormatTag_track_total = "track_total";
+	constexpr const char* kFormatTag_date = "date";
+	constexpr const char* kFormatTag_comment = "comment";
+	constexpr const char* kFormatTag_publisher = "publisher";
+	constexpr const char* kFormatTag_encoder = "encoder";
+	constexpr const char* kFormatTag_encoded_by = "encoded_by";
+	constexpr const char* kFormatTag_organization = "organization";
+	constexpr const char* kFormatTag_composer = "composer";
+	constexpr const char* kFormatTag_copyright = "copyright";
+	constexpr const char* kFormatTag_album_dynamic_range = "album_dynamic_range";
+	constexpr const char* kFormatTag_dynamic_range = "dynamic_range";
+	constexpr const char* kFormatTag_label = "label";
+	constexpr const char* kFormatTag_year = "year";
+}
 
 struct MediaTrack
 {
@@ -91,6 +114,8 @@ struct MediaTrack
 	static std::tuple<FFprobeOutput, std::wstring> ReadMediaInfoFromJsonFile(std::filesystem::path mediaFilePath);
 
 
+	static const std::string GetCreateTableSQL();
+	static const std::string GetInsertSQLStatement();
 	static bool ExportToDatabase(sqlite3_stmt* stmt, const std::wstring& albumPath, const MediaTrack& track);
 
 

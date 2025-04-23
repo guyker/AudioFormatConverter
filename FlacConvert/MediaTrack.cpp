@@ -259,6 +259,133 @@ FFprobeOutput MediaTrack::ParseFFprobeInformation(std::wstring jsonString)
 #include "PlatformUtils.h"
 #include <spdlog/spdlog.h>
 
+
+const std::string MediaTrack::GetCreateTableSQL() {
+
+    std::string createTableSQL = std::format(
+        R"(
+        CREATE TABLE IF NOT EXISTS TracksDB (
+            ID INTEGER PRIMARY KEY,
+            album_path TEXT NOT NULL,
+            nb_streams INTEGER,
+            nb_programs INTEGER,
+            nb_stream_groups INTEGER,
+            format_name TEXT,
+            format_long_name TEXT,
+            start_time INTEGER,
+            duration REAL,
+            size TEXT,
+            bit_rate INTEGER,
+            probe_score INTEGER,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            {} TEXT,
+            stream1_index INTEGER,
+            stream1_codec_name TEXT,
+            stream1_codec_type TEXT,
+            stream1_sample_rate TEXT,
+            stream1_channels INTEGER,
+            stream1_channel_layout TEXT,
+            stream1_bit_rate INTEGER,
+            stream1_frame_size INTEGER,
+            stream1_duration REAL,
+            stream1_start_time INTEGER,
+            stream1_tag1 TEXT,
+            stream2_index INTEGER,
+            stream2_codec_name TEXT,
+            stream2_codec_type TEXT,
+            stream2_sample_rate TEXT,
+            stream2_channels INTEGER,
+            stream2_channel_layout TEXT,
+            stream2_bit_rate INTEGER,
+            stream2_frame_size INTEGER,
+            stream2_duration REAL,
+            stream2_start_time INTEGER,
+            stream2_tag1 TEXT
+        )
+    )",
+        MediaTrackConstants::kFormatTag_album,
+        MediaTrackConstants::kFormatTag_artist,
+        MediaTrackConstants::kFormatTag_album_artist,
+        MediaTrackConstants::kFormatTag_genre,
+        MediaTrackConstants::kFormatTag_disc,
+        MediaTrackConstants::kFormatTag_title,
+        MediaTrackConstants::kFormatTag_track,
+        MediaTrackConstants::kFormatTag_track_total,
+        MediaTrackConstants::kFormatTag_date,
+        MediaTrackConstants::kFormatTag_comment,
+        MediaTrackConstants::kFormatTag_publisher,
+        MediaTrackConstants::kFormatTag_encoder,
+        MediaTrackConstants::kFormatTag_encoded_by,
+        MediaTrackConstants::kFormatTag_organization,
+        MediaTrackConstants::kFormatTag_composer,
+        MediaTrackConstants::kFormatTag_copyright,
+        MediaTrackConstants::kFormatTag_album_dynamic_range,
+        MediaTrackConstants::kFormatTag_dynamic_range,
+        MediaTrackConstants::kFormatTag_label,
+        MediaTrackConstants::kFormatTag_year
+    );
+
+	return createTableSQL;
+}
+
+// Prepare the insert statement once.
+// Define the format string as a const char* literal
+// Format at runtime (e.g., inside a function)
+const std::string MediaTrack::GetInsertSQLStatement()
+{
+    std::string insertSQLStatement = std::format(
+        R"(
+        INSERT OR REPLACE INTO TracksDB (
+            id, album_path, nb_streams, nb_programs, nb_stream_groups, format_name, format_long_name,
+            start_time, duration, size, bit_rate, probe_score,
+            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+            stream1_index, stream1_codec_name, stream1_codec_type, stream1_sample_rate, stream1_channels, stream1_channel_layout, stream1_bit_rate, stream1_frame_size, stream1_duration, stream1_start_time, stream1_tag1,
+            stream2_index, stream2_codec_name, stream2_codec_type, stream2_sample_rate, stream2_channels, stream2_channel_layout, stream2_bit_rate, stream2_frame_size, stream2_duration, stream2_start_time, stream2_tag1
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    )",
+        kFormatTag_album,
+        kFormatTag_artist,
+        kFormatTag_album_artist,
+        kFormatTag_genre,
+        kFormatTag_disc,
+        kFormatTag_title,
+        kFormatTag_track,
+        kFormatTag_track_total,
+        kFormatTag_date,
+        kFormatTag_comment,
+        kFormatTag_publisher,
+        kFormatTag_encoder,
+        kFormatTag_encoded_by,
+        kFormatTag_organization,
+        kFormatTag_composer,
+        kFormatTag_copyright,
+        kFormatTag_album_dynamic_range,
+        kFormatTag_dynamic_range,
+        kFormatTag_label,
+        kFormatTag_year
+    );
+
+    return insertSQLStatement;
+}
+
 bool MediaTrack::ExportToDatabase(sqlite3_stmt* stmt, const std::wstring& albumPath, const MediaTrack& track) {
     const auto& [trackName, size, mediaInfo, mediaInfoString, lastError] = track;
     std::string albumPathUtf8 = PlatformUtils::wstringToUtf8_ver2(albumPath);
