@@ -144,16 +144,18 @@ std::tuple<FFprobeOutput, std::wstring> MediaTrack::ReadMediaInfoFromJsonFile(st
         if (AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI)
         {
             auto mediaInfo = FFmpeg::GetFFprobeMetadataAPI(mediaFilePath);
+            //return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJsonString(mediaInfo)));
             return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJsonString(mediaInfo)));
         }
         else
         {
-            auto mediaInfo = FFmpeg::GetFFprobeMetadataShell(mediaFilePath);
-            return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJsonString(mediaInfo)));
+            auto jsonString = FFmpeg::GetJsonMetadataShell(mediaFilePath);
+            auto mediaInfo = MediaTrack::ParseFFprobeInformation(jsonString);
+            return std::make_tuple(mediaInfo, jsonString);
         }
     }
     catch (const std::exception& ex) {
-		spdlog::error("Error (ReadMediaInfoFromJsonFile): ", ex.what());
+		spdlog::error("Error in ReadMediaInfoFromJsonFile: ", ex.what());
         //try
         //{
         //    auto mediaInfo = FFmpeg::GetFFprobeMetadataShell(mediaFilePath);
