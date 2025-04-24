@@ -121,7 +121,7 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
 
     //DirectoryContentEntryList medialList;
 	AlbumCollection albumCollection;
-	std::shared_ptr<DirectoryContentEntryList> albumListPtr = nullptr;
+	std::shared_ptr<DirectoryContentEntryList> albumListPtr = std::make_shared<DirectoryContentEntryList>();
 
     for (auto& mediaEntry : mediaDirectoryList)
     {
