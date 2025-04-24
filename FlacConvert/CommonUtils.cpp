@@ -5,8 +5,13 @@
 #include <charconv>
 #include <stdexcept>
 #include <iostream>
+#include <chrono>
+#include <filesystem>
 
 namespace CommonUtils {
+
+
+
     std::uintmax_t stringToUintmax(const std::string& str) {
         if (str.empty()) {
             throw std::invalid_argument("Empty string");
@@ -84,10 +89,51 @@ namespace CommonUtils {
     //    std::fflush(stdout);
     //}
 
+
+
+
+    static std::chrono::steady_clock::time_point lastTime{ std::chrono::steady_clock::now() };
+
+
+    double avarage_duration(long long count, long long total) {
+        using Clock = std::chrono::steady_clock;
+        static auto lastTime = Clock::now();
+        static double sumMs = 0.0;
+        static long long calls = 0;
+
+        auto now = Clock::now();
+        if (calls > 0) {
+            // milliseconds since last call
+            double delta = std::chrono::duration<double, std::milli>(now - lastTime).count();
+            sumMs += delta;
+            double avgMs = sumMs / calls;
+
+            //std::cout
+            //    << "\r[" << count << "/" << total << "] "
+            //    << "Avg interval: " << avgMs << " ms"
+            //    << std::flush;
+
+            ++calls;
+            lastTime = now;
+            return avgMs;
+        }
+        ++calls;
+        lastTime = now;
+
+        return 0;
+    }
+
     void show_progress_bar(int total, std::string prefix, size_t count, size_t size, std::string name) {
         const char* spinner = "|/-\\";
         int spinner_index = 0;
         const int bar_width = 20; // Width of the progress bar (characters)
+
+        static std::chrono::steady_clock::time_point lastTime{ std::chrono::steady_clock::now() };
+		
+        auto currentTime = std::chrono::steady_clock::now();
+
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastTime).count();
+
 
         auto normalized_count = std::min<size_t>(count, size);
         int i = bar_width * normalized_count / size;
@@ -101,13 +147,16 @@ namespace CommonUtils {
             bar[j] = '=';
         }
 
-        auto emprryString = getEraseLineString(static_cast<int>(name.size()));
+        auto emprryString = getEraseLineString(static_cast<int>(10 + name.size()));
+
+        auto av_duration = avarage_duration(count, size);        
+		std::string avarageDuration = " [" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + "] ";
 
         // Print bar, percentage, and spinner
-        std::cout << "\rProgress: [" << bar << "] " << percent << "% " << spinner[spinner_index] << " " << normalized_count << "/" << size << " " << emprryString << std::flush;
+        std::cout << "\rProgress: [" << bar << "] " << percent << "% " << avarageDuration << spinner[spinner_index] << " " << normalized_count << "/" << size << " " << emprryString << std::flush;
         if (count <= size)
         {
-            std::cout << "\rProgress: [" << bar << "] " << percent << "% " << spinner[spinner_index] << " " << normalized_count << "/" << size << " " << name << std::flush;
+            std::cout << "\rProgress: [" << bar << "] " << percent << "% " <<avarageDuration << spinner[spinner_index] << " " << normalized_count << "/" << size << " " << name << std::flush;
         }
 
         // Update spinner

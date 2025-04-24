@@ -36,50 +36,7 @@ using namespace rapidjson;
 
 
 
-long long GetMilliFromDuration(auto time1, auto time2)
-{
-    auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(time2 - time1).count();
 
-    return delta;
-}
-
-std::string GetDurationinString(auto time1, auto time2)
-{
-    auto duration = GetMilliFromDuration(time1, time2);
-    if (duration < 0)
-    {
-        return "[0?]";
-    }
-    else if (duration < 1000)
-    {
-        //less than 1 second
-        return std::to_string(duration) + " mSec";
-    }
-    else if (duration < 1000 * 60)
-    {
-        //lss than 1 minute
-        return std::to_string(duration / 1000) + " sec";
-    }
-    else if (duration < 1000 * 60 * 60)
-    {
-        //less than 1 hour
-        auto sec = duration / 1000;
-        auto min = duration / 1000 / 60;
-
-        return std::to_string(min) + " min, " + std::to_string(sec - min * 60) + " sec";
-    }
-    else
-    {
-        //more than 1 hour
-        auto sec = duration / 1000;
-        auto min = duration / 1000 / 60;
-        auto hour = duration / 1000 / 60 / 60;
-
-        return std::to_string(hour) + " hours, " +
-            std::to_string(min - hour * 60) + " min, " +
-            std::to_string(sec - (hour * 60 * 60) - ((min - hour * 60) * 60)) + " sec";
-    }
-}
 
 
 MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata) {
@@ -98,9 +55,14 @@ MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollect
     try {
         spdlog::info("First pass: Find all folders, Please wait (might take a few minutes)...");
 
+        long long albumCount = 0;
+
 		// First pass: Find all folders - Discove folders
         for (const auto& entry : fs::recursive_directory_iterator(
             albumCollectionDirPath, fs::directory_options::skip_permission_denied)) {
+
+            std::cout << "\rScnning albums, Please wait... " << ++albumCount;
+
             try {
                 auto relativePath = fs::relative(entry.path(), albumCollectionDirPath);
                 auto depth = std::distance(relativePath.begin(), relativePath.end());
@@ -116,7 +78,7 @@ MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollect
             }
         }
 
-        spdlog::info("First pass: Completed, found {} Folders [{}]", albumMap.size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        spdlog::info("First pass: Completed, found {} Folders [{}]", albumMap.size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();
 
 
@@ -152,7 +114,7 @@ MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollect
             }
         }
 
-        spdlog::info("Second pass: Completed, {} Albums [{}]", albumListPtr->size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        spdlog::info("Second pass: Completed, {} Albums [{}]", albumListPtr->size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();
 
     }
@@ -168,7 +130,7 @@ MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollect
 
         auto nAlbums = ImportMetadata(albumListPtr, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
 
-        spdlog::info("Third pass: Completed, ffmpeg issues: {} [{}]", FFmpeg::get_ffmpeg_logs().size(), GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        spdlog::info("Third pass: Completed, ffmpeg issues: {} [{}]", FFmpeg::get_ffmpeg_logs().size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();
     }
     else

@@ -10,12 +10,72 @@
 #include <windows.h>
 #endif
 
+#include <filesystem>    
+#include <chrono>
+
+
 namespace CommonUtils
 {
     std::uintmax_t stringToUintmax(const std::string& str);
 
 
     constexpr std::array<char, 4> ProgressCircleChars = { '|', '/', '-', '\\' };
+
+
+    
+
+    long long GetMilliFromDuration(auto time1, auto time2)
+    {
+        auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(time2 - time1).count();
+
+        return delta;
+    }
+    
+    std::string GetDurationinString(auto duration)
+    {
+        if (duration < 0)
+        {
+            return "[0?]";
+        }
+        else if (duration < 1000)
+        {
+            //less than 1 second
+            return std::to_string(duration) + " mSec";
+        }
+        else if (duration < 1000 * 60)
+        {
+            //lss than 1 minute
+            return std::to_string(duration / 1000) + " sec";
+        }
+        else if (duration < 1000 * 60 * 60)
+        {
+            //less than 1 hour
+            auto sec = duration / 1000;
+            auto min = duration / 1000 / 60;
+
+            return std::to_string(min) + " min, " + std::to_string(sec - min * 60) + " sec";
+        }
+        else
+        {
+            //more than 1 hour
+            auto sec = duration / 1000;
+            auto min = duration / 1000 / 60;
+            auto hour = duration / 1000 / 60 / 60;
+
+            return std::to_string(hour) + " hours, " +
+                std::to_string(min - hour * 60) + " min, " +
+                std::to_string(sec - (hour * 60 * 60) - ((min - hour * 60) * 60)) + " sec";
+        }
+    }
+
+
+    std::string GetDurationinString(auto time1, auto time2)
+    {
+        auto duration = GetMilliFromDuration(time1, time2);
+        return GetDurationinString(duration);
+    }
+
+
 
     void show_circular_progress(std::string str = "");
     void show_progress_bar(int total, std::string prefix, size_t count, size_t size, std::string name);
