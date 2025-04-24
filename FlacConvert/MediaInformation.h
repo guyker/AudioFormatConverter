@@ -104,8 +104,8 @@ struct Format {
     unsigned int packet_size{ 0 }; //The default packet size (often used for streaming data)
     int max_delay{ -1 }; //The maximum demuxing or buffering delay (usually in microseconds)
     int flags{ 0 };
-    __int64 probesize{ 0 };
-    __int64 max_analyze_duration{ 0 };
+//    __int64 probesize{ 0 }; //NO NEED USER SETTINGS
+//    __int64 max_analyze_duration{ 0 }; //NO NEED USER SETTINGS
 
 
 	int probe_score{ 0 }; // Format detection confidence, integer 0-100

@@ -333,10 +333,9 @@ namespace FFmpeg {
         fmt.flags = fmt_ctx->flags;
 
 
-        fmt.probesize = fmt_ctx->probesize;
-        fmt.max_analyze_duration = fmt_ctx->max_analyze_duration;
+     //   fmt.probesize = fmt_ctx->probesize;
+     //   fmt.max_analyze_duration = fmt_ctx->max_analyze_duration;
         
-
 
         fmt.format_name = fmt_ctx->iformat->name ? fmt_ctx->iformat->name : "";
         fmt.format_long_name = fmt_ctx->iformat->long_name ? fmt_ctx->iformat->long_name : "";

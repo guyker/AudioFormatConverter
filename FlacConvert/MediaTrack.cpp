@@ -167,17 +167,12 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
         if (fmt.duration) {
             json << ",\n    \"duration\": \"" << std::fixed << std::setprecision(3) << *fmt.duration << "\"";
         }
-        //if (fmt.size) {
-        //    json << ",\n    \"size\": \"" << *fmt.size << "\"";
-        //}
         if (fmt.bit_rate) {
             json << ",\n    \"bit_rate\": \"" << *fmt.bit_rate << "\"";
         }
         if (fmt.probe_score) {
             json << ",\n    \"probe_score\": " << fmt.probe_score;
         }
-
-        json << ",\n    \"max_analyze_duration\": " << fmt.max_analyze_duration;
 
         json << ",\n    \"audio_codec_id\": " << fmt.audio_codec_id;
         if (fmt.audio_codec_id != AV_CODEC_ID_NONE)
