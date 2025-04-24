@@ -617,11 +617,55 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
 
 //-------------COMPARE
 
-
-void AlbumCollection::SortAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool ascending)
+bool CompareTags(std::vector<MediaTrack> tList1, std::vector<MediaTrack> tList2, const std::string tagName)
 {
-    std::ranges::stable_sort(*albumListPtr, SortByTracks<SortOrder::Ascending>{});
+
+    return true;
 }
+
+void AlbumCollection::SortAlbums(std::shared_ptr<std::vector<MediaAlbum>> albumListPtr,
+                                 const std::vector<std::pair<SortBy, bool>>& criteria)
+{
+    std::ranges::stable_sort(*albumListPtr, [&](const auto& a, const auto& b) {
+        for (const auto& [criterion, ascending] : criteria) {
+            int result = 0;
+
+            switch (criterion) {
+            case SortBy::AlbumName: {
+                const auto& nameA = a.path.path().filename().wstring();
+                const auto& nameB = b.path.path().filename().wstring();
+                result = nameA.compare(nameB);
+                break;
+            }
+
+            case SortBy::Artist:
+                result = CompareTags(a.trackList, b.trackList, "artist");
+                break;
+
+            case SortBy::Year:
+                result = CompareTags(a.trackList, b.trackList, "year");
+                break;
+
+            case SortBy::TrackCount:
+                result = static_cast<int>(a.trackList.size()) - static_cast<int>(b.trackList.size());
+                break;
+
+            default:
+                break;
+            }
+
+            if (result != 0)
+                return (result < 0) == ascending;
+        }
+
+        return false; // Considered equal for all criteria
+        });
+}
+
+//void AlbumCollection::SortAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool ascending)
+//{
+//    std::ranges::stable_sort(*albumListPtr, SortByTracks<SortOrder::Ascending>{});
+//}
 
 
 

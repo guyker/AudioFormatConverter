@@ -40,6 +40,8 @@
 #include <filesystem>
 #include "MediaAlbum.h"
 
+enum class SortBy { AlbumName, Artist, Year, TrackCount };
+
 class AlbumCollection
 {
 public:
@@ -66,7 +68,8 @@ public:
 
 
 	//compare
-	void SortAlbums(std::shared_ptr<std::vector<MediaAlbum>>, bool ascending = true);
+//	void SortAlbums(std::shared_ptr<std::vector<MediaAlbum>>, bool ascending = true);
+	void SortAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr, const std::vector<std::pair<SortBy, bool>>& criteria);
 	SimilarDirectoryEntryList FindDuplicateAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr);
 
 	

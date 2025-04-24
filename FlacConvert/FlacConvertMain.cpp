@@ -101,7 +101,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 
         AlbumCollection ac;
         auto albumListPtr = ac.LoadAlbums(mediaEntry.mediaPath, true); //load albume list from directory path
-        ac.SortAlbums(albumListPtr);         // sort by album size - optional
+        ac.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });         // sort by album size - optional
 
         ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.resultPath); // save to json
 
@@ -142,7 +142,7 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
 	//ac.LoadAlbums(medialList);
     // ***by know medialList should contain an empty list***
 
-    albumCollection.SortAlbums(albumListPtr);
+    albumCollection.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });
     auto dupList = albumCollection.FindDuplicateAlbums(albumListPtr);
 
     auto iCount = dupList.size();
