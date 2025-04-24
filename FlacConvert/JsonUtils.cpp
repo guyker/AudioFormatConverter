@@ -85,6 +85,21 @@ namespace JsonUtils {
                 }
             }
         }
+        else if constexpr (std::is_same_v<T, uint64_t>) {
+            if (value.IsInt64()) {
+                return value.GetInt64();
+            }
+        }
+        else if constexpr (std::is_same_v<T, int64_t>) {
+            if (value.IsInt64()) {
+                return value.GetInt64();
+            }
+        }
+        else if constexpr (std::is_same_v<T, long long>) {
+            if (value.IsInt64()) {
+                return value.GetInt64();
+            }
+        }
         else if constexpr (std::is_same_v<T, double>) {
             if (value.IsDouble()) {
                 return value.GetDouble();

@@ -46,6 +46,9 @@ namespace JsonUtils {
 
     template std::optional<int> tryParseMember<int>(const rapidjson::Value&, const char*);
     template std::optional<long> tryParseMember<long>(const rapidjson::Value&, const char*);
+    template std::optional<int64_t> tryParseMember<int64_t>(const rapidjson::Value&, const char*);
+    template std::optional<uint64_t> tryParseMember<uint64_t>(const rapidjson::Value&, const char*);
+    template std::optional<long long> tryParseMember<long long>(const rapidjson::Value&, const char*);
     template std::optional<double> tryParseMember<double>(const rapidjson::Value&, const char*);
     template std::optional<bool> tryParseMember<bool>(const rapidjson::Value&, const char*);
 

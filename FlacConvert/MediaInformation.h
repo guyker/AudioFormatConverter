@@ -37,28 +37,6 @@ extern "C" {
 
 namespace fs = std::filesystem;
 
-//const std::string kFormatTag_album = "album";
-constexpr const char* kFormatTag_album = "album";
-constexpr const char* kFormatTag_artist = "artist";
-constexpr const char* kFormatTag_album_artist = "album_artist";
-constexpr const char* kFormatTag_genre = "genre";
-constexpr const char* kFormatTag_disc = "disc";
-constexpr const char* kFormatTag_title = "title";
-constexpr const char* kFormatTag_track = "track";
-constexpr const char* kFormatTag_track_total = "track_total";
-constexpr const char* kFormatTag_date = "date";
-constexpr const char* kFormatTag_comment = "comment";
-constexpr const char* kFormatTag_publisher = "publisher";
-constexpr const char* kFormatTag_encoder = "encoder";
-constexpr const char* kFormatTag_encoded_by = "encoded_by";
-constexpr const char* kFormatTag_organization = "organization";
-constexpr const char* kFormatTag_composer = "composer";
-constexpr const char* kFormatTag_copyright = "copyright";
-constexpr const char* kFormatTag_album_dynamic_range = "album_dynamic_range";
-constexpr const char* kFormatTag_dynamic_range = "dynamic_range";
-constexpr const char* kFormatTag_label = "label";
-constexpr const char* kFormatTag_year = "year";
-
 
 // Represents the "disposition" object for streams/frames
 struct Disposition {
@@ -79,7 +57,8 @@ struct Disposition {
 // Represents the "format" section (-show_format)
 struct Format {
 	std::string filename; // File path/name, e.g., "/path/to/song.flac"
-    std::optional<uint64_t> file_size;
+    std::optional<uint64_t> fs_file_size;  // File size - read from FileSystem
+    std::optional<int64_t> file_size; // File size in bytes, string with integer, e.g., "12345678", optional
 
 
     std::optional<std::string> url; // The filename or URL of the media file
@@ -98,7 +77,6 @@ struct Format {
 	std::string format_long_name; // Container format descriptive name, e.g., "raw FLAC"
 	std::optional<int64_t> start_time; // Start time in seconds, string with decimal, e.g., "0.000000", optional
 	std::optional<double> duration; // Duration in seconds, string with decimal, e.g., "123.456789", optional
-	std::optional<std::string> size; // File size in bytes, string with integer, e.g., "12345678", optional
 	std::optional<int64_t> bit_rate; // Overall bitrate in bits/s, string with integer, e.g., "960000", optional
 
     unsigned int packet_size{ 0 }; //The default packet size (often used for streaming data)

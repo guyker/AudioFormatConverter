@@ -7,6 +7,9 @@
 
 #include "FFmpeg.h"
 
+#include <libavformat/avformat.h>
+
+
 #include <cstdarg>
 #include <cstdio>
 #include <string>
@@ -304,12 +307,17 @@ namespace FFmpeg {
 
         // Optional: Get file size from filesystem
         try {
-            fmt.file_size = std::filesystem::file_size(filePath);
+            fmt.fs_file_size = std::filesystem::file_size(filePath);
         }
         catch (const std::filesystem::filesystem_error& e) {
             std::cerr << "Failed to get file size: " << e.what() << "\n";
         }
         
+        int64_t file_size = avio_size(fmt_ctx->pb);
+        if (file_size >= 0) {
+            fmt.file_size = file_size;
+        }
+
         fmt.ctx_flags = fmt_ctx->ctx_flags;
         fmt.nb_streams = fmt_ctx->nb_streams;
 

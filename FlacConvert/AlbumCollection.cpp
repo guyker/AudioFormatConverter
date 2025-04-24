@@ -592,7 +592,7 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
                 std::filesystem::path(CommonUtils::utf8ToWstring(mi.format.filename)).filename().wstring();
             trackList.push_back({
                 trackFilename,
-                CommonUtils::stringToUintmax(mi.format.size.value_or("0")),
+                mi.format.fs_file_size.value_or(0),
                 mi,
                 std::nullopt, // mediaInfoString (empty, as JSON is parsed into FFprobeOutput)
                 std::nullopt // lastError
