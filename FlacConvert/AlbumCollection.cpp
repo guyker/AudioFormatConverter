@@ -55,13 +55,14 @@ MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollect
     try {
         spdlog::info("First pass: Find all folders, Please wait (might take a few minutes)...");
 
-        long long albumCount = 0;
+        long long folderCount = 0;
 
 		// First pass: Find all folders - Discove folders
         for (const auto& entry : fs::recursive_directory_iterator(
             albumCollectionDirPath, fs::directory_options::skip_permission_denied)) {
 
-            std::cout << "\rScnning albums, Please wait... " << ++albumCount;
+            //progress update
+            std::cout << "\rScnning albums, Please wait... " << ++folderCount;
 
             try {
                 auto relativePath = fs::relative(entry.path(), albumCollectionDirPath);
@@ -77,6 +78,7 @@ MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollect
                 spdlog::error("Error accessing {}: {}", CommonUtils::utf8string_to_string(entry.path().u8string()), e.what());
             }
         }
+        std::cout << "\rScnning albums, Please wait... " << folderCount << " Completed" << std::endl;
 
         spdlog::info("First pass: Completed, found {} Folders [{}]", albumMap.size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();

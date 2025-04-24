@@ -132,6 +132,112 @@ FFprobeOutput MediaTrack::ParseFFprobeInformation(const Value& doc)
     return mediaInfo;
 }
 
+std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
+    std::ostringstream json;
+
+    json << "{\n";
+
+    // Format section
+    //if (output.format)
+    {
+        json << "  \"format\": {\n";
+        const Format& fmt = output.format;
+
+        json << "    \"filename\": \"" << JsonUtils::escapeJsonString(fmt.filename) << "\",\n";
+        json << "    \"nb_streams\": " << fmt.nb_streams << ",\n";
+        json << "    \"format_name\": \"" << JsonUtils::escapeJsonString(fmt.format_name) << "\",\n";
+        json << "    \"format_long_name\": \"" << JsonUtils::escapeJsonString(fmt.format_long_name) << "\"";
+
+        if (fmt.duration) {
+            json << ",\n    \"duration\": \"" << std::fixed << std::setprecision(3) << *fmt.duration << "\"";
+        }
+        if (fmt.bit_rate) {
+            json << ",\n    \"bit_rate\": \"" << *fmt.bit_rate << "\"";
+        }
+        if (fmt.start_time) {
+            json << ",\n    \"start_time\": \"" << *fmt.start_time << "\"";
+        }
+        if (fmt.probe_score) {
+            json << ",\n    \"probe_score\": " << fmt.probe_score;
+        }
+        if (fmt.file_size) {
+            json << ",\n    \"size\": \"" << *fmt.file_size << "\"";
+        }
+        if (fmt.tags) {
+            json << ",\n    \"tags\": {\n";
+            bool first = true;
+            for (const auto& [key, value] : fmt.tags.value()) {
+                if (!first) json << ",\n";
+                json << "      \"" << JsonUtils::escapeJsonString(key) << "\": \"" << JsonUtils::escapeJsonString(value) << "\"";
+                first = false;
+            }
+            json << "\n    }";
+        }
+        json << "\n  }";
+    }
+
+    // Streams section
+    if (!output.streams.empty()) {
+        json << ",\n";
+        json << "  \"streams\": [\n";
+        for (size_t i = 0; i < output.streams.size(); ++i) {
+            const Stream& s = output.streams[i];
+            json << "    {\n";
+            json << "      \"index\": " << s.index;
+            if (s.codec_name) {
+                json << ",\n      \"codec_name\": \"" << JsonUtils::escapeJsonString(*s.codec_name) << "\"";
+            }
+            if (s.codec_type) {
+                json << ",\n      \"codec_type\": \"" << JsonUtils::escapeJsonString(*s.codec_type) << "\"";
+            }
+            if (s.sample_rate) {
+                json << ",\n      \"sample_rate\": \"" << JsonUtils::escapeJsonString(*s.sample_rate) << "\"";
+            }
+            if (s.channels) {
+                json << ",\n      \"channels\": " << *s.channels;
+            }
+            if (s.channel_layout) {
+                json << ",\n      \"channel_layout\": \"" << JsonUtils::escapeJsonString(*s.channel_layout) << "\"";
+            }
+            if (s.bit_rate) {
+                json << ",\n      \"bit_rate\": \"" << *s.bit_rate << "\"";
+            }
+            if (s.bits_per_sample) {
+                json << ",\n      \"bits_per_sample\": " << *s.bits_per_sample;
+            }
+            if (s.frame_size) {
+                json << ",\n      \"frame_size\": " << *s.frame_size;
+            }
+            if (s.duration) {
+                json << ",\n      \"duration\": \"" << JsonUtils::escapeJsonString(*s.duration) << "\"";
+            }
+            if (s.start_time) {
+                json << ",\n      \"start_time\": \"" << *s.start_time << "\"";
+            }
+            if (s.nb_frames) {
+                json << ",\n      \"nb_frames\": \"" << *s.nb_frames << "\"";
+            }
+            if (s.tags) {
+                json << ",\n      \"tags\": {\n";
+                bool first = true;
+                for (const auto& [key, value] : s.tags.value()) {
+                    if (!first) json << ",\n";
+                    json << "        \"" << JsonUtils::escapeJsonString(key) << "\": \"" << JsonUtils::escapeJsonString(value) << "\"";
+                    first = false;
+                }
+                json << "\n      }";
+            }
+            json << "\n    }";
+            if (i < output.streams.size() - 1) json << ",";
+            json << "\n";
+        }
+        json << "  ]";
+    }
+
+    json << "\n}";
+    return json.str();
+}
+
 FFprobeOutput MediaTrack::ParseFFprobeInformation(std::wstring jsonString)
 {
     rapidjson::Document doc;
@@ -381,108 +487,4 @@ bool MediaTrack::ExportToDatabase(sqlite3_stmt* stmt, const std::wstring& albumP
 
 
 
-std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
-    std::ostringstream json;
 
-    json << "{\n";
-
-    // Format section
-    //if (output.format)
-    {
-        json << "  \"format\": {\n";
-        const Format& fmt = output.format;
-
-        json << "    \"filename\": \"" << JsonUtils::escapeJsonString(fmt.filename) << "\",\n";
-        json << "    \"nb_streams\": " << fmt.nb_streams << ",\n";
-        json << "    \"format_name\": \"" << JsonUtils::escapeJsonString(fmt.format_name) << "\",\n";
-        json << "    \"format_long_name\": \"" << JsonUtils::escapeJsonString(fmt.format_long_name) << "\"";
-
-        if (fmt.duration) {
-            json << ",\n    \"duration\": \"" << std::fixed << std::setprecision(3) << *fmt.duration << "\"";
-        }
-        if (fmt.bit_rate) {
-            json << ",\n    \"bit_rate\": \"" << *fmt.bit_rate << "\"";
-        }
-        if (fmt.start_time) {
-            json << ",\n    \"start_time\": \"" << *fmt.start_time << "\"";
-        }
-        if (fmt.probe_score) {
-            json << ",\n    \"probe_score\": " << fmt.probe_score;
-        }
-        if (fmt.file_size) {
-            json << ",\n    \"size\": \"" << *fmt.file_size << "\"";
-        }
-        if (fmt.tags) {
-            json << ",\n    \"tags\": {\n";
-            bool first = true;
-            for (const auto& [key, value] : fmt.tags.value()) {
-                if (!first) json << ",\n";
-                json << "      \"" << JsonUtils::escapeJsonString(key) << "\": \"" << JsonUtils::escapeJsonString(value) << "\"";
-                first = false;
-            }
-            json << "\n    }";
-        }
-        json << "\n  }";
-    }
-
-    // Streams section
-    if (!output.streams.empty()) {
-        json << ",\n";
-        json << "  \"streams\": [\n";
-        for (size_t i = 0; i < output.streams.size(); ++i) {
-            const Stream& s = output.streams[i];
-            json << "    {\n";
-            json << "      \"index\": " << s.index;
-            if (s.codec_name) {
-                json << ",\n      \"codec_name\": \"" << JsonUtils::escapeJsonString(*s.codec_name) << "\"";
-            }
-            if (s.codec_type) {
-                json << ",\n      \"codec_type\": \"" << JsonUtils::escapeJsonString(*s.codec_type) << "\"";
-            }
-            if (s.sample_rate) {
-                json << ",\n      \"sample_rate\": \"" << JsonUtils::escapeJsonString(*s.sample_rate) << "\"";
-            }
-            if (s.channels) {
-                json << ",\n      \"channels\": " << *s.channels;
-            }
-            if (s.channel_layout) {
-                json << ",\n      \"channel_layout\": \"" << JsonUtils::escapeJsonString(*s.channel_layout) << "\"";
-            }
-            if (s.bit_rate) {
-                json << ",\n      \"bit_rate\": \"" << *s.bit_rate << "\"";
-            }
-            if (s.bits_per_sample) {
-                json << ",\n      \"bits_per_sample\": " << *s.bits_per_sample;
-            }
-            if (s.frame_size) {
-                json << ",\n      \"frame_size\": " << *s.frame_size;
-            }
-            if (s.duration) {
-                json << ",\n      \"duration\": \"" << JsonUtils::escapeJsonString(*s.duration) << "\"";
-            }
-            if (s.start_time) {
-                json << ",\n      \"start_time\": \"" << *s.start_time << "\"";
-            }
-            if (s.nb_frames) {
-                json << ",\n      \"nb_frames\": \"" << *s.nb_frames << "\"";
-            }
-            if (s.tags) {
-                json << ",\n      \"tags\": {\n";
-                bool first = true;
-                for (const auto& [key, value] : s.tags.value()) {
-                    if (!first) json << ",\n";
-                    json << "        \"" << JsonUtils::escapeJsonString(key) << "\": \"" << JsonUtils::escapeJsonString(value) << "\"";
-                    first = false;
-                }
-                json << "\n      }";
-            }
-            json << "\n    }";
-            if (i < output.streams.size() - 1) json << ",";
-            json << "\n";
-        }
-        json << "  ]";
-    }
-
-    json << "\n}";
-    return json.str();
-}
