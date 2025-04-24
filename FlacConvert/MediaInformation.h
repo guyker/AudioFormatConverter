@@ -10,6 +10,14 @@
 #include <cstdint>
 #include <map>
 
+extern "C" {
+#include <libavformat/avformat.h>
+    //#include <libavutil/avutil.h>
+#include <libavutil/log.h>
+#include <libavutil/error.h>
+#include <libavcodec/avcodec.h>
+}
+
 #include "JsonUtils.h"
 #include "CommonUtils.h"
 
@@ -71,15 +79,20 @@ struct Disposition {
 // Represents the "format" section (-show_format)
 struct Format {
 	std::string filename; // File path/name, e.g., "/path/to/song.flac"
-    
     std::optional<uint64_t> file_size;
+
+
+    std::optional<std::string> url; // The filename or URL of the media file
 
     int ctx_flags{ 0 };
     int nb_streams{ 0 }; // Number of streams, non-negative integer, e.g., 1
 	int nb_programs{ 0 }; // Number of programs, non-negative integer, e.g., 0
     unsigned int nb_stream_groups{ 0 }; //OPTIONAL ????
 	
-    unsigned int nb_chapters{ 0 }; //OPTIONAL ????
+    unsigned int nb_chapters{ 0 }; // Number of chapters and array of chapter metadata. Some music files (e.g., audiobooks, long mixes) have chapters.
+
+    enum AVCodecID audio_codec_id { AV_CODEC_ID_NONE }; // ID of the audio codec (e.g., AV_CODEC_ID_MP3, AV_CODEC_ID_FLAC).
+    std::optional<std::string> audio_codec_name;
 
 	std::string format_name; // Container format short name, e.g., "flac", "mp3"
 	std::string format_long_name; // Container format descriptive name, e.g., "raw FLAC"

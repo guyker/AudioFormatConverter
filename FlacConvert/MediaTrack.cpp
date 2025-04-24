@@ -22,6 +22,7 @@
 #include <windows.h> // For Windows path handling
 
 #include "FFmpeg.h"
+#include <codecvt>
 
 #include "PlatformUtils.h"
 #include <spdlog/spdlog.h>
@@ -144,25 +145,46 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
         const Format& fmt = output.format;
 
         json << "    \"filename\": \"" << JsonUtils::escapeJsonString(fmt.filename) << "\",\n";
+        if (fmt.file_size) {
+            json << "    \"fs_size\": " << *fmt.file_size << ",\n";
+        }
+
+        if (fmt.url.has_value()) {
+            json << "    \"url\": \"" << JsonUtils::escapeJsonString(fmt.url.value()) << "\",\n";
+        }
+
         json << "    \"nb_streams\": " << fmt.nb_streams << ",\n";
+        json << "    \"nb_programs\": " << fmt.nb_programs << ",\n";
+        json << "    \"nb_stream_groups\": " << fmt.nb_stream_groups << ",\n";
+        json << "    \"nb_chapters\": " << fmt.nb_chapters << ",\n";
+
         json << "    \"format_name\": \"" << JsonUtils::escapeJsonString(fmt.format_name) << "\",\n";
         json << "    \"format_long_name\": \"" << JsonUtils::escapeJsonString(fmt.format_long_name) << "\"";
 
+        if (fmt.start_time) {
+            json << ",\n    \"start_time\": \"" << *fmt.start_time << "\"";
+        }
         if (fmt.duration) {
             json << ",\n    \"duration\": \"" << std::fixed << std::setprecision(3) << *fmt.duration << "\"";
         }
+        //if (fmt.size) {
+        //    json << ",\n    \"size\": \"" << *fmt.size << "\"";
+        //}
         if (fmt.bit_rate) {
             json << ",\n    \"bit_rate\": \"" << *fmt.bit_rate << "\"";
-        }
-        if (fmt.start_time) {
-            json << ",\n    \"start_time\": \"" << *fmt.start_time << "\"";
         }
         if (fmt.probe_score) {
             json << ",\n    \"probe_score\": " << fmt.probe_score;
         }
-        if (fmt.file_size) {
-            json << ",\n    \"size\": \"" << *fmt.file_size << "\"";
+
+        json << ",\n    \"max_analyze_duration\": " << fmt.max_analyze_duration;
+
+        json << ",\n    \"audio_codec_id\": " << fmt.audio_codec_id;
+        if (fmt.audio_codec_id != AV_CODEC_ID_NONE)
+        {
+            json << ",\n    \"codec_name\": \"" << JsonUtils::escapeJsonString(*fmt.audio_codec_name) << "\"";
         }
+        
         if (fmt.tags) {
             json << ",\n    \"tags\": {\n";
             bool first = true;

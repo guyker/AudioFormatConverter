@@ -245,7 +245,17 @@ namespace FFmpeg {
         //std::string utf8Path = WideStringToUTF8(widePath);
         std::string utf8Path = PlatformUtils::WideToUTF8(widePath);
 
-        AVFormatContext* fmt_ctx = nullptr;
+        //AVFormatContext* fmt_ctx = nullptr;
+        AVFormatContext* fmt_ctx = avformat_alloc_context();
+        if (!fmt_ctx) {
+            spdlog::error("Failed to allocate AVFormatContext");
+            return output;
+        }
+
+        // Set probesize before opening
+        fmt_ctx->probesize = 10 * 1024 * 1024; // 10 MB
+        fmt_ctx->max_analyze_duration = 5 * AV_TIME_BASE; // 5 seconds
+
         int ret = avformat_open_input(&fmt_ctx, utf8Path.c_str(), nullptr, nullptr);
         if (ret < 0) {
             char errbuf[128];
@@ -286,7 +296,19 @@ namespace FFmpeg {
 		{
 			fmt.filename = CommonUtils::utf8string_to_string(filePath.u8string());
 		}
+        
+        if (fmt_ctx->url)
+        {
+            fmt.url = fmt_ctx->url;
+        }
 
+        // Optional: Get file size from filesystem
+        try {
+            fmt.file_size = std::filesystem::file_size(filePath);
+        }
+        catch (const std::filesystem::filesystem_error& e) {
+            std::cerr << "Failed to get file size: " << e.what() << "\n";
+        }
         
         fmt.ctx_flags = fmt_ctx->ctx_flags;
         fmt.nb_streams = fmt_ctx->nb_streams;
@@ -309,6 +331,8 @@ namespace FFmpeg {
         fmt.packet_size = fmt_ctx->packet_size;
         fmt.max_delay = fmt_ctx->max_delay;
         fmt.flags = fmt_ctx->flags;
+
+
         fmt.probesize = fmt_ctx->probesize;
         fmt.max_analyze_duration = fmt_ctx->max_analyze_duration;
         
@@ -318,18 +342,12 @@ namespace FFmpeg {
         fmt.format_long_name = fmt_ctx->iformat->long_name ? fmt_ctx->iformat->long_name : "";
         fmt.probe_score = fmt_ctx->probe_score;
 
-
-
-
-
-        // Optional: Get file size from filesystem
-        try {
-            fmt.file_size = std::filesystem::file_size(filePath);
+        fmt.audio_codec_id = fmt_ctx->audio_codec_id;
+        if (fmt.audio_codec_id != AV_CODEC_ID_NONE)
+        {
+            fmt.audio_codec_name = avcodec_get_name(fmt_ctx->audio_codec_id);
         }
-        catch (const std::filesystem::filesystem_error& e) {
-            std::cerr << "Failed to get file size: " << e.what() << "\n";
-        }
-
+        
         if (fmt_ctx->metadata) {
             JsonUtils::Tags format_tags;
             AVDictionaryEntry* tag = nullptr;
