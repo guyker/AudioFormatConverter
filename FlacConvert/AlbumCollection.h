@@ -40,7 +40,7 @@
 #include <filesystem>
 #include "MediaAlbum.h"
 
-enum class SortBy { AlbumName, Artist, Year, TrackCount };
+enum class SortBy { AlbumName, Artist, AlbumArtist, Year, TrackCount };
 
 class AlbumCollection
 {

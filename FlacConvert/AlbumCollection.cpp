@@ -613,12 +613,101 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
 
 
 
+int compareLex(const char* a, const char* b) {
+    // Walk both strings until we hit a difference or the end of one
+    while (*a != '\0' && *b != '\0' && *a == *b) {
+        ++a;
+        ++b;
+    }
+    // At this point either *a or *b (or both) is '\0', or they differ
+    unsigned char ua = static_cast<unsigned char>(*a);
+    unsigned char ub = static_cast<unsigned char>(*b);
+    if (ua < ub)       return -1;
+    else if (ua > ub)  return  1;
+    else                return  0;
+}
 
+#include <string>
+#include <cstddef>  // for std::size_t
+#include <algorithm> // for std::min
 
+int compareLex(const std::string& a, const std::string& b) {
+    std::size_t n = std::min(a.size(), b.size());
+    // Compare up to the length of the shorter string
+    for (std::size_t i = 0; i < n; ++i) {
+        unsigned char ca = static_cast<unsigned char>(a[i]);
+        unsigned char cb = static_cast<unsigned char>(b[i]);
+        if (ca < cb)      return -1;
+        else if (ca > cb) return  1;
+    }
+    // All equal up to n: shorter string is “less”
+    if (a.size() < b.size()) return -1;
+    if (a.size() > b.size()) return  1;
+    return 0; // exact match
+}
 //-------------COMPARE
 
-bool CompareTags(std::vector<MediaTrack> tList1, std::vector<MediaTrack> tList2, const std::string tagName)
+bool CompareTags(std::vector<MediaTrack>& tList1, std::vector<MediaTrack>& tList2, const std::string tagName)
 {
+    if (!(tList1.size() > 0 && tList2.size() > 0))
+    {
+        return false;
+    }
+
+    //if (tList1.size() != tList2.size())
+    //{
+    //    return false;
+    //}
+
+    auto& tags1 = tList1[0].formatInfo.format.tags;
+    auto& tags2 = tList2[0].formatInfo.format.tags;
+
+    if (!tags1.has_value() || !tags2.has_value())
+    {
+        return false;
+    }
+
+    const std::string* val1 = JsonUtils::getValueByKey(*tags1, tagName);
+    const std::string* val2 = JsonUtils::getValueByKey(*tags2, tagName);
+
+    if (val1 == nullptr || val2 == nullptr)
+    {
+        return false;
+    }
+
+    return compareLex(*val1, *val2) > 0;
+
+
+
+    if (tList1.size() != tList2.size())
+    {
+        return false;
+    }
+
+    for (int i = 0; i < tList1.size(); i++)
+    {
+        auto& tags1 = tList1[i].formatInfo.format.tags;
+        auto& tags2 = tList2[i].formatInfo.format.tags;
+
+        if (!tags1.has_value() || !tags2.has_value())
+        {
+            return false;
+        }
+        
+        const std::string* val1 = JsonUtils::getValueByKey(*tags1, tagName);
+        const std::string* val2 = JsonUtils::getValueByKey(*tags2, tagName);
+
+        if (val1 == nullptr || val2 == nullptr)
+        {
+            return false;
+        }
+
+        if (*val1 != *val2)
+        {
+            return false;
+        }
+    }
+
 
     return true;
 }
@@ -626,7 +715,7 @@ bool CompareTags(std::vector<MediaTrack> tList1, std::vector<MediaTrack> tList2,
 void AlbumCollection::SortAlbums(std::shared_ptr<std::vector<MediaAlbum>> albumListPtr,
                                  const std::vector<std::pair<SortBy, bool>>& criteria)
 {
-    std::ranges::stable_sort(*albumListPtr, [&](const auto& a, const auto& b) {
+    std::ranges::stable_sort(*albumListPtr, [&](auto& a, auto& b) {
         for (const auto& [criterion, ascending] : criteria) {
             int result = 0;
 
@@ -640,6 +729,10 @@ void AlbumCollection::SortAlbums(std::shared_ptr<std::vector<MediaAlbum>> albumL
 
             case SortBy::Artist:
                 result = CompareTags(a.trackList, b.trackList, "artist");
+                break;
+
+            case SortBy::AlbumArtist:
+                result = CompareTags(a.trackList, b.trackList, "album_artist");
                 break;
 
             case SortBy::Year:

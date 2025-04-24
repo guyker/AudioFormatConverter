@@ -20,6 +20,13 @@
 
 namespace JsonUtils {
 
+
+
+    const std::string* getValueByKey(const std::map<std::string, std::string, CaseInsensitiveCompare>& map, const std::string& key) {
+        auto it = map.find(key);
+        return it != map.end() ? &it->second : nullptr;
+    }
+
     // Generic function to parse a RapidJSON member into a specified type
     template <typename T>
     std::optional<T> tryParseMember(const rapidjson::Value& obj, const char* key_) {

@@ -26,6 +26,10 @@ namespace JsonUtils {
         }
     };
 
+
+    // Function to get value by key, returns nullptr if key doesn't exist
+    const std::string* getValueByKey(const std::map<std::string, std::string, CaseInsensitiveCompare>& map, const std::string& key);
+
     //Represents dynamic metadata tags (key-value pairs)
     // Key-value map, keys lowercase (e.g., "artist"), values strings (e.g., "The Beatles"), from file metadata
     //using Tags = std::map<std::string, std::string>;
