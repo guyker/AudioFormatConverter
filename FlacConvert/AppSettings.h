@@ -50,14 +50,16 @@ struct MediaDirectoryElement
 	std::string dbPath{};
 };
 
+
 struct AppSettingsJson
 {
 	static constexpr bool isCustomAppConfigPath = true;
 
 	static constexpr const char* DefaultTMPDirectory = nullptr;
-	static constexpr const char* DefaultOutDirectory = "\\\\?\\R:\\tmp\\24";
+	static constexpr const char* DefaultOutDirectory = nullptr;
 	static constexpr const char* DefaultConfigDirectory = isCustomAppConfigPath ? DefaultOutDirectory : nullptr;
 
+	static constexpr const char* PersistentFileName = "AppSettingsJsonPersistent.txt";
 	static constexpr const char* DefaultConfigFileName = "config.json";
 	static constexpr const char* DefaultDatabaseFileName = "all_albums.db";
 

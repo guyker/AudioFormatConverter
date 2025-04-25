@@ -24,25 +24,69 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSettingsInstance = nullptr;
 //	return appSettingPtr;
 //}
 
+void save_string(const std::string& value, const fs::path& path) {
+    std::ofstream out{ path, std::ios::binary };
+    out << value;
+}
+
+std::string load_string(const fs::path& path) {
+    std::ifstream in{ path, std::ios::binary };
+    return std::string{ std::istreambuf_iterator<char>(in), {} };
+}
+
 std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting()
 {
     if (AppSettingsInstance != nullptr)
     {
 		return AppSettingsInstance;
     }
-
     std::filesystem::path configPath;
 
-    //Get configuration file path from current directory
-    if (AppSettingsJson::DefaultConfigDirectory == nullptr || *AppSettingsJson::DefaultConfigDirectory == '\0')
+    //std::filesystem::path currentPath = std::filesystem::current_path();
+    //configPath = currentPath / AppSettingsJson::DefaultConfigFileName;
+    //if (fs::exists(configPath))
+    //{
+
+    //}
+    
+    bool foundConfig = false;
+    while (!foundConfig)
     {
         std::filesystem::path currentPath = std::filesystem::current_path();
-        configPath = currentPath / AppSettingsJson::DefaultConfigFileName;
+        std::filesystem::path persistentPath = currentPath / AppSettingsJson::PersistentFileName;
+        if (fs::exists(persistentPath))
+        {
+            configPath = load_string(persistentPath);
+        }
+
+        if (fs::exists(configPath))
+        { 
+            foundConfig = true;
+        }
+        else
+        {
+            std::cout << "Please enter config.json path: " << std::flush;
+            std::string path;
+            std::getline(std::cin, path);
+            configPath = std::filesystem::path{ path } / AppSettingsJson::DefaultConfigFileName;
+
+       //     if (fs::exists(configPath))
+            {
+                save_string(configPath.string(), persistentPath);
+            }
+        }
     }
-    else
-    {
-        configPath = fs::path(AppSettingsJson::DefaultConfigDirectory) / fs::path(AppSettingsJson::DefaultConfigFileName);
-    }
+
+    //Get configuration file path from current directory
+    //if (AppSettingsJson::DefaultConfigDirectory == nullptr || *AppSettingsJson::DefaultConfigDirectory == '\0')
+    //{
+    //    std::filesystem::path currentPath = std::filesystem::current_path();
+    //    configPath = currentPath / AppSettingsJson::DefaultConfigFileName;
+    //}
+    //else
+    //{
+    //    configPath = fs::path(AppSettingsJson::DefaultConfigDirectory) / fs::path(AppSettingsJson::DefaultConfigFileName);
+    //}
 
 
     std::cout << "Loading configuration file: " << configPath << std::endl;

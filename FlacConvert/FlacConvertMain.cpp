@@ -255,7 +255,7 @@ int main()
 
 	std::vector<MediaDirectoryElement> mediaList;
 
-    std::cout << "App Settings: " << std::filesystem::path(AppSettingsJson::DefaultConfigDirectory) / AppSettingsJson::DefaultConfigFileName << std::endl;
+    //std::cout << "App Settings: " << std::filesystem::path(AppSettingsJson::DefaultConfigDirectory) / AppSettingsJson::DefaultConfigFileName << std::endl;
     std::cout << "Working directory: " << appSettingPtr->OutDirectory << std::endl;
     std::cout << "Database file name: " << appSettingPtr->DatabaseFileName << std::endl;
     std::cout << "Media Libraries: " << std::endl;
