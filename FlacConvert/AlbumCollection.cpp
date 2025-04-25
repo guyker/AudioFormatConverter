@@ -645,6 +645,22 @@ int compareLex(const std::string& a, const std::string& b) {
     if (a.size() > b.size()) return  1;
     return 0; // exact match
 }
+
+int compareLex(const std::wstring& a, const std::wstring& b) {
+    std::size_t n = std::min(a.size(), b.size());
+    // Compare up to the length of the shorter string
+    for (std::size_t i = 0; i < n; ++i) {
+        unsigned int ca = static_cast<unsigned int>(a[i]);
+        unsigned int cb = static_cast<unsigned int>(b[i]);
+        if (ca < cb)      return -1;
+        else if (ca > cb) return  1;
+    }
+    // All equal up to n: shorter string is “less”
+    if (a.size() < b.size()) return -1;
+    if (a.size() > b.size()) return  1;
+    return 0; // exact match
+}
+
 //-------------COMPARE
 
 bool CompareTags(std::vector<MediaTrack>& tList1, std::vector<MediaTrack>& tList2, const std::string tagName)
@@ -675,7 +691,7 @@ bool CompareTags(std::vector<MediaTrack>& tList1, std::vector<MediaTrack>& tList
         return false;
     }
 
-    return compareLex(*val1, *val2) > 0;
+    return compareLex(*val1, *val2) == 0;
 
 
 
@@ -712,18 +728,22 @@ bool CompareTags(std::vector<MediaTrack>& tList1, std::vector<MediaTrack>& tList
     return true;
 }
 
+
 void AlbumCollection::SortAlbums(std::shared_ptr<std::vector<MediaAlbum>> albumListPtr,
                                  const std::vector<std::pair<SortBy, bool>>& criteria)
 {
     std::ranges::stable_sort(*albumListPtr, [&](auto& a, auto& b) {
-        for (const auto& [criterion, ascending] : criteria) {
-            int result = 0;
+        const auto& [dirEntryA, tracksA] = a;
+        const auto& [dirEntryB, tracksB] = b;
 
+        int result = 0;
+        for (const auto& [criterion, ascending] : criteria) {
             switch (criterion) {
             case SortBy::AlbumName: {
                 const auto& nameA = a.path.path().filename().wstring();
                 const auto& nameB = b.path.path().filename().wstring();
                 result = nameA.compare(nameB);
+                result = compareLex(nameA, nameB);
                 break;
             }
 
@@ -747,11 +767,12 @@ void AlbumCollection::SortAlbums(std::shared_ptr<std::vector<MediaAlbum>> albumL
                 break;
             }
 
-            if (result != 0)
-                return (result < 0) == ascending;
+//            return result;
+//            if (result != 0)
+//                return (result < 0) == ascending;
         }
 
-        return false; // Considered equal for all criteria
+        return result; // Considered equal for all criteria
         });
 }
 

@@ -184,7 +184,8 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
     {
         auto albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaEntry.resultPath);
 
-        albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
+    //    albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
+        albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumName, true } });
 
         albumCollection.ExportToDatabase(albumListPtr, mediaEntry.dbPath);
     }
