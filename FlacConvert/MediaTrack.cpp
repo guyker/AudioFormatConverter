@@ -74,21 +74,24 @@ bool TryParseFFprobeFormat(const Value& doc, FFprobeOutput &mediaInfo)
         Format& format = mediaInfo.format;
 
         const auto& formatTag = doc["format"];
+        if (auto value = JsonUtils::tryParseMember<std::string>(formatTag, "filename")) { format.filename = *value; }
+        if (auto value = JsonUtils::tryParseMember<uint64_t>(formatTag, "fs_file_size")) { format.fs_file_size = value; }
+        if (auto value = JsonUtils::tryParseMember<int64_t>(formatTag, "file_size")) { format.file_size = value; }
+        if (auto value = JsonUtils::tryParseMember<std::string>(formatTag, "url")) { format.filename = *value; }
 
-        if (auto filename = JsonUtils::tryParseMember<std::string>(formatTag, "filename")) { format.filename = *filename; }
-
-        if (auto nb_streams = JsonUtils::tryParseMember<int>(formatTag, "nb_streams")) { format.nb_streams = *nb_streams; }
-        if (auto nb_programs = JsonUtils::tryParseMember<int>(formatTag, "nb_programs")) { format.nb_programs = *nb_programs; }
-        if (auto nb_stream_groups = JsonUtils::tryParseMember<int>(formatTag, "nb_stream_groups")) { format.nb_stream_groups = *nb_stream_groups; }
+        if (auto value = JsonUtils::tryParseMember<int>(formatTag, "nb_streams")) { format.nb_streams = *value; }
+        if (auto value = JsonUtils::tryParseMember<int>(formatTag, "nb_programs")) { format.nb_programs = *value; }
+        if (auto value = JsonUtils::tryParseMember<int>(formatTag, "nb_stream_groups")) { format.nb_stream_groups = *value; }
+        if (auto value = JsonUtils::tryParseMember<int>(formatTag, "nb_chapters")) { format.nb_chapters = *value; }
 
         if (auto format_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_name")) { format.format_name = *format_name; }
         if (auto format_long_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_long_name")) { format.format_long_name = *format_long_name; }
         if (auto start_time = JsonUtils::tryParseMember<std::optional<std::string>>(formatTag, "start_time")) { format.start_time = std::stoll(*start_time.value_or("0")); }
         if (auto duration = JsonUtils::tryParseMember<std::optional<std::string>>(formatTag, "duration")) { format.duration = std::stod(*duration.value_or("0")); }
-        if (auto fs_file_size = JsonUtils::tryParseMember<uint64_t>(formatTag, "fs_file_size")) { format.fs_file_size = fs_file_size; }
-        if (auto file_size = JsonUtils::tryParseMember<int64_t>(formatTag, "file_size")) { format.file_size = file_size; }
         if (auto bit_rate = JsonUtils::tryParseMember<std::string>(formatTag, "bit_rate")) { format.bit_rate = std::stoll(bit_rate.value_or("0")); }
         if (auto probe_score = JsonUtils::tryParseMember<int>(formatTag, "probe_score")) { format.probe_score = *probe_score; }
+
+        if (auto value = JsonUtils::tryParseMember<int>(formatTag, "audio_codec_id")) { format.audio_codec_id = static_cast<AVCodecID>(*value); }
 
         if (formatTag.HasMember("tags") && formatTag["tags"].IsObject()) {
             const rapidjson::Value& jsonValue = formatTag["tags"];
@@ -154,13 +157,21 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
             json << "    \"url\": \"" << JsonUtils::escapeJsonString(fmt.url.value()) << "\",\n";
         }
 
+        json << "    \"audio_codec_id\": " << fmt.audio_codec_id << ",\n";
+        if (fmt.audio_codec_id != AV_CODEC_ID_NONE && fmt.audio_codec_name.has_value())
+        {
+            json << "    \"codec_name\": \"" << JsonUtils::escapeJsonString(*fmt.audio_codec_name) << "\",\n";
+        }
+
+        json << "    \"format_name\": \"" << JsonUtils::escapeJsonString(fmt.format_name) << "\",\n";
+        json << "    \"format_long_name\": \"" << JsonUtils::escapeJsonString(fmt.format_long_name) << "\",\n";
+
+        json << "    \"ctx_flags\": " << fmt.ctx_flags << ",\n";
         json << "    \"nb_streams\": " << fmt.nb_streams << ",\n";
         json << "    \"nb_programs\": " << fmt.nb_programs << ",\n";
         json << "    \"nb_stream_groups\": " << fmt.nb_stream_groups << ",\n";
-        json << "    \"nb_chapters\": " << fmt.nb_chapters << ",\n";
+        json << "    \"nb_chapters\": " << fmt.nb_chapters;
 
-        json << "    \"format_name\": \"" << JsonUtils::escapeJsonString(fmt.format_name) << "\",\n";
-        json << "    \"format_long_name\": \"" << JsonUtils::escapeJsonString(fmt.format_long_name) << "\"";
 
         if (fmt.start_time) {
             json << ",\n    \"start_time\": \"" << *fmt.start_time << "\"";
@@ -171,15 +182,15 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
         if (fmt.bit_rate) {
             json << ",\n    \"bit_rate\": \"" << *fmt.bit_rate << "\"";
         }
-        if (fmt.probe_score) {
-            json << ",\n    \"probe_score\": " << fmt.probe_score;
-        }
 
-        json << ",\n    \"audio_codec_id\": " << fmt.audio_codec_id;
-        if (fmt.audio_codec_id != AV_CODEC_ID_NONE)
-        {
-            json << ",\n    \"codec_name\": \"" << JsonUtils::escapeJsonString(*fmt.audio_codec_name) << "\"";
-        }
+        json << ",\n    \"packet_size\": \"" << fmt.packet_size << "\"";
+        json << ",\n    \"max_delay\": \"" << fmt.max_delay << "\"";
+        json << ",\n    \"flags\": \"" << fmt.flags << "\"";
+
+        //if (fmt.probe_score) {
+            json << ",\n    \"probe_score\": " << fmt.probe_score;
+        //}
+
         
         if (fmt.tags) {
             json << ",\n    \"tags\": {\n";
@@ -208,6 +219,18 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
             if (s.codec_type) {
                 json << ",\n      \"codec_type\": \"" << JsonUtils::escapeJsonString(*s.codec_type) << "\"";
             }
+            if (s.codec_time_base) {
+                json << ",\n      \"codec_time_base\": \"" << JsonUtils::escapeJsonString(*s.codec_time_base) << "\"";
+            }
+            if (s.codec_tag_string) {
+                json << ",\n      \"codec_tag_string\": \"" << JsonUtils::escapeJsonString(*s.codec_tag_string) << "\"";
+            }
+            if (s.codec_tag) {
+                json << ",\n      \"codec_tag\": \"" << JsonUtils::escapeJsonString(*s.codec_tag) << "\"";
+            }
+            if (s.sample_fmt) {
+                json << ",\n      \"sample_fmt\": \"" << JsonUtils::escapeJsonString(*s.sample_fmt) << "\"";
+            }
             if (s.sample_rate) {
                 json << ",\n      \"sample_rate\": \"" << JsonUtils::escapeJsonString(*s.sample_rate) << "\"";
             }
@@ -226,15 +249,31 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
             if (s.frame_size) {
                 json << ",\n      \"frame_size\": " << *s.frame_size;
             }
-            if (s.duration) {
-                json << ",\n      \"duration\": \"" << JsonUtils::escapeJsonString(*s.duration) << "\"";
+            if (s.nb_frames) {
+                json << ",\n      \"nb_frames\": \"" << *s.nb_frames << "\"";
+            }
+            if (s.r_frame_rate) {
+                json << ",\n      \"r_frame_rate\": " << *s.r_frame_rate;
+            }
+            if (s.avg_frame_rate) {
+                json << ",\n      \"avg_frame_rate\": " << *s.avg_frame_rate;
+            }
+            if (s.time_base) {
+                json << ",\n      \"time_base\": " << *s.time_base;
+            }
+            if (s.start_pts) {
+                json << ",\n      \"start_pts\": " << *s.start_pts;
             }
             if (s.start_time) {
                 json << ",\n      \"start_time\": \"" << *s.start_time << "\"";
             }
-            if (s.nb_frames) {
-                json << ",\n      \"nb_frames\": \"" << *s.nb_frames << "\"";
+            if (s.duration_ts) {
+                json << ",\n      \"duration_ts\": " << *s.duration_ts;
             }
+            if (s.duration) {
+                json << ",\n      \"duration\": \"" << JsonUtils::escapeJsonString(*s.duration) << "\"";
+            }
+
             if (s.tags) {
                 json << ",\n      \"tags\": {\n";
                 bool first = true;
