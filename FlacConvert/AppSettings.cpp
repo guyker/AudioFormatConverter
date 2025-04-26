@@ -1,29 +1,99 @@
-
-#include <format>
-
 #include "AppSettings.h"
 #include "AlbumCollection.h"
 #include "PlatformUtils.h"
-#include <spdlog/spdlog.h>
 
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <optional>
+#include <format>
+#include <string>
+#include <system_error>
+
+#include <spdlog/spdlog.h>
 
 std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSettingsInstance = nullptr;
 
-//std::shared_ptr<AppSettingsJson> AppSettingsJson::GetDefaultSettings()
-//{
-//	std::shared_ptr<AppSettingsJson> appSettingPtr = std::make_shared<AppSettingsJson>();
-//	appSettingPtr->Version = "1.0.0";
-//	appSettingPtr->OutDirectory = OUTPUT_PATH;
-//	appSettingPtr->DatabaseFileName = "all_albums.db";
-//	appSettingPtr->FLACSettings.ffmpeg_exe_name = L"ffmpeg";
-//	appSettingPtr->FLACSettings.ffmpeg_arguments = L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats";
-//	MediaDirectoryElement mediaElement;
-//	mediaElement.isActive = true;
-//	mediaElement.mediaPath = OUTPUT_PATH;
-//	mediaElement.resultPath = OUTPUT_PATH;
-//	appSettingPtr->MediaDirectoryList.push_back(mediaElement);
-//	return appSettingPtr;
-//}
+// ----------------------------------------------------------------------
+// Helpers for persistence (just the directory, not the full filename)
+// ----------------------------------------------------------------------
+
+namespace fs = std::filesystem;
+
+void saveLastDir(const fs::path& lastDir, const fs::path& persistentFile) {
+    std::ofstream out(persistentFile, std::ios::trunc);
+    if (!out) {
+        spdlog::error("Failed to write persistent file '{}',", persistentFile.string());
+    }
+    else {
+        out << lastDir.string();
+    }
+}
+
+std::optional<fs::path> loadLastDir(const fs::path& persistentFile) {
+    std::ifstream in(persistentFile);
+    if (!in) return std::nullopt;
+    std::string dir;
+    std::getline(in, dir);
+    if (dir.empty()) return std::nullopt;
+    return fs::path(dir);
+}
+
+// ----------------------------------------------------------------------
+// Prompt the user once for a directory containing config.json
+// ----------------------------------------------------------------------
+
+fs::path promptForConfigDir(const fs::path& persistentFile) {
+    while (true) {
+        std::cout << "Please enter the directory containing '"
+            << AppSettingsJson::DefaultConfigFileName << "': "
+            << std::flush;
+
+        std::string input;
+        std::getline(std::cin, input);
+
+        if (input.empty()) {
+            spdlog::warn("No input provided; try again.");
+            continue;
+        }
+
+        fs::path dir{ input };
+        fs::path candidate = dir / AppSettingsJson::DefaultConfigFileName;
+
+        std::error_code ec;
+        if (fs::exists(candidate, ec) && !ec) {
+            // save only the directory for next time
+            saveLastDir(dir, persistentFile);
+            return dir;
+        }
+
+        spdlog::error("Config file not found at '{}'; please retry.", candidate.string());
+    }
+}
+
+// ----------------------------------------------------------------------
+// Locate the config directory (possibly via persisted choice)
+// ----------------------------------------------------------------------
+
+fs::path findConfigDir() {
+    fs::path persistentFile = fs::current_path() / AppSettingsJson::PersistentFileName;
+
+    // 1) Try persisted directory
+    if (auto last = loadLastDir(persistentFile)) {
+        fs::path candidate = *last / AppSettingsJson::DefaultConfigFileName;
+        std::error_code ec;
+        if (fs::exists(candidate, ec) && !ec) {
+            spdlog::info("Using persisted config directory '{}',", last->string());
+            return *last;
+        }
+        spdlog::warn(
+            "Persisted directory '{}' no longer contains '{}', falling back to prompt",
+            last->string(), AppSettingsJson::DefaultConfigFileName);
+    }
+
+    // 2) Ask the user until we get a valid one
+    return promptForConfigDir(persistentFile);
+}
 
 void save_string(const std::string& value, const fs::path& path) {
     std::ofstream out{ path, std::ios::binary };
@@ -35,89 +105,44 @@ std::string load_string(const fs::path& path) {
     return std::string{ std::istreambuf_iterator<char>(in), {} };
 }
 
-std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting()
-{
-    if (AppSettingsInstance != nullptr)
-    {
-		return AppSettingsInstance;
+std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting() {
+    if (AppSettingsInstance != nullptr) {
+        return AppSettingsInstance;
     }
 
-    std::filesystem::path configPath;
-    bool foundConfig = false;
-    while (!foundConfig)
-    {
-        std::filesystem::path currentPath = std::filesystem::current_path();
-        std::filesystem::path persistentPath = currentPath / AppSettingsJson::PersistentFileName;
-        if (fs::exists(persistentPath))
-        {
-            configPath = load_string(persistentPath);
-        }
-
-        if (fs::exists(configPath))
-        { 
-            foundConfig = true;
-        }
-        else
-        {
-            spdlog::error("{} not found under \"{}\"", AppSettingsJson::DefaultConfigFileName, configPath.remove_filename().string());
-
-            std::cout << "Please enter config.json path: " << std::flush;
-            std::string path;
-            std::getline(std::cin, path);
-            configPath = std::filesystem::path{ path } / AppSettingsJson::DefaultConfigFileName;
-            std::cout << std::endl << std::flush;
-
-            save_string(configPath.string(), persistentPath);            
-        }
-    }
-
-    std::cout << "Loading configuration file: " << configPath << std::endl;
+    fs::path configDir = findConfigDir();
+    fs::path configPath = configDir / AppSettingsJson::DefaultConfigFileName;
 
     bool isAppSettingLoaded = fs::exists(configPath);
-    if (isAppSettingLoaded)
-    {
-        std::shared_ptr<AppSettingsJson> appSettingPtr = std::make_shared<AppSettingsJson>();
+    if (isAppSettingLoaded) {
+        auto appSettingPtr = std::make_shared<AppSettingsJson>();
         isAppSettingLoaded = appSettingPtr->loadFromFile(configPath.string());
-		if (isAppSettingLoaded)
-        {
+        if (isAppSettingLoaded) {
             AppSettingsInstance = appSettingPtr;
-		}
-        else
-        {
+        }
+        else {
             std::cerr << "Error: Failed to parse configuration file: " << configPath << std::endl;
         }
     }
-    else
-    {
+    else {
         std::cout << "Configuration file not found - Generating default config file, please update settings in config file and run again" << std::endl;
     }
 
-	if (!isAppSettingLoaded)
-    {        
-        std::cout << std::endl << std::format("Would you like to create a new configuration file with defaults under {} ? Y/N ", configPath.generic_string()) << std::endl;
-        char input = getchar();
-        switch (input)
-        {
-        case 'y':
-        case 'Y':
-        {
+    if (!isAppSettingLoaded) {
+        std::cout << std::endl << std::format("Would you like to create a new configuration file with defaults under {}? Y/N ", configPath.generic_string()) << std::endl;
+        char input = std::toupper(getchar());
+        if (input == 'Y') {
             auto defaultSettings = AppSettingsJson::GetDefaultSettings();
-            auto str = defaultSettings.toJsonString();
             defaultSettings.saveToFile(configPath.string());
+            AppSettingsInstance = std::make_shared<AppSettingsJson>(defaultSettings);
         }
-            break;
-        default:
+        else {
             std::cout << "Ignored, please edit and fix " << configPath << std::endl;
-            break;
         }
-
     }
 
     return AppSettingsInstance;
 }
-
-
-
 
 // Convert UTF-8 string to wide string
 std::wstring UTF8ToWide(const std::string& str) {
@@ -128,20 +153,18 @@ std::wstring UTF8ToWide(const std::string& str) {
 std::string AppSettingsJson::toJsonString() const {
     rapidjson::Document doc;
     doc.SetObject();
-    rapidjson::Document::AllocatorType& allocator = doc.GetAllocator();
+    auto& allocator = doc.GetAllocator();
 
     doc.AddMember("Version", rapidjson::Value(Version.c_str(), allocator), allocator);
     doc.AddMember("OutDirectory", rapidjson::Value(OutDirectory.c_str(), allocator), allocator);
     doc.AddMember("DatabaseFileName", rapidjson::Value(DatabaseFileName.c_str(), allocator), allocator);
 
-    // Serialize FLACEncodingSettings
     rapidjson::Value flacObj(rapidjson::kObjectType);
     flacObj.AddMember("ffmpeg_exe_name", rapidjson::Value(PlatformUtils::WideToUTF8(FLACSettings.ffmpeg_exe_name).c_str(), allocator), allocator);
     flacObj.AddMember("ffmpeg_convert_24bit_flac", rapidjson::Value(PlatformUtils::WideToUTF8(FLACSettings.ffmpeg_convert_24bit_flac).c_str(), allocator), allocator);
     flacObj.AddMember("ffmpeg_get_metadata_tags", rapidjson::Value(PlatformUtils::WideToUTF8(FLACSettings.ffmpeg_get_metadata_tags).c_str(), allocator), allocator);
     doc.AddMember("FLACSettings", flacObj, allocator);
 
-    // Serialize MediaDirectoryList
     rapidjson::Value mediaArray(rapidjson::kArrayType);
     for (const auto& media : MediaDirectoryList) {
         rapidjson::Value mediaObj(rapidjson::kObjectType);
@@ -153,15 +176,12 @@ std::string AppSettingsJson::toJsonString() const {
     }
     doc.AddMember("MediaDirectoryList", mediaArray, allocator);
 
-
     doc.AddMember("UseAsyncFFmpegCalls", UseAsyncFFmpegCalls, allocator);
     doc.AddMember("UseFFmpegLibraryAPI", UseFFmpegLibraryAPI, allocator);
     doc.AddMember("MinMatchingTracksForDuplicate", MinMatchingTracksForDuplicate, allocator);
     doc.AddMember("SizeMatchPercentageThreshold", SizeMatchPercentageThreshold, allocator);
     doc.AddMember("RecursionDirectorySearchDepth", RecursionDirectorySearchDepth, allocator);
 
-
-    // Convert document to string
     rapidjson::StringBuffer buffer;
     rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
     doc.Accept(writer);
@@ -183,13 +203,10 @@ void AppSettingsJson::saveToFile(const std::string& filename) const {
     rapidjson::Document doc;
     doc.Parse(toJsonString().c_str());
     doc.Accept(writer);
-
-    ofs.close();
 }
 
 // Load JSON from a file
 bool AppSettingsJson::loadFromFile(const std::string& filename) {
-    
     std::ifstream ifs(filename);
     if (!ifs) {
         std::cerr << "Error: Cannot open file for reading: " << filename << std::endl;
@@ -208,7 +225,6 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
     if (doc.HasMember("Version") && doc["Version"].IsString()) {
         Version = doc["Version"].GetString();
     }
-    
     if (doc.HasMember("OutDirectory") && doc["OutDirectory"].IsString()) {
         OutDirectory = doc["OutDirectory"].GetString();
     }
@@ -248,7 +264,7 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
             MediaDirectoryList.push_back(media);
         }
     }
-    
+
     if (doc.HasMember("UseAsyncFFmpegCalls") && doc["UseAsyncFFmpegCalls"].IsBool()) {
         UseAsyncFFmpegCalls = doc["UseAsyncFFmpegCalls"].GetBool();
     }
@@ -265,8 +281,5 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
         RecursionDirectorySearchDepth = doc["RecursionDirectorySearchDepth"].GetInt();
     }
 
-
     return true;
 }
-
-
