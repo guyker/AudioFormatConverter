@@ -4,6 +4,7 @@
 #include "AppSettings.h"
 #include "AlbumCollection.h"
 #include "PlatformUtils.h"
+#include <spdlog/spdlog.h>
 
 
 std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSettingsInstance = nullptr;
@@ -40,15 +41,8 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting()
     {
 		return AppSettingsInstance;
     }
+
     std::filesystem::path configPath;
-
-    //std::filesystem::path currentPath = std::filesystem::current_path();
-    //configPath = currentPath / AppSettingsJson::DefaultConfigFileName;
-    //if (fs::exists(configPath))
-    //{
-
-    //}
-    
     bool foundConfig = false;
     while (!foundConfig)
     {
@@ -65,29 +59,17 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting()
         }
         else
         {
+            spdlog::error("{} not found under \"{}\"", AppSettingsJson::DefaultConfigFileName, configPath.remove_filename().string());
+
             std::cout << "Please enter config.json path: " << std::flush;
             std::string path;
             std::getline(std::cin, path);
             configPath = std::filesystem::path{ path } / AppSettingsJson::DefaultConfigFileName;
+            std::cout << std::endl << std::flush;
 
-       //     if (fs::exists(configPath))
-            {
-                save_string(configPath.string(), persistentPath);
-            }
+            save_string(configPath.string(), persistentPath);            
         }
     }
-
-    //Get configuration file path from current directory
-    //if (AppSettingsJson::DefaultConfigDirectory == nullptr || *AppSettingsJson::DefaultConfigDirectory == '\0')
-    //{
-    //    std::filesystem::path currentPath = std::filesystem::current_path();
-    //    configPath = currentPath / AppSettingsJson::DefaultConfigFileName;
-    //}
-    //else
-    //{
-    //    configPath = fs::path(AppSettingsJson::DefaultConfigDirectory) / fs::path(AppSettingsJson::DefaultConfigFileName);
-    //}
-
 
     std::cout << "Loading configuration file: " << configPath << std::endl;
 
