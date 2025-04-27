@@ -170,8 +170,13 @@ std::string AppSettingsJson::toJsonString() const {
         rapidjson::Value mediaObj(rapidjson::kObjectType);
         mediaObj.AddMember("isActive", media.isActive, allocator);
         mediaObj.AddMember("mediaPath", rapidjson::Value(media.mediaPath.c_str(), allocator), allocator);
-        mediaObj.AddMember("resultPath", rapidjson::Value(media.resultPath.c_str(), allocator), allocator);
-        mediaObj.AddMember("dbPath", rapidjson::Value(media.dbPath.c_str(), allocator), allocator);
+		if (media.mediaName.has_value()) {
+			std::string mediaName = media.mediaName.value();
+			mediaObj.AddMember("mediaName", rapidjson::Value(mediaName.c_str(), allocator), allocator);
+		}
+		else {
+			mediaObj.AddMember("mediaName", rapidjson::Value().SetNull(), allocator);
+		}
         mediaArray.PushBack(mediaObj, allocator);
     }
     doc.AddMember("MediaDirectoryList", mediaArray, allocator);
@@ -256,12 +261,26 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
             if (mediaObj.HasMember("mediaPath") && mediaObj["mediaPath"].IsString()) {
                 media.mediaPath = mediaObj["mediaPath"].GetString();
             }
-            if (mediaObj.HasMember("resultPath") && mediaObj["resultPath"].IsString()) {
-                media.resultPath = mediaObj["resultPath"].GetString();
+            if (mediaObj.HasMember("mediaName") && mediaObj["mediaName"].IsString()) {
+                media.mediaName = mediaObj["mediaName"].GetString();
             }
-            if (mediaObj.HasMember("dbPath") && mediaObj["dbPath"].IsString()) {
-                media.dbPath = mediaObj["dbPath"].GetString();
-            }
+			else {
+                try
+                {
+                    std::filesystem::path path(media.mediaPath);
+                    if (std::filesystem::is_regular_file(path)) {
+                        path = path.parent_path();
+                    }
+                    media.mediaName = path.filename().string();
+                }
+                catch (const std::filesystem::filesystem_error& e)
+                {
+                    spdlog::error("Error getting media name: {}", e.what());
+                    media.mediaName = std::nullopt;
+                }
+			}
+
+
             MediaDirectoryList.push_back(media);
         }
     }

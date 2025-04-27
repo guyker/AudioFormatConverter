@@ -104,7 +104,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         //ac.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });         // sort by album size - optional
         ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });         // sort by album size - optional
 
-        ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.resultPath); // save to json
+        ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory)); // save to json
 
         auto endTime = std::chrono::steady_clock::now();
         
@@ -117,31 +117,19 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 
 int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> mediaDirectoryList)
 {
-    //guyguyguy\
-    //verify this function after we changed the l;oading.......
-
-    //DirectoryContentEntryList medialList;
 	AlbumCollection albumCollection;
 	std::shared_ptr<DirectoryContentEntryList> albumListPtr = std::make_shared<DirectoryContentEntryList>();
 
     for (auto& mediaEntry : mediaDirectoryList)
     {
-        //std::wcout << std::format(L"Processing: {}", mediaEntry.resultPath) << std::endl;
-        std::cout << "Processing: {}" << mediaEntry.resultPath << std::endl;
+		auto mediaJsonPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory);
 
+        std::cout << "Processing: {}" << mediaJsonPath << std::endl;
 
-        auto albumListChunk = albumCollection.LoadAlbumsFromJSON(mediaEntry.resultPath);
+        auto albumListChunk = albumCollection.LoadAlbumsFromJSON(mediaJsonPath);
         albumListPtr->insert(albumListPtr->end(), albumListChunk->begin(), albumListChunk->end());
 
-        //albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaEntry.resultPath);
-//        auto const& accumulatedList = AlbumCollection::LoadAlbumsFromJSON(mediaEntry.resultPath);
-//        medialList.insert(medialList.end(), accumulatedList.begin(), accumulatedList.end());
     }
-
-    //AlbumCollection ac(std::move(medialList));
-    //AlbumCollection ac;
-	//ac.LoadAlbums(medialList);
-    // ***by know medialList should contain an empty list***
 
     albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
     auto dupList = albumCollection.FindDuplicateAlbums(albumListPtr);
@@ -160,10 +148,6 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
         PlatformUtils::waitForKeyPress();
         PlatformUtils::OpenDirectoryInExplorer(dir1);
         PlatformUtils::OpenDirectoryInExplorer(dir2);
-//        FileExplorer::openDirectory(dir1);
-//        FileExplorer::openDirectory(dir2);
-
-
 
         iCount--;
     }
@@ -182,12 +166,15 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
 
     for (auto& mediaEntry : mediaDirectoryList)
     {
-        auto albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaEntry.resultPath);
+        auto mediaJsonPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory);
+        auto mediaDBPath = mediaEntry.getMediaDBPath(AppSettingsJson::AppSetting()->OutDirectory);
+
+        auto albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaJsonPath);
 
     //    albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
         albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumName, true } });
 
-        albumCollection.ExportToDatabase(albumListPtr, mediaEntry.dbPath);
+        albumCollection.ExportToDatabase(albumListPtr, mediaDBPath);
     }
 
     return 0;
@@ -229,18 +216,6 @@ ConvertActionEnum GetUserAction()
 
 int main()
 {
-  //  spdlog::info("Hello, world!");
-
-    auto appSettingPtr = AppSettingsJson::AppSetting();
-    if (appSettingPtr == nullptr)
-    {
-        std::cout << CommonUtils::getSymbolConstexpr("stop_sign") << "Failed to load Configuration File" << std::endl;
-
-		return -1;
-    }
-  
-    FFmpeg::initialize_ffmpeg_logging();
-
 #ifdef _WIN32
 #include <windows.h>
     SetConsoleOutputCP(CP_UTF8); // For Unicode output
@@ -252,6 +227,16 @@ int main()
     SetConsoleMode(hOut, dwMode);
 #endif
 
+    auto appSettingPtr = AppSettingsJson::AppSetting();
+    if (appSettingPtr == nullptr)
+    {
+        std::cout << CommonUtils::getSymbolConstexpr("stop_sign") << "Failed to load Configuration File" << std::endl;
+
+        return -1;
+    }
+
+    FFmpeg::initialize_ffmpeg_logging();
+
 
 	std::vector<MediaDirectoryElement> mediaList;
 
@@ -262,7 +247,7 @@ int main()
 	for (auto& mediaEntry : appSettingPtr->MediaDirectoryList)
 	{
 		auto activeFlag = mediaEntry.isActive ? "Active" : "Inactive";
-		std::cout << activeFlag << " - Media Path: " << mediaEntry.mediaPath << " - " << mediaEntry.resultPath << std::endl;
+		std::cout << activeFlag << " - Media Path: " << mediaEntry.mediaPath << " [" << mediaEntry.mediaName.value_or(nullptr) << "]" << std::endl;
 
         if (mediaEntry.isActive)
         {

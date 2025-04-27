@@ -46,8 +46,23 @@ struct MediaDirectoryElement
 {
 	bool isActive{ true };
 	std::string mediaPath{};
-	std::string resultPath{};
-	std::string dbPath{};
+	std::optional<std::string> mediaName{};
+
+	std::string getMediaJsonPath(std::string outDir) const
+	{
+		std::string fileName = mediaName.value_or(std::string("data")) + ".json";
+		std::filesystem::path path = std::filesystem::path(outDir) / (std::string("media_out_") + fileName);
+
+		return path.string();
+	}
+
+	std::string getMediaDBPath(std::string outDir) const
+	{
+		std::string fileName = mediaName.value_or(std::string("data")) + ".db";
+		std::filesystem::path path = std::filesystem::path(outDir) / (std::string("media_out_") + fileName);
+
+		return path.string();
+	}
 };
 
 
@@ -109,8 +124,8 @@ struct AppSettingsJson
 				 L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats",				
 			},
 			{
-				{true, "\\\\?\\R:\\tmp\\24\\flac", "\\\\?\\R:\\tmp\\24\\MediaResult_flac.json", "\\\\?\\R:\\tmp\\24\\MediaResult_flac.db"},
-				{true, "\\\\?\\R:\\tmp\\24\\mp3", "\\\\?\\R:\\tmp\\24\\MediaResult_mp3.json", "\\\\?\\R:\\tmp\\24\\MediaResult_mp3.db"}
+				{true, "\\\\?\\R:\\tmp\\24\\flac", "flac"},
+				{true, "\\\\?\\R:\\tmp\\24\\mp3", "mp3"}
 			},
 		};
 
