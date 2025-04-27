@@ -1,8 +1,4 @@
-﻿#include "MediaTrack.h"
-
-
-
-
+﻿
 #include <iostream>
 #include <cstdio>
 #include <stdexcept>
@@ -10,24 +6,18 @@
 #include <array>
 #include <cstdlib>
 #include <cwchar>
-
-#include <iostream>
-#include <string>
 #include <map>
-
-#include <string>
-#include <iostream>
 #include <filesystem>
 #include <fstream>
-#include <windows.h> // For Windows path handling
-
-#include "FFmpeg.h"
 #include <codecvt>
 
-#include "PlatformUtils.h"
 #include <spdlog/spdlog.h>
 
+#include "MediaTrack.h"
+#include "FFmpeg.h"
+#include "PlatformUtils.h"
 #include "JsonUtils.h"
+
 
 
 //returns media information (json string and media objec) from a media file (on file system)
@@ -328,10 +318,6 @@ FFprobeOutput MediaTrack::ParseFFprobeInformation(std::wstring jsonString)
 }
 
 
-#include "MediaTrack.h"
-#include "PlatformUtils.h"
-#include <spdlog/spdlog.h>
-
 
 const std::string MediaTrack::GetCreateTableSQL() {
 
@@ -376,6 +362,7 @@ const std::string MediaTrack::GetCreateTableSQL() {
             stream1_sample_rate TEXT,
             stream1_channels INTEGER,
             stream1_channel_layout TEXT,
+            stream1_bits_per_sample TEXT,
             stream1_bit_rate INTEGER,
             stream1_frame_size INTEGER,
             stream1_duration REAL,
@@ -387,6 +374,7 @@ const std::string MediaTrack::GetCreateTableSQL() {
             stream2_sample_rate TEXT,
             stream2_channels INTEGER,
             stream2_channel_layout TEXT,
+            stream2_bits_per_sample TEXT,
             stream2_bit_rate INTEGER,
             stream2_frame_size INTEGER,
             stream2_duration REAL,
@@ -431,9 +419,9 @@ const std::string MediaTrack::GetInsertSQLStatement()
             id, album_path, file_size, nb_streams, nb_programs, nb_stream_groups, format_name, format_long_name,
             start_time, duration, bit_rate, probe_score,
             {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
-            stream1_index, stream1_codec_name, stream1_codec_type, stream1_sample_rate, stream1_channels, stream1_channel_layout, stream1_bit_rate, stream1_frame_size, stream1_duration, stream1_start_time, stream1_tag1,
-            stream2_index, stream2_codec_name, stream2_codec_type, stream2_sample_rate, stream2_channels, stream2_channel_layout, stream2_bit_rate, stream2_frame_size, stream2_duration, stream2_start_time, stream2_tag1
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            stream1_index, stream1_codec_name, stream1_codec_type, stream1_sample_rate, stream1_channels, stream1_channel_layout, stream1_bits_per_sample, stream1_bit_rate, stream1_frame_size, stream1_duration, stream1_start_time, stream1_tag1,
+            stream2_index, stream2_codec_name, stream2_codec_type, stream2_sample_rate, stream2_channels, stream2_channel_layout, stream2_bits_per_sample, stream2_bit_rate, stream2_frame_size, stream2_duration, stream2_start_time, stream2_tag1
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     )",
         MediaTrackConstants::kFormatTag_title,
         MediaTrackConstants::kFormatTag_artist,
@@ -521,6 +509,7 @@ bool MediaTrack::ExportToDatabase(sqlite3_stmt* stmt, const std::wstring& albumP
         sqlite3_bind_text(stmt, bindIndex++, stream1->sample_rate.value_or("").c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int(stmt, bindIndex++, stream1->channels.value_or(0));
         sqlite3_bind_text(stmt, bindIndex++, stream1->channel_layout.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, bindIndex++, stream1->bits_per_sample.value_or(0));
         sqlite3_bind_int64(stmt, bindIndex++, stream1->bit_rate.value_or(0));
         sqlite3_bind_int(stmt, bindIndex++, stream1->frame_size.value_or(0));
         sqlite3_bind_text(stmt, bindIndex++, stream1->duration.value_or("").c_str(), -1, SQLITE_TRANSIENT);
@@ -538,6 +527,7 @@ bool MediaTrack::ExportToDatabase(sqlite3_stmt* stmt, const std::wstring& albumP
         sqlite3_bind_text(stmt, bindIndex++, stream2->sample_rate.value_or("").c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int(stmt, bindIndex++, stream2->channels.value_or(0));
         sqlite3_bind_text(stmt, bindIndex++, stream2->channel_layout.value_or("").c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, bindIndex++, stream2->bits_per_sample.value_or(0));
         sqlite3_bind_int64(stmt, bindIndex++, stream2->bit_rate.value_or(0));
         sqlite3_bind_int(stmt, bindIndex++, stream2->frame_size.value_or(0));
         sqlite3_bind_text(stmt, bindIndex++, stream2->duration.value_or("").c_str(), -1, SQLITE_TRANSIENT);
