@@ -55,9 +55,9 @@ struct AppSettingsJson
 {
 	static constexpr bool isCustomAppConfigPath = true;
 
-	static constexpr const char* DefaultTMPDirectory = nullptr;
-	static constexpr const char* DefaultOutDirectory = nullptr;
-	static constexpr const char* DefaultConfigDirectory = isCustomAppConfigPath ? DefaultOutDirectory : nullptr;
+	static constexpr const char* DefaultTMPDirectory = "c:\\tmp" ;
+	static constexpr const char* DefaultOutDirectory = "c:\\tmp";
+//	static constexpr const char* DefaultConfigDirectory = isCustomAppConfigPath ? DefaultOutDirectory : nullptr;
 
 	static constexpr const char* PersistentFileName = "AppSettingsJsonPersistent.txt";
 	static constexpr const char* DefaultConfigFileName = "config.json";
@@ -111,13 +111,6 @@ struct AppSettingsJson
 			{
 				{true, "\\\\?\\R:\\tmp\\24\\flac", "\\\\?\\R:\\tmp\\24\\MediaResult_flac.json", "\\\\?\\R:\\tmp\\24\\MediaResult_flac.db"},
 				{true, "\\\\?\\R:\\tmp\\24\\mp3", "\\\\?\\R:\\tmp\\24\\MediaResult_mp3.json", "\\\\?\\R:\\tmp\\24\\MediaResult_mp3.db"}
-				//    {"\\\\?\\M:\\tmp\\24_rdy", outputPath / "MediaResult_24_rdy.json"},
-				//    {"\\\\?\\M:\\music\\Classical\\Albums\\24bit", outputPath / "MediaResult_classical_24.json"},
-				//    ////{"\\\\?\\M:\\music\\Classical\\Albums\\XRCD", outputPath / "MediaResult_classical_album_XRCD_.json"},
-				//    {"\\\\?\\M:\\music\\Classical\\Albums\\flac", outputPath / "MediaResult_classical_album_flac_.json"},
-				//    //{"\\\\?\\M:\\music\\Classical\\Albums\\mp3", outputPath / "MediaResult_classical_album_mp3_.json"},
-				//    {"\\\\?\\M:\\music\\Classical\\Albums\\AlbumSets_MultiCover", outputPath / "MediaResult_classical_AlbumSets_MultiCover.json"},
-				//    //{"\\\\?\\M:\\music\\Classical\\Albums\\AlbumSets_OneCover", outputPath / "MediaResult_AlbumSets_OneCover.json"},
 			},
 		};
 
