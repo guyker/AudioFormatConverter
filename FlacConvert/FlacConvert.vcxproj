@@ -127,7 +127,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>..\..\ffmpeg-master-latest-win64-gpl-shared\lib;SQLite\lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>sqlite3.lib;avformat.lib;avcodec.lib;avutil.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>sqlite3.lib;avformat.lib;avcodec.lib;avfilter.lib;avutil.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">

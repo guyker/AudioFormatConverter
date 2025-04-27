@@ -18,6 +18,9 @@
 #include <spdlog/spdlog.h>
 #include "PlatformUtils.h"
 #include "MediaTrack.h"
+#include <regex>
+#include <cmath>
+
 
 //#pragma comment(lib, "avcodec.lib")
 //#pragma comment(lib, "avformat.lib")
@@ -233,7 +236,39 @@ namespace FFmpeg {
 
         return mi;
     }
-    
+
+
+
+    float extractVolumeValue(const std::string& stats, const std::string& key) {
+        std::regex pattern(key + ": (-?\\d+\\.?\\d*) dB");
+        std::smatch matches;
+        if (std::regex_search(stats, matches, pattern) && matches.size() > 1) {
+            return std::stof(matches[1].str());
+        }
+        return NAN;
+    }
+
+    float computeAudioQualityScore(float mean_volume, float max_volume) {
+        float clipping_penalty = (max_volume > -1.0f) ? 50.0f : 0.0f;
+        float loudness_penalty = 0.0f;
+        if (mean_volume < -30.0f) loudness_penalty = 30.0f;
+        if (mean_volume > -5.0f)  loudness_penalty = 40.0f;
+        float dynamic_range = max_volume - mean_volume;
+        float dynamic_range_score = std::min<float>(30.0f, dynamic_range);
+        float score = 100.0f - clipping_penalty - loudness_penalty + dynamic_range_score;
+        return std::max<float>(0.0f, std::min<float>(100.0f, score));
+    }
+
+
+    extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavfilter/avfilter.h>
+#include <libavfilter/buffersrc.h>
+#include <libavfilter/buffersink.h>
+#include <libavutil/opt.h>
+    }
+
 
     FFprobeOutput GetFFprobeMetadataAPI(const std::filesystem::path filePath)
     {
@@ -278,6 +313,16 @@ namespace FFmpeg {
 
         // Streams section
         output.streams = FFmpeg::GetStreamInformation(fmt_ctx);
+
+
+
+        uint8_t* params = NULL;
+        av_opt_get(fmt_ctx, "mean_volume", AV_OPT_SEARCH_CHILDREN, &params);
+
+		// Volume Information section
+        GetFFprobeVolumeInformation(fmt_ctx);
+
+
 
 
         avformat_close_input(&fmt_ctx);
@@ -430,4 +475,103 @@ namespace FFmpeg {
         return streamList;
     }
 
+
+    extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavfilter/avfilter.h>
+#include <libavfilter/buffersrc.h>
+#include <libavfilter/buffersink.h>
+#include <libavutil/opt.h>
+    }
+
+    int GetFFprobeVolumeInformation(AVFormatContext* fmt_ctx)
+    {
+        int audio_stream_index = -1;
+        for (int i = 0; i < fmt_ctx->nb_streams; i++) {
+            if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+                audio_stream_index = i;
+                break;
+            }
+        }
+
+        // Set up filter graph for volumedetect
+        AVFilterGraph* filter_graph = avfilter_graph_alloc();
+        AVFilterContext* buffer_src_ctx;
+        AVFilterContext* buffer_sink_ctx;
+
+        // Source filter (raw audio input)
+        const AVFilter* buffer_src = avfilter_get_by_name("abuffer");
+        char args[512];
+        snprintf(args, sizeof(args),
+            "time_base=1/44100:sample_rate=44100:sample_fmt=fltp:channel_layout=stereo");
+        avfilter_graph_create_filter(&buffer_src_ctx, buffer_src, "in", args, nullptr, filter_graph);
+
+        // Sink filter (to process volumedetect)
+        const AVFilter* buffer_sink = avfilter_get_by_name("abuffersink");
+        avfilter_graph_create_filter(&buffer_sink_ctx, buffer_sink, "out", nullptr, nullptr, filter_graph);
+
+        // Add volumedetect filter
+        AVFilterContext* volume_ctx;
+        const AVFilter* volume_filter = avfilter_get_by_name("volumedetect");
+        avfilter_graph_create_filter(&volume_ctx, volume_filter, "volumedetect", nullptr, nullptr, filter_graph);
+
+        // Connect filters: in -> volumedetect -> out
+        avfilter_link(buffer_src_ctx, 0, volume_ctx, 0);
+        avfilter_link(volume_ctx, 0, buffer_sink_ctx, 0);
+
+        // Configure the graph
+        if (avfilter_graph_config(filter_graph, nullptr) < 0) {
+            std::cerr << "Failed to configure filter graph" << std::endl;
+            return 1;
+        }
+
+        // Process audio frames
+        AVPacket packet;
+        AVFrame* frame = av_frame_alloc();
+        while (av_read_frame(fmt_ctx, &packet) >= 0) {
+            if (packet.stream_index == audio_stream_index) {
+                // Decode packet into frame
+                // (You'll need a decoder context here; simplified for brevity)
+                // Then push frame into the filter graph:
+                // av_buffersrc_add_frame(buffer_src_ctx, frame);
+            }
+            av_packet_unref(&packet);
+        }
+
+        // Retrieve volume stats
+        char* stats = avfilter_graph_dump(filter_graph, nullptr);
+      //  std::cout << "Volume stats:\n" << (stats ? stats : "No stats") << std::endl;
+
+
+
+
+        std::string stats_str(stats);
+        std::regex mean_regex("mean_volume: (-?\\d+\\.?\\d*) dB");
+        std::regex max_regex("max_volume: (-?\\d+\\.?\\d*) dB");
+        std::smatch matches;
+
+        if (std::regex_search(stats_str, matches, mean_regex)) {
+            float mean_volume = std::stof(matches[1].str());
+            printf("Mean Volume: %.2f dB\n", mean_volume);
+        }
+
+        if (std::regex_search(stats_str, matches, max_regex)) {
+            float max_volume = std::stof(matches[1].str());
+            printf("Peak Volume: %.2f dB\n", max_volume);
+        }
+
+
+
+
+
+
+        av_free(stats);
+
+        // Cleanup
+        av_frame_free(&frame);
+        avfilter_graph_free(&filter_graph);
+
+        return 0;
+    }
 }

@@ -26,4 +26,8 @@ namespace FFmpeg
 
     Format GetFormatInformation(AVFormatContext* fmt_ctx, const std::filesystem::path filePath);
     std::vector<Stream> GetStreamInformation(AVFormatContext* fmt_ctx);
+
+    float extractVolumeValue(const std::string& stats, const std::string& key);
+    float computeAudioQualityScore(float mean_volume, float max_volume);
+    int GetFFprobeVolumeInformation(AVFormatContext* fmt_ctx);
 }
