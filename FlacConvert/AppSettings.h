@@ -102,7 +102,7 @@ struct AppSettingsJson
 			1, //MinMatchingTracksForDuplicate
 			3, //SizeMatchPercentageThreshold
 			10, //RecursionDirectorySearchDepth
-			2000,
+			2000, //AlbumsSplitThreshold
 			{
 				 L"ffmpeg",
 				 L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats",

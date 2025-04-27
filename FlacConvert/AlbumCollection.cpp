@@ -375,6 +375,8 @@ void SaveAlbumsToJSON_LasrError(std::list<MediaTrack> mediaTracks, std::filesyst
 
 bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path)
 {
+    auto splitThreshold = AppSettingsJson::AppSetting()->AlbumsSplitThreshold;
+
     rapidjson::Document mediaDoc;
     mediaDoc.SetArray(); // Top-level array for albums
     rapidjson::Document::AllocatorType& allocator = mediaDoc.GetAllocator();
@@ -450,19 +452,6 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
 
             // Add album object to top-level array (no key)
             mediaDoc.PushBack(albumObj, allocator);
-
-            //try
-            //{
-            //    // Add Tracks to album
-            //    albumObj.AddMember("Tracks", trackMediaArray, allocator);
-
-            //    // Add album object to top-level array (no key)
-            //    mediaDoc.PushBack(albumObj, allocator);
-            //}
-            //catch (const std::exception& ex)
-            //{
-            //    spdlog::error("Exception adding album {}: {}", albumName, ex.what());
-            //}
         }
     }
 

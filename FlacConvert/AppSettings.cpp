@@ -181,6 +181,7 @@ std::string AppSettingsJson::toJsonString() const {
     doc.AddMember("MinMatchingTracksForDuplicate", MinMatchingTracksForDuplicate, allocator);
     doc.AddMember("SizeMatchPercentageThreshold", SizeMatchPercentageThreshold, allocator);
     doc.AddMember("RecursionDirectorySearchDepth", RecursionDirectorySearchDepth, allocator);
+    doc.AddMember("AlbumsSplitThreshold", AlbumsSplitThreshold, allocator);
 
     rapidjson::StringBuffer buffer;
     rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
@@ -280,6 +281,9 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
     if (doc.HasMember("RecursionDirectorySearchDepth") && doc["RecursionDirectorySearchDepth"].IsInt()) {
         RecursionDirectorySearchDepth = doc["RecursionDirectorySearchDepth"].GetInt();
     }
-
+    if (doc.HasMember("AlbumsSplitThreshold") && doc["AlbumsSplitThreshold"].IsInt()) {
+        AlbumsSplitThreshold = doc["AlbumsSplitThreshold"].GetInt();
+    }
+    
     return true;
 }
