@@ -64,7 +64,7 @@ struct Format {
     std::optional<std::string> url; // The filename or URL of the media file
 
     int ctx_flags{ 0 };
-    int nb_streams{ 0 }; // Number of streams, non-negative integer, e.g., 1
+    int nb_streams{ 0 }; // Number of streams, non-negative integer, e.g., 1 [0 (no streams)]
 	int nb_programs{ 0 }; // Number of programs, non-negative integer, e.g., 0
     unsigned int nb_stream_groups{ 0 }; //OPTIONAL ????
 	
@@ -75,16 +75,13 @@ struct Format {
 
 	std::string format_name; // Container format short name, e.g., "flac", "mp3"
 	std::string format_long_name; // Container format descriptive name, e.g., "raw FLAC"
-	std::optional<int64_t> start_time; // Start time in seconds, string with decimal, e.g., "0.000000", optional
-	std::optional<double> duration; // Duration in seconds, string with decimal, e.g., "123.456789", optional
+    std::optional<int64_t> start_time; // Start time in seconds, string with decimal, e.g., "0.000000", optional  - { AV_NOPTS_VALUE if empty/unknown}
+    std::optional<double> duration; // Duration in seconds, string with decimal, e.g., "123.456789", optional - { AV_NOPTS_VALUE if empry/unknown}
 	std::optional<int64_t> bit_rate; // Overall bitrate in bits/s, string with integer, e.g., "960000", optional
 
     unsigned int packet_size{ 0 }; //The default packet size (often used for streaming data)
     int max_delay{ -1 }; //The maximum demuxing or buffering delay (usually in microseconds)
     int flags{ 0 };
-//    __int64 probesize{ 0 }; //NO NEED USER SETTINGS
-//    __int64 max_analyze_duration{ 0 }; //NO NEED USER SETTINGS
-
 
 	int probe_score{ 0 }; // Format detection confidence, integer 0-100
 

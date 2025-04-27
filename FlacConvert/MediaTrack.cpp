@@ -475,31 +475,31 @@ bool MediaTrack::ExportToDatabase(sqlite3_stmt* stmt, const std::wstring& albumP
     {
 		auto& tagsObj = tags.value();
         
-        auto getValue = [](const JsonUtils::Tags& map, const std::string& key) -> std::string {
+        auto getTagValue = [](const JsonUtils::Tags& map, const std::string& key) -> const char * {
                 auto it = map.find(key);
-                return (it != map.end()) ? it->second : "";
+                return (it != map.end()) ? it->second.c_str() : nullptr;
             };
 
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_title).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_artist).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_album).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_album_artist).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_genre).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_track).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_track_total).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_date).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_year).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_comment).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_disc).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_composer).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_publisher).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_label).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_organization).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_copyright).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_encoder).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_encoded_by).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_album_dynamic_range).c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, bindIndex++, getValue(tagsObj, MediaTrackConstants::kFormatTag_dynamic_range).c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_title), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_artist), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_album), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_album_artist), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_genre), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_track), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_track_total), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_date), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_year), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_comment), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_disc), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_composer), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_publisher), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_label), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_organization), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_copyright), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_encoder), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_encoded_by), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_album_dynamic_range), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_dynamic_range), -1, SQLITE_TRANSIENT);
     }
 
     if (auto stream1 = mediaInfo.streams.size() > 0 ? std::optional<Stream>{mediaInfo.streams[0]} : std::nullopt; stream1.has_value()) {
