@@ -114,8 +114,23 @@ bool TryParseFFprobeStreams(const Value& doc, FFprobeOutput& mediaInfo)
             stream.index = s.HasMember("index") && s["index"].IsInt() ? s["index"].GetInt() : 0;
             stream.codec_name = s.HasMember("codec_name") && s["codec_name"].IsString() ? std::optional<std::string>(s["codec_name"].GetString()) : std::nullopt;
             stream.codec_type = s.HasMember("codec_type") && s["codec_type"].IsString() ? std::optional<std::string>(s["codec_type"].GetString()) : std::nullopt;
+            stream.codec_time_base = s.HasMember("codec_time_base") && s["codec_time_base"].IsString() ? std::optional<std::string>(s["codec_time_base"].GetString()) : std::nullopt;
+            stream.codec_tag_string = s.HasMember("codec_tag_string") && s["codec_tag_string"].IsString() ? std::optional<std::string>(s["codec_tag_string"].GetString()) : std::nullopt;
+            stream.codec_tag = s.HasMember("codec_tag") && s["codec_tag"].IsString() ? std::optional<std::string>(s["codec_tag"].GetString()) : std::nullopt;
+            stream.sample_fmt = s.HasMember("sample_fmt") && s["sample_fmt"].IsString() ? std::optional<std::string>(s["sample_fmt"].GetString()) : std::nullopt;
             stream.sample_rate = s.HasMember("sample_rate") && s["sample_rate"].IsString() ? std::optional<std::string>(s["sample_rate"].GetString()) : std::nullopt;
             stream.channels = s.HasMember("channels") && s["channels"].IsInt() ? std::optional<int>(s["channels"].GetInt()) : std::nullopt;
+            stream.channel_layout = s.HasMember("channel_layout") && s["channel_layout"].IsString() ? std::optional<std::string>(s["channel_layout"].GetString()) : std::nullopt;
+            stream.bit_rate = s.HasMember("bit_rate") && s["bit_rate"].IsInt64() ? std::optional<int64_t>(s["bit_rate"].GetInt64()) : std::nullopt;
+            stream.bits_per_sample = s.HasMember("bits_per_sample") && s["bits_per_sample"].IsInt() ? std::optional<int>(s["bits_per_sample"].GetInt()) : std::nullopt;
+            stream.frame_size = s.HasMember("frame_size") && s["frame_size"].IsInt() ? std::optional<int>(s["frame_size"].GetInt()) : std::nullopt;
+            stream.nb_frames = s.HasMember("nb_frames") && s["nb_frames"].IsInt64() ? std::optional<int64_t>(s["nb_frames"].GetInt64()) : std::nullopt;
+            stream.r_frame_rate = s.HasMember("r_frame_rate") && s["r_frame_rate"].IsString() ? std::optional<std::string>(s["r_frame_rate"].GetString()) : std::nullopt;
+            stream.avg_frame_rate = s.HasMember("avg_frame_rate") && s["avg_frame_rate"].IsString() ? std::optional<std::string>(s["avg_frame_rate"].GetString()) : std::nullopt;
+            stream.time_base = s.HasMember("time_base") && s["time_base"].IsString() ? std::optional<std::string>(s["time_base"].GetString()) : std::nullopt;
+            stream.start_pts = s.HasMember("start_pts") && s["start_pts"].IsInt64() ? std::optional<int64_t>(s["start_pts"].GetInt64()) : std::nullopt;
+            stream.start_time = s.HasMember("start_time") && s["start_time"].IsInt64() ? std::optional<int64_t>(s["start_time"].GetInt64()) : std::nullopt;
+            stream.duration_ts = s.HasMember("duration_ts") && s["duration_ts"].IsInt64() ? std::optional<int64_t>(s["duration_ts"].GetInt64()) : std::nullopt;
             stream.duration = s.HasMember("duration") && s["duration"].IsString() ? std::optional<std::string>(s["duration"].GetString()) : std::nullopt;
             if (s.HasMember("tags") && s["tags"].IsObject()) {
                 stream.tags = JsonUtils::GetKeyValueMap(s["tags"]);
