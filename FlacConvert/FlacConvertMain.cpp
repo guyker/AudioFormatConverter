@@ -216,6 +216,11 @@ ConvertActionEnum GetUserAction()
 
 int main()
 {
+
+    std::cout << "FFmpeg version: " << LIBAVCODEC_VERSION_MAJOR << "."
+        << LIBAVCODEC_VERSION_MINOR << "."
+        << LIBAVCODEC_VERSION_MICRO << std::endl;
+
 #ifdef _WIN32
 #include <windows.h>
     SetConsoleOutputCP(CP_UTF8); // For Unicode output

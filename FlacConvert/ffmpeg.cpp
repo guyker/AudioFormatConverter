@@ -1,14 +1,6 @@
 
 
-//extern "C" {
-//    __declspec(dllimport) int av_log_get_level(void);
-//}
-
-
 #include "FFmpeg.h"
-
-#include <libavformat/avformat.h>
-
 
 #include <cstdarg>
 #include <cstdio>
@@ -20,15 +12,6 @@
 #include "MediaTrack.h"
 #include <regex>
 #include <cmath>
-
-
-//#pragma comment(lib, "avcodec.lib")
-//#pragma comment(lib, "avformat.lib")
-//#pragma comment(lib, "avutil.lib")
-//#pragma comment(lib, "swresample.lib")  // Often required for avutil
-//#pragma comment(lib, "swscale.lib")    // Often required for avutil
-//#pragma comment(lib, "avfilter.lib")  // Often required for avutil
-//#pragma comment(lib, "avdevice.lib") // Often required for avutil
 
 namespace FFmpeg {
 
@@ -56,9 +39,9 @@ namespace FFmpeg {
 
     void ffmpeg_log_callback(void* avcl, int level, const char* fmt, va_list vl) {
 
-		return; // Disable logging for now
+        return; // Disable logging for now
 
-		// Check if the log level is above the set level
+        // Check if the log level is above the set level
         if (level > av_log_get_level()) {
             return; // Skip logs above set level
         }
@@ -70,10 +53,10 @@ namespace FFmpeg {
         }
         // Format the log message
         char buffer[1024];
-		if (vsnprintf(buffer, sizeof(buffer), fmt, vl) < 0) {
-			spdlog::error("ffmpeg_log_callback: vsnprintf failed");
-			return;
-		}
+        if (vsnprintf(buffer, sizeof(buffer), fmt, vl) < 0) {
+            spdlog::error("ffmpeg_log_callback: vsnprintf failed");
+            return;
+        }
 
         // Remove trailing newline for cleaner logging
         std::string message = buffer;
@@ -104,11 +87,11 @@ namespace FFmpeg {
             AVFormatContext* fmt_ctx = static_cast<AVFormatContext*>(avcl);
 
             try
-			{
-				if (fmt_ctx->streams == 0x0000000000000000 || fmt_ctx->iformat == nullptr ||  fmt_ctx->url == (char*)0x0000000100000000) // this is a workaround for the ffmpeg crash when accessing fmt_ctx->url or other null value
-				{
-					context = "N/A - 0x0000000100000000";
-				}
+            {
+                if (fmt_ctx->streams == 0x0000000000000000 || fmt_ctx->iformat == nullptr || fmt_ctx->url == (char*)0x0000000100000000) // this is a workaround for the ffmpeg crash when accessing fmt_ctx->url or other null value
+                {
+                    context = "N/A - 0x0000000100000000";
+                }
                 else
                 {
                     if (fmt_ctx->url) {
@@ -128,18 +111,18 @@ namespace FFmpeg {
                         }
                     }
                 }
-			}
+            }
             catch (const std::exception& e)
             {
-				//this is a workaround for the ffmpeg crash when accessing fmt_ctx->url or other null value
-				context += std::string{" (error accessing context)" } +  e.what();
+                //this is a workaround for the ffmpeg crash when accessing fmt_ctx->url or other null value
+                context += std::string{ " (error accessing context)" } + e.what();
             }
         }
 
         // Store in vector (thread-safe)
         {
             std::lock_guard<std::mutex> lock(ffmpeg_log_mutex);
-            ffmpeg_logs.push_back(FFmpegLogItem { context,  level_str, message });
+            ffmpeg_logs.push_back(FFmpegLogItem{ context,  level_str, message });
         }
 
         // Optionally forward to spdlog
@@ -239,35 +222,7 @@ namespace FFmpeg {
 
 
 
-    float extractVolumeValue(const std::string& stats, const std::string& key) {
-        std::regex pattern(key + ": (-?\\d+\\.?\\d*) dB");
-        std::smatch matches;
-        if (std::regex_search(stats, matches, pattern) && matches.size() > 1) {
-            return std::stof(matches[1].str());
-        }
-        return NAN;
-    }
 
-    float computeAudioQualityScore(float mean_volume, float max_volume) {
-        float clipping_penalty = (max_volume > -1.0f) ? 50.0f : 0.0f;
-        float loudness_penalty = 0.0f;
-        if (mean_volume < -30.0f) loudness_penalty = 30.0f;
-        if (mean_volume > -5.0f)  loudness_penalty = 40.0f;
-        float dynamic_range = max_volume - mean_volume;
-        float dynamic_range_score = std::min<float>(30.0f, dynamic_range);
-        float score = 100.0f - clipping_penalty - loudness_penalty + dynamic_range_score;
-        return std::max<float>(0.0f, std::min<float>(100.0f, score));
-    }
-
-
-    extern "C" {
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavfilter/avfilter.h>
-#include <libavfilter/buffersrc.h>
-#include <libavfilter/buffersink.h>
-#include <libavutil/opt.h>
-    }
 
 
     FFprobeOutput GetFFprobeMetadataAPI(const std::filesystem::path filePath)
@@ -316,13 +271,9 @@ namespace FFmpeg {
 
 
 
-        uint8_t* params = NULL;
-        av_opt_get(fmt_ctx, "mean_volume", AV_OPT_SEARCH_CHILDREN, &params);
-
-		// Volume Information section
-        GetFFprobeVolumeInformation(fmt_ctx);
-
-
+        // Volume Information section
+//        GetFFprobeVolumeInformation(fmt_ctx);
+		auto retAudio = analyze_audio_quality(fmt_ctx);
 
 
         avformat_close_input(&fmt_ctx);
@@ -332,19 +283,85 @@ namespace FFmpeg {
 
 
 
+    // Function to analyze the audio file
+    AudioQualityInfo analyze_audio_quality(AVFormatContext* fmt_ctx) {
+        AudioQualityInfo info = {};
+
+        if (!fmt_ctx) {
+            std::cerr << "Null format context\n";
+            return info;
+        }
+
+        AVStream* audio_stream = nullptr;
+
+        // Find the first audio stream
+        for (unsigned int i = 0; i < fmt_ctx->nb_streams; i++) {
+            if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+                audio_stream = fmt_ctx->streams[i];
+                break;
+            }
+        }
+
+        if (!audio_stream) {
+            std::cerr << "No audio stream found\n";
+            return info;
+        }
+
+        AVCodecParameters* codecpar = audio_stream->codecpar;
+
+        // Fill struct
+        info.codec_name = avcodec_get_name(codecpar->codec_id);
+        info.sample_rate = codecpar->sample_rate;
+        //info.channels = codecpar->channels;
+        info.channels = codecpar->ch_layout.nb_channels;
+        info.bitrate = codecpar->bit_rate;  // Note: For FLAC, bitrate might be 0 sometimes
+
+        // Determine if it's lossless
+        if (codecpar->codec_id == AV_CODEC_ID_FLAC) {
+            info.is_lossless = true;
+        }
+        else if (codecpar->codec_id == AV_CODEC_ID_MP3) {
+            info.is_lossless = false;
+        }
+        else {
+            // Other formats: default to false
+            info.is_lossless = false;
+        }
+
+        // Basic estimation of high quality
+        info.is_high_quality = true;
+
+        // Rules (you can adjust):
+        if (info.sample_rate < 44100) {
+            info.is_high_quality = false;
+        }
+        if (info.channels < 2) {
+            info.is_high_quality = false;
+        }
+        if (codecpar->codec_id == AV_CODEC_ID_MP3 && info.bitrate < 128000) {
+            info.is_high_quality = false;
+        }
+
+        return info;
+    }
+
+
+
+
+
     Format GetFormatInformation(AVFormatContext* fmt_ctx, const std::filesystem::path filePath)
-    { 
+    {
         // Format section
         Format fmt;
         if (filePath.has_filename())
         {
             fmt.filename = CommonUtils::utf8string_to_string(filePath.filename().u8string());
-		}
-		else
-		{
-			fmt.filename = CommonUtils::utf8string_to_string(filePath.u8string());
-		}
-        
+        }
+        else
+        {
+            fmt.filename = CommonUtils::utf8string_to_string(filePath.u8string());
+        }
+
         if (fmt_ctx->url)
         {
             fmt.url = fmt_ctx->url;
@@ -357,7 +374,7 @@ namespace FFmpeg {
         catch (const std::filesystem::filesystem_error& e) {
             std::cerr << "Failed to get file size: " << e.what() << "\n";
         }
-        
+
         int64_t file_size = avio_size(fmt_ctx->pb);
         if (file_size >= 0) {
             fmt.file_size = file_size;
@@ -367,8 +384,8 @@ namespace FFmpeg {
         fmt.nb_streams = fmt_ctx->nb_streams;
 
         fmt.nb_stream_groups = fmt_ctx->nb_stream_groups;
-        
-        fmt.nb_chapters	= fmt_ctx->nb_stream_groups;
+
+        fmt.nb_chapters = fmt_ctx->nb_stream_groups;
 
 
         if (fmt_ctx->start_time != AV_NOPTS_VALUE) {
@@ -386,9 +403,9 @@ namespace FFmpeg {
         fmt.flags = fmt_ctx->flags;
 
 
-     //   fmt.probesize = fmt_ctx->probesize;
-     //   fmt.max_analyze_duration = fmt_ctx->max_analyze_duration;
-        
+        //   fmt.probesize = fmt_ctx->probesize;
+        //   fmt.max_analyze_duration = fmt_ctx->max_analyze_duration;
+
 
         fmt.format_name = fmt_ctx->iformat->name ? fmt_ctx->iformat->name : "";
         fmt.format_long_name = fmt_ctx->iformat->long_name ? fmt_ctx->iformat->long_name : "";
@@ -399,7 +416,7 @@ namespace FFmpeg {
         {
             fmt.audio_codec_name = avcodec_get_name(fmt_ctx->audio_codec_id);
         }
-        
+
         if (fmt_ctx->metadata) {
             JsonUtils::Tags format_tags;
             AVDictionaryEntry* tag = nullptr;
@@ -473,105 +490,5 @@ namespace FFmpeg {
         }
 
         return streamList;
-    }
-
-
-    extern "C" {
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavfilter/avfilter.h>
-#include <libavfilter/buffersrc.h>
-#include <libavfilter/buffersink.h>
-#include <libavutil/opt.h>
-    }
-
-    int GetFFprobeVolumeInformation(AVFormatContext* fmt_ctx)
-    {
-        int audio_stream_index = -1;
-        for (int i = 0; i < fmt_ctx->nb_streams; i++) {
-            if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-                audio_stream_index = i;
-                break;
-            }
-        }
-
-        // Set up filter graph for volumedetect
-        AVFilterGraph* filter_graph = avfilter_graph_alloc();
-        AVFilterContext* buffer_src_ctx;
-        AVFilterContext* buffer_sink_ctx;
-
-        // Source filter (raw audio input)
-        const AVFilter* buffer_src = avfilter_get_by_name("abuffer");
-        char args[512];
-        snprintf(args, sizeof(args),
-            "time_base=1/44100:sample_rate=44100:sample_fmt=fltp:channel_layout=stereo");
-        avfilter_graph_create_filter(&buffer_src_ctx, buffer_src, "in", args, nullptr, filter_graph);
-
-        // Sink filter (to process volumedetect)
-        const AVFilter* buffer_sink = avfilter_get_by_name("abuffersink");
-        avfilter_graph_create_filter(&buffer_sink_ctx, buffer_sink, "out", nullptr, nullptr, filter_graph);
-
-        // Add volumedetect filter
-        AVFilterContext* volume_ctx;
-        const AVFilter* volume_filter = avfilter_get_by_name("volumedetect");
-        avfilter_graph_create_filter(&volume_ctx, volume_filter, "volumedetect", nullptr, nullptr, filter_graph);
-
-        // Connect filters: in -> volumedetect -> out
-        avfilter_link(buffer_src_ctx, 0, volume_ctx, 0);
-        avfilter_link(volume_ctx, 0, buffer_sink_ctx, 0);
-
-        // Configure the graph
-        if (avfilter_graph_config(filter_graph, nullptr) < 0) {
-            std::cerr << "Failed to configure filter graph" << std::endl;
-            return 1;
-        }
-
-        // Process audio frames
-        AVPacket packet;
-        AVFrame* frame = av_frame_alloc();
-        while (av_read_frame(fmt_ctx, &packet) >= 0) {
-            if (packet.stream_index == audio_stream_index) {
-                // Decode packet into frame
-                // (You'll need a decoder context here; simplified for brevity)
-                // Then push frame into the filter graph:
-                // av_buffersrc_add_frame(buffer_src_ctx, frame);
-            }
-            av_packet_unref(&packet);
-        }
-
-        // Retrieve volume stats
-        char* stats = avfilter_graph_dump(filter_graph, nullptr);
-      //  std::cout << "Volume stats:\n" << (stats ? stats : "No stats") << std::endl;
-
-
-
-
-        std::string stats_str(stats);
-        std::regex mean_regex("mean_volume: (-?\\d+\\.?\\d*) dB");
-        std::regex max_regex("max_volume: (-?\\d+\\.?\\d*) dB");
-        std::smatch matches;
-
-        if (std::regex_search(stats_str, matches, mean_regex)) {
-            float mean_volume = std::stof(matches[1].str());
-            printf("Mean Volume: %.2f dB\n", mean_volume);
-        }
-
-        if (std::regex_search(stats_str, matches, max_regex)) {
-            float max_volume = std::stof(matches[1].str());
-            printf("Peak Volume: %.2f dB\n", max_volume);
-        }
-
-
-
-
-
-
-        av_free(stats);
-
-        // Cleanup
-        av_frame_free(&frame);
-        avfilter_graph_free(&filter_graph);
-
-        return 0;
     }
 }

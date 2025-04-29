@@ -10,13 +10,7 @@
 #include <cstdint>
 #include <map>
 
-extern "C" {
-#include <libavformat/avformat.h>
-    //#include <libavutil/avutil.h>
-#include <libavutil/log.h>
-#include <libavutil/error.h>
-#include <libavcodec/avcodec.h>
-}
+#include "FFmpegWrapper.h"
 
 #include "JsonUtils.h"
 #include "CommonUtils.h"

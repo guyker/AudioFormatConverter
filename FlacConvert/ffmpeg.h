@@ -9,6 +9,16 @@
 
 namespace FFmpeg
 {
+    // Struct to hold audio quality information
+    struct AudioQualityInfo {
+        std::string codec_name;
+        int sample_rate;       // in Hz
+        int channels;          // number of channels
+        int64_t bitrate;       // in bits per second
+        bool is_lossless;      // FLAC = true, MP3 = false
+        bool is_high_quality;  // Simple quality estimation
+    };
+
     struct FFmpegLogItem {
         std::string url;
         std::string level;
@@ -27,7 +37,5 @@ namespace FFmpeg
     Format GetFormatInformation(AVFormatContext* fmt_ctx, const std::filesystem::path filePath);
     std::vector<Stream> GetStreamInformation(AVFormatContext* fmt_ctx);
 
-    float extractVolumeValue(const std::string& stats, const std::string& key);
-    float computeAudioQualityScore(float mean_volume, float max_volume);
-    int GetFFprobeVolumeInformation(AVFormatContext* fmt_ctx);
+    AudioQualityInfo analyze_audio_quality(AVFormatContext* fmt_ctx);
 }
