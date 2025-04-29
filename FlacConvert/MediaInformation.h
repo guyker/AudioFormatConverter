@@ -49,6 +49,9 @@ struct AudioAnalysisInfo {
     float dynamic_range_db;     // in decibels
     int clipped_samples;        // how many samples clipped
     int total_samples;          // total processed
+
+    int samples_too_big;
+    int samples_negative;
 };
 
 

@@ -255,7 +255,7 @@ int main()
 	for (auto& mediaEntry : appSettingPtr->MediaDirectoryList)
 	{
 		auto activeFlag = mediaEntry.isActive ? "Active" : "Inactive";
-        spdlog::info("{} - Media Path: {} [{}]",  activeFlag, mediaEntry.mediaPath, mediaEntry.mediaName.value_or(nullptr));
+        spdlog::info("{} - Media Path: {} [{}]", activeFlag, mediaEntry.mediaPath, mediaEntry.mediaName.value_or(""));
 
         if (mediaEntry.isActive)
         {

@@ -28,7 +28,7 @@ std::tuple<FFprobeOutput, std::optional<std::wstring>> MediaTrack::ReadMediaInfo
         if (AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI)
         {
             auto mediaInfo = FFmpeg::GetFFprobeMetadataAPI(mediaFilePath);
-            //return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJsonString(mediaInfo)));
+            //return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(sonString(mediaInfo)));
             return std::make_tuple(mediaInfo, std::nullopt);
         }
         else
@@ -163,7 +163,7 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
             json << "\n    },\n";
         }
 
-        if (output.audio_quality)
+        if (output.audio_quality) 
         {
             json << "  \"audio_quality\": {\n";
             const auto& audio_quality = output.audio_quality.value();
@@ -171,7 +171,9 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
             json << "    \"rms_amplitude\": " << audio_quality.rms_amplitude << ",\n";
             json << "    \"dynamic_range_db\": " << audio_quality.dynamic_range_db << ",\n";
             json << "    \"clipped_samples\": " << audio_quality.clipped_samples << ",\n";
-            json << "    \"total_samples\": " << audio_quality.total_samples << "";
+            json << "    \"total_samples\": " << audio_quality.total_samples << ",\n";
+            json << "    \"samples_too_big\": " << audio_quality.samples_too_big << ",\n";
+            json << "    \"samples_negative\": " << audio_quality.samples_negative << "";
             json << "\n    },\n";
         }
 

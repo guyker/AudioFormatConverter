@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <cstdlib>
 #endif
+#include <spdlog/spdlog.h>
 
 namespace PlatformUtils {
 
@@ -124,6 +125,7 @@ namespace PlatformUtils {
 
         }
         catch (const std::exception& ex) {
+			spdlog::error("Error opening directory: {}", ex.what());
         }
     }
 

@@ -273,7 +273,7 @@ namespace FFmpeg {
         if (AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics)
         {
             output.audio_metrics = analyze_audio_metrics(fmt_ctx);
-            output.audio_quality = analyze_audio_recording(fmt_ctx);
+            output.audio_quality = *analyze_audio_recording(fmt_ctx);
         }
 
         avformat_close_input(&fmt_ctx);
@@ -281,13 +281,25 @@ namespace FFmpeg {
     }
 
 
-    AudioAnalysisInfo analyze_audio_recording(AVFormatContext* fmt_ctx) {
-        AudioAnalysisInfo info = {};
+    void log_warning(const char* message) {
+        spdlog::warn(message);
+    }
+
+    std::shared_ptr<AudioAnalysisInfo> analyze_audio_recording(AVFormatContext* fmt_ctx)
+    {
+		std::shared_ptr<AudioAnalysisInfo> info = std::make_shared<AudioAnalysisInfo>();
+        //AudioAnalysisInfo info = { 0, 0, 0, 0, 0, 0, 0};
+        //AudioAnalysisInfo info;
+
+        if (!fmt_ctx) {
+            log_warning("Format context is null.");
+            return info;
+        }
 
         AVStream* audio_stream = nullptr;
         int audio_stream_index = -1;
 
-        // Find the first audio stream
+        // Find first audio stream
         for (unsigned int i = 0; i < fmt_ctx->nb_streams; ++i) {
             if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
                 audio_stream = fmt_ctx->streams[i];
@@ -296,25 +308,41 @@ namespace FFmpeg {
             }
         }
 
-        if (!audio_stream) return info;
+        if (!audio_stream) {
+            log_warning("No audio stream found.");
+            return info;
+        }
 
         AVCodecParameters* codecpar = audio_stream->codecpar;
         const AVCodec* decoder = avcodec_find_decoder(codecpar->codec_id);
-        AVCodecContext* codec_ctx = avcodec_alloc_context3(decoder);
-        avcodec_parameters_to_context(codec_ctx, codecpar);
-        avcodec_open2(codec_ctx, decoder, nullptr);
+        if (!decoder) {
+            log_warning("Decoder not found.");
+            return info;
+        }
 
-        // Define input/output layouts (FFmpeg 6+)
+        AVCodecContext* codec_ctx = avcodec_alloc_context3(decoder);
+        if (!codec_ctx) {
+            log_warning("Failed to allocate codec context.");
+            return info;
+        }
+
+        avcodec_parameters_to_context(codec_ctx, codecpar);
+        if (avcodec_open2(codec_ctx, decoder, nullptr) < 0) {
+            log_warning("Failed to open codec.");
+            avcodec_free_context(&codec_ctx);
+            return info;
+        }
+
+        // Channel layouts (FFmpeg 6+)
         AVChannelLayout in_layout = codec_ctx->ch_layout;
         AVChannelLayout out_layout;
-        av_channel_layout_default(&out_layout, 1);  // Mono
+        av_channel_layout_default(&out_layout, 1);  // Mono output
 
         enum AVSampleFormat in_fmt = codec_ctx->sample_fmt;
         enum AVSampleFormat out_fmt = AV_SAMPLE_FMT_FLT;
         int in_rate = codec_ctx->sample_rate;
         int out_rate = 16000;
 
-        // Allocate resampler context
         SwrContext* swr = nullptr;
         int ret = swr_alloc_set_opts2(
             &swr,
@@ -322,7 +350,9 @@ namespace FFmpeg {
             &in_layout, in_fmt, in_rate,
             0, nullptr
         );
+
         if (ret < 0 || !swr || swr_init(swr) < 0) {
+            log_warning("Failed to initialize resampler.");
             av_channel_layout_uninit(&out_layout);
             avcodec_free_context(&codec_ctx);
             return info;
@@ -337,7 +367,6 @@ namespace FFmpeg {
         int64_t clipped = 0;
         int64_t total = 0;
 
-        // Process each packet in the stream
         while (av_read_frame(fmt_ctx, pkt) >= 0) {
             if (pkt->stream_index != audio_stream_index) {
                 av_packet_unref(pkt);
@@ -346,10 +375,10 @@ namespace FFmpeg {
 
             if (avcodec_send_packet(codec_ctx, pkt) >= 0) {
                 while (avcodec_receive_frame(codec_ctx, frame) == 0) {
-                    // Allocate buffer for resampling
                     int out_samples = av_rescale_rnd(
                         swr_get_delay(swr, codec_ctx->sample_rate) + frame->nb_samples,
-                        out_rate, codec_ctx->sample_rate, AV_ROUND_UP);
+                        out_rate, codec_ctx->sample_rate, AV_ROUND_UP
+                    );
 
                     uint8_t* out_buf[1];
                     out_buf[0] = (uint8_t*)av_malloc(out_samples * sizeof(float));
@@ -362,23 +391,34 @@ namespace FFmpeg {
                     );
 
                     float* samples = reinterpret_cast<float*>(out_buf[0]);
-
-                    // Analyze the samples (clamp values and calculate)
+					std::vector<float> sample_vector(samples, samples + converted);
                     for (int i = 0; i < converted; ++i) {
                         float s = samples[i];
                         float abs_s = std::abs(s);
 
-                        // Clamp extreme values to avoid artifacts
+                        // Verify values
+                        if (abs_s > 1.0f) {
+                            info->samples_too_big++;
+                            //log_warning("Sample value > 1.0 detected! Clamping to 1.0.");
+                        }
+                        if (abs_s < 0.0f) {
+                            info->samples_negative++;
+                            //log_warning("Negative absolute sample detected! Setting to 0.");
+                            abs_s = 0.0f;
+                        }
+
+                        // Clamp values
                         abs_s = std::clamp(abs_s, 0.0f, 1.0f);
 
-                        // Use std::max and std::min explicitly with the correct type
                         max_amp = std::max<float>(max_amp, abs_s);
-                        min_amp = std::min<float>(min_amp, std::max<float>(abs_s, 1e-4f));  // Prevent zero min_amp
+                        min_amp = std::min<float>(min_amp, std::max<float>(abs_s, 1e-4f));
 
                         sum_squares += static_cast<double>(s) * static_cast<double>(s);
                         total++;
 
-                        if (abs_s >= 0.999f) clipped++;  // Count clipped samples
+                        if (abs_s >= 0.999f) {
+                            clipped++;
+                        }
                     }
 
                     av_free(out_buf[0]);
@@ -388,18 +428,39 @@ namespace FFmpeg {
             av_packet_unref(pkt);
         }
 
+        // Free resources
         av_frame_free(&frame);
         av_packet_free(&pkt);
         swr_free(&swr);
         av_channel_layout_uninit(&out_layout);
         avcodec_free_context(&codec_ctx);
 
-        // Finalize results
-        info.peak_amplitude = max_amp;
-        info.rms_amplitude = total > 0 ? std::sqrt(sum_squares / total) : 0.0f;
-        info.dynamic_range_db = 20.0f * std::log10f((max_amp + 1e-9f) / (min_amp + 1e-9f));  // Prevent log(0)
-        info.clipped_samples = static_cast<int>(clipped);
-        info.total_samples = static_cast<int>(total);
+        // Calculate results
+        info->peak_amplitude = max_amp;
+        info->rms_amplitude = total > 0 ? std::sqrt(sum_squares / total) : 0.0f;
+        info->dynamic_range_db = 20.0f * std::log10f((max_amp + 1e-9f) / (min_amp + 1e-9f));
+        info->clipped_samples = static_cast<int>(clipped);
+        info->total_samples = static_cast<int>(total);
+
+        // Post-analysis checks & warnings
+        if (info->peak_amplitude > 1.0f) {
+            log_warning("Peak amplitude > 1.0 detected after processing.");
+        }
+        if (info->dynamic_range_db > 120.0f) {
+            log_warning("Dynamic range unusually high (>120 dB). Possible noise floor issues.");
+        }
+        if (info->rms_amplitude > 0.9f) {
+            log_warning("RMS amplitude unusually high. Audio may be overly loud or distorted.");
+        }
+        if (info->clipped_samples > 0) {
+            fprintf(stderr, "Info: %d clipped samples detected.\n", info->clipped_samples);
+        }
+
+        float clip_ratio = static_cast<float>(info->clipped_samples) / info->total_samples;
+        if (clip_ratio > 0.0001f) {
+            std::cerr << "[WARN] High clipping: " << info->clipped_samples << " samples ("
+                << (clip_ratio * 100.0f) << "%)\n";
+        }
 
         return info;
     }
