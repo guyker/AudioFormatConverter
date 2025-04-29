@@ -150,6 +150,18 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
     // Format section
     //if (output.format)
     {
+        if (output.audio_analysis)
+        {
+            json << "  \"quality_analysis\": {\n";
+            const auto& audio_analysis = output.audio_analysis.value();
+            json << "    \"peak_amplitude\": " << audio_analysis.peak_amplitude << ",\n";
+            json << "    \"rms_amplitude\": " << audio_analysis.rms_amplitude << ",\n";
+            json << "    \"dynamic_range_db\": " << audio_analysis.dynamic_range_db << ",\n";
+            json << "    \"clipped_samples\": " << audio_analysis.clipped_samples << ",\n";
+            json << "    \"total_samples\": " << audio_analysis.total_samples << "\n";
+            json << "\n    },\n";
+        }
+
         json << "  \"format\": {\n";
         const Format& fmt = output.format;
 
