@@ -183,6 +183,7 @@ std::string AppSettingsJson::toJsonString() const {
 
     doc.AddMember("UseAsyncFFmpegCalls", UseAsyncFFmpegCalls, allocator);
     doc.AddMember("UseFFmpegLibraryAPI", UseFFmpegLibraryAPI, allocator);
+    doc.AddMember("ExtraAudioQualityMetrics", ExtraAudioQualityMetrics, allocator);
     doc.AddMember("MinMatchingTracksForDuplicate", MinMatchingTracksForDuplicate, allocator);
     doc.AddMember("SizeMatchPercentageThreshold", SizeMatchPercentageThreshold, allocator);
     doc.AddMember("RecursionDirectorySearchDepth", RecursionDirectorySearchDepth, allocator);
@@ -290,6 +291,9 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
     }
     if (doc.HasMember("UseFFmpegLibraryAPI") && doc["UseFFmpegLibraryAPI"].IsBool()) {
         UseFFmpegLibraryAPI = doc["UseFFmpegLibraryAPI"].GetBool();
+    }
+    if (doc.HasMember("ExtraAudioQualityMetrics") && doc["ExtraAudioQualityMetrics"].IsBool()) {
+        ExtraAudioQualityMetrics = doc["ExtraAudioQualityMetrics"].GetBool();
     }
     if (doc.HasMember("MinMatchingTracksForDuplicate") && doc["MinMatchingTracksForDuplicate"].IsInt()) {
         MinMatchingTracksForDuplicate = doc["MinMatchingTracksForDuplicate"].GetInt();

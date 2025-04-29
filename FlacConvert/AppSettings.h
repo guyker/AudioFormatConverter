@@ -87,6 +87,7 @@ struct AppSettingsJson
 
 	bool UseAsyncFFmpegCalls { true };
 	bool UseFFmpegLibraryAPI { true };
+	bool ExtraAudioQualityMetrics{ false };
 	int MinMatchingTracksForDuplicate{ 1 };
 	int SizeMatchPercentageThreshold{ 3 }; // tracks are identical if the size difference is less than 3%
 	int RecursionDirectorySearchDepth{ 10 }; // max depth for recursive search
@@ -114,6 +115,7 @@ struct AppSettingsJson
 			AppSettingsJson::DefaultDatabaseFileName,
 			true, //UseAsyncFFmpegCalls
 			true, //UseFFmpegLibraryAPI
+			false, //ExtraAudioQualityMetrics
 			1, //MinMatchingTracksForDuplicate
 			3, //SizeMatchPercentageThreshold
 			10, //RecursionDirectorySearchDepth

@@ -216,10 +216,8 @@ ConvertActionEnum GetUserAction()
 
 int main()
 {
-
-    std::cout << "FFmpeg version: " << LIBAVCODEC_VERSION_MAJOR << "."
-        << LIBAVCODEC_VERSION_MINOR << "."
-        << LIBAVCODEC_VERSION_MICRO << std::endl;
+    spdlog::info("FFmpeg version: {}.{}.{}", LIBAVCODEC_VERSION_MINOR, LIBAVCODEC_VERSION_MINOR, LIBAVCODEC_VERSION_MICRO);
+    spdlog::info("----------------");
 
 #ifdef _WIN32
 #include <windows.h>
@@ -246,13 +244,18 @@ int main()
 	std::vector<MediaDirectoryElement> mediaList;
 
     //std::cout << "App Settings: " << std::filesystem::path(AppSettingsJson::DefaultConfigDirectory) / AppSettingsJson::DefaultConfigFileName << std::endl;
-    std::cout << "Working directory: " << appSettingPtr->OutDirectory << std::endl;
-    std::cout << "Database file name: " << appSettingPtr->DatabaseFileName << std::endl;
-    std::cout << "Media Libraries: " << std::endl;
+    spdlog::info("Working directory: {}", appSettingPtr->OutDirectory);
+    spdlog::info("Database file name: {}", appSettingPtr->DatabaseFileName);
+    spdlog::info("UseAsyncFFmpegCalls: {}", AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+    spdlog::info("UseFFmpegLibraryAPI: {}", AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI);
+    spdlog::info("ExtraAudioQualityMetrics: {}", AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics);
+
+    spdlog::info("----------------");
+    spdlog::info("Media Libraries:");
 	for (auto& mediaEntry : appSettingPtr->MediaDirectoryList)
 	{
 		auto activeFlag = mediaEntry.isActive ? "Active" : "Inactive";
-		std::cout << activeFlag << " - Media Path: " << mediaEntry.mediaPath << " [" << mediaEntry.mediaName.value_or(nullptr) << "]" << std::endl;
+        spdlog::info("{} - Media Path: {} [{}]",  activeFlag, mediaEntry.mediaPath, mediaEntry.mediaName.value_or(nullptr));
 
         if (mediaEntry.isActive)
         {

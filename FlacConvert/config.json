@@ -29,6 +29,7 @@
   ],
   "UseAsyncFFmpegCalls": true,
   "UseFFmpegLibraryAPI": true,
+  "ExtraAudioQualityMetrics": false,
   "MinMatchingTracksForDuplicate": 1,
   "SizeMatchPercentageThreshold": 3,
   "RecursionDirectorySearchDepth": 10,

@@ -270,8 +270,11 @@ namespace FFmpeg {
         output.streams = FFmpeg::GetStreamInformation(fmt_ctx);
 
         // Audio Quality
-        output.audio_metrics = analyze_audio_metrics(fmt_ctx);
-        output.audio_quality = analyze_audio_recording(fmt_ctx);
+        if (AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics)
+        {
+            output.audio_metrics = analyze_audio_metrics(fmt_ctx);
+            output.audio_quality = analyze_audio_recording(fmt_ctx);
+        }
 
         avformat_close_input(&fmt_ctx);
         return output;
