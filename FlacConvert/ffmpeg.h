@@ -9,23 +9,6 @@
 
 namespace FFmpeg
 {
-    // Struct to hold audio quality information
-    struct AudioQualityInfo {
-        std::string codec_name;
-        int sample_rate;       // in Hz
-        int channels;          // number of channels
-        int64_t bitrate;       // in bits per second
-        bool is_lossless;      // FLAC = true, MP3 = false
-        bool is_high_quality;  // Simple quality estimation
-    };
-
-    struct AudioAnalysisInfo {
-        float peak_amplitude;       // 0.0 - 1.0
-        float rms_amplitude;        // Root mean square
-        float dynamic_range_db;     // in decibels
-        int clipped_samples;        // how many samples clipped
-        int total_samples;          // total processed
-    };
 
     struct FFmpegLogItem {
         std::string url;

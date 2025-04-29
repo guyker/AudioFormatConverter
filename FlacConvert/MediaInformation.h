@@ -33,6 +33,25 @@
 namespace fs = std::filesystem;
 
 
+// Struct to hold audio quality information
+struct AudioQualityInfo {
+    std::string codec_name;
+    int sample_rate;       // in Hz
+    int channels;          // number of channels
+    int64_t bitrate;       // in bits per second
+    bool is_lossless;      // FLAC = true, MP3 = false
+    bool is_high_quality;  // Simple quality estimation
+};
+
+struct AudioAnalysisInfo {
+    float peak_amplitude;       // 0.0 - 1.0
+    float rms_amplitude;        // Root mean square
+    float dynamic_range_db;     // in decibels
+    int clipped_samples;        // how many samples clipped
+    int total_samples;          // total processed
+};
+
+
 // Represents the "disposition" object for streams/frames
 struct Disposition {
 	int default_stream{ 0 }; // Default stream flag, 1 = yes, 0 = no
@@ -203,7 +222,8 @@ struct FFprobeOutput {
     std::map<std::string, LibraryVersion> library_versions; // Library versions from -show_versions, key is library name
     std::vector<PixelFormat> pixel_formats; // Pixel formats array from -show_pixel_formats
 */
-
+    std::optional<AudioQualityInfo> audio_quality;
+    std::optional<AudioAnalysisInfo> audio_analysis;
     //FFmpeg::AudioAnalysisInfo audio_analysis; // Audio analysis information
     //std::optional<FFmpeg::AudioAnalysisInfo> audio_analysis; // Audio analysis information
 };

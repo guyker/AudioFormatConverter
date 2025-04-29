@@ -269,13 +269,9 @@ namespace FFmpeg {
         // Streams section
         output.streams = FFmpeg::GetStreamInformation(fmt_ctx);
 
-
-
-        // Volume Information section
-//        GetFFprobeVolumeInformation(fmt_ctx);
-		auto retAudio = analyze_audio_quality(fmt_ctx);
-		auto audio_analysis = analyze_audio_recording(fmt_ctx);
-        //output.audio_analysis = audio_analysis;
+        // Audio Quality
+        output.audio_quality = analyze_audio_quality(fmt_ctx);
+        output.audio_analysis = analyze_audio_recording(fmt_ctx);
 
         avformat_close_input(&fmt_ctx);
         return output;
