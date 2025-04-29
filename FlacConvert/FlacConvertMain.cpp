@@ -246,11 +246,15 @@ int main()
     //std::cout << "App Settings: " << std::filesystem::path(AppSettingsJson::DefaultConfigDirectory) / AppSettingsJson::DefaultConfigFileName << std::endl;
     spdlog::info("Working directory: {}", appSettingPtr->OutDirectory);
     spdlog::info("Database file name: {}", appSettingPtr->DatabaseFileName);
+
+    spdlog::info("----------------");
+
     spdlog::info("UseAsyncFFmpegCalls: {}", AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
     spdlog::info("UseFFmpegLibraryAPI: {}", AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI);
     spdlog::info("ExtraAudioQualityMetrics: {}", AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics);
 
     spdlog::info("----------------");
+
     spdlog::info("Media Libraries:");
 	for (auto& mediaEntry : appSettingPtr->MediaDirectoryList)
 	{

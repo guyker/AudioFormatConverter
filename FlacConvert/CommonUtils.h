@@ -33,9 +33,9 @@ namespace CommonUtils
     
     std::string GetDurationinString(auto duration)
     {
-        if (duration < 0)
+        if (duration <= 0)
         {
-            return "[0?]";
+            return "Calculating...";
         }
         else if (duration < 1000)
         {
@@ -53,7 +53,14 @@ namespace CommonUtils
             auto sec = duration / 1000;
             auto min = duration / 1000 / 60;
 
-            return std::to_string(min) + " min, " + std::to_string(sec - min * 60) + " sec";
+            if (min <= 10)
+            {
+                return std::to_string(min) + " min, " + std::to_string(sec - min * 60) + " sec";
+            }
+            else
+            {
+                return std::to_string(min) + " min";
+            }
         }
         else
         {
@@ -61,10 +68,12 @@ namespace CommonUtils
             auto sec = duration / 1000;
             auto min = duration / 1000 / 60;
             auto hour = duration / 1000 / 60 / 60;
-
+            
             return std::to_string(hour) + " hours, " +
-                std::to_string(min - hour * 60) + " min, " +
-                std::to_string(sec - (hour * 60 * 60) - ((min - hour * 60) * 60)) + " sec";
+                std::to_string(min - hour * 60) + " min";
+            //return std::to_string(hour) + " hours, " +
+            //    std::to_string(min - hour * 60) + " min, " +
+            //    std::to_string(sec - (hour * 60 * 60) - ((min - hour * 60) * 60)) + " sec";
         }
     }
 

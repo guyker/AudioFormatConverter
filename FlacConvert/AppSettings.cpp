@@ -83,7 +83,7 @@ fs::path findConfigDir() {
         fs::path candidate = *last / AppSettingsJson::DefaultConfigFileName;
         std::error_code ec;
         if (fs::exists(candidate, ec) && !ec) {
-            spdlog::info("Using persisted config directory '{}',", last->string());
+            spdlog::info("Using Config Path: '{}',", candidate.string());
             return *last;
         }
         spdlog::warn(
