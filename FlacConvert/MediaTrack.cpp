@@ -150,15 +150,28 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
     // Format section
     //if (output.format)
     {
-        if (output.audio_analysis)
+        if (output.audio_metrics)
         {
-            json << "  \"quality_analysis\": {\n";
-            const auto& audio_analysis = output.audio_analysis.value();
-            json << "    \"peak_amplitude\": " << audio_analysis.peak_amplitude << ",\n";
-            json << "    \"rms_amplitude\": " << audio_analysis.rms_amplitude << ",\n";
-            json << "    \"dynamic_range_db\": " << audio_analysis.dynamic_range_db << ",\n";
-            json << "    \"clipped_samples\": " << audio_analysis.clipped_samples << ",\n";
-            json << "    \"total_samples\": " << audio_analysis.total_samples << "\n";
+            json << "  \"audio_metrics\": {\n";
+            const auto& audio_metrics = output.audio_metrics.value();
+            json << "    \"codec_name\": \"" << JsonUtils::escapeJsonString(audio_metrics.codec_name) << "\",\n";
+            json << "    \"sample_rate\": " << audio_metrics.sample_rate << ",\n";
+            json << "    \"channels\": " << audio_metrics.channels << ",\n";
+            json << "    \"bitrate\": " << audio_metrics.bitrate << ",\n";
+            json << "    \"is_lossless\": " << audio_metrics.is_lossless << ",\n";
+            json << "    \"is_high_quality\": " << audio_metrics.is_high_quality << "";
+            json << "\n    },\n";
+        }
+
+        if (output.audio_quality)
+        {
+            json << "  \"audio_quality\": {\n";
+            const auto& audio_quality = output.audio_quality.value();
+            json << "    \"peak_amplitude\": " << audio_quality.peak_amplitude << ",\n";
+            json << "    \"rms_amplitude\": " << audio_quality.rms_amplitude << ",\n";
+            json << "    \"dynamic_range_db\": " << audio_quality.dynamic_range_db << ",\n";
+            json << "    \"clipped_samples\": " << audio_quality.clipped_samples << ",\n";
+            json << "    \"total_samples\": " << audio_quality.total_samples << "";
             json << "\n    },\n";
         }
 

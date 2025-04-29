@@ -34,7 +34,7 @@ namespace fs = std::filesystem;
 
 
 // Struct to hold audio quality information
-struct AudioQualityInfo {
+struct AudioMetrics {
     std::string codec_name;
     int sample_rate;       // in Hz
     int channels;          // number of channels
@@ -222,10 +222,8 @@ struct FFprobeOutput {
     std::map<std::string, LibraryVersion> library_versions; // Library versions from -show_versions, key is library name
     std::vector<PixelFormat> pixel_formats; // Pixel formats array from -show_pixel_formats
 */
-    std::optional<AudioQualityInfo> audio_quality;
-    std::optional<AudioAnalysisInfo> audio_analysis;
-    //FFmpeg::AudioAnalysisInfo audio_analysis; // Audio analysis information
-    //std::optional<FFmpeg::AudioAnalysisInfo> audio_analysis; // Audio analysis information
+    std::optional<AudioMetrics> audio_metrics;
+    std::optional<AudioAnalysisInfo> audio_quality;
 };
 
 

@@ -270,8 +270,8 @@ namespace FFmpeg {
         output.streams = FFmpeg::GetStreamInformation(fmt_ctx);
 
         // Audio Quality
-        output.audio_quality = analyze_audio_quality(fmt_ctx);
-        output.audio_analysis = analyze_audio_recording(fmt_ctx);
+        output.audio_metrics = analyze_audio_metrics(fmt_ctx);
+        output.audio_quality = analyze_audio_recording(fmt_ctx);
 
         avformat_close_input(&fmt_ctx);
         return output;
@@ -405,8 +405,8 @@ namespace FFmpeg {
 
 
     // Function to analyze the audio file
-    AudioQualityInfo analyze_audio_quality(AVFormatContext* fmt_ctx) {
-        AudioQualityInfo info = {};
+    AudioMetrics analyze_audio_metrics(AVFormatContext* fmt_ctx) {
+        AudioMetrics  info = {};
 
         if (!fmt_ctx) {
             std::cerr << "Null format context\n";
