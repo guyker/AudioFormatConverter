@@ -274,10 +274,135 @@ namespace FFmpeg {
         // Volume Information section
 //        GetFFprobeVolumeInformation(fmt_ctx);
 		auto retAudio = analyze_audio_quality(fmt_ctx);
-
+		auto audio_analysis = analyze_audio_recording(fmt_ctx);
+        //output.audio_analysis = audio_analysis;
 
         avformat_close_input(&fmt_ctx);
         return output;
+    }
+
+
+    AudioAnalysisInfo analyze_audio_recording(AVFormatContext* fmt_ctx) {
+        AudioAnalysisInfo info = {};
+
+        AVStream* audio_stream = nullptr;
+        int audio_stream_index = -1;
+
+        // Find the first audio stream
+        for (unsigned int i = 0; i < fmt_ctx->nb_streams; ++i) {
+            if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+                audio_stream = fmt_ctx->streams[i];
+                audio_stream_index = i;
+                break;
+            }
+        }
+
+        if (!audio_stream) return info;
+
+        AVCodecParameters* codecpar = audio_stream->codecpar;
+        const AVCodec* decoder = avcodec_find_decoder(codecpar->codec_id);
+        AVCodecContext* codec_ctx = avcodec_alloc_context3(decoder);
+        avcodec_parameters_to_context(codec_ctx, codecpar);
+        avcodec_open2(codec_ctx, decoder, nullptr);
+
+        // Define input/output layouts (FFmpeg 6+)
+        AVChannelLayout in_layout = codec_ctx->ch_layout;
+        AVChannelLayout out_layout;
+        av_channel_layout_default(&out_layout, 1);  // Mono
+
+        enum AVSampleFormat in_fmt = codec_ctx->sample_fmt;
+        enum AVSampleFormat out_fmt = AV_SAMPLE_FMT_FLT;
+        int in_rate = codec_ctx->sample_rate;
+        int out_rate = 16000;
+
+        // Allocate resampler context
+        SwrContext* swr = nullptr;
+        int ret = swr_alloc_set_opts2(
+            &swr,
+            &out_layout, out_fmt, out_rate,
+            &in_layout, in_fmt, in_rate,
+            0, nullptr
+        );
+        if (ret < 0 || !swr || swr_init(swr) < 0) {
+            av_channel_layout_uninit(&out_layout);
+            avcodec_free_context(&codec_ctx);
+            return info;
+        }
+
+        AVPacket* pkt = av_packet_alloc();
+        AVFrame* frame = av_frame_alloc();
+
+        float max_amp = 0.0f;
+        float min_amp = 1.0f;
+        double sum_squares = 0.0;
+        int64_t clipped = 0;
+        int64_t total = 0;
+
+        // Process each packet in the stream
+        while (av_read_frame(fmt_ctx, pkt) >= 0) {
+            if (pkt->stream_index != audio_stream_index) {
+                av_packet_unref(pkt);
+                continue;
+            }
+
+            if (avcodec_send_packet(codec_ctx, pkt) >= 0) {
+                while (avcodec_receive_frame(codec_ctx, frame) == 0) {
+                    // Allocate buffer for resampling
+                    int out_samples = av_rescale_rnd(
+                        swr_get_delay(swr, codec_ctx->sample_rate) + frame->nb_samples,
+                        out_rate, codec_ctx->sample_rate, AV_ROUND_UP);
+
+                    uint8_t* out_buf[1];
+                    out_buf[0] = (uint8_t*)av_malloc(out_samples * sizeof(float));
+
+                    int converted = swr_convert(
+                        swr,
+                        out_buf, out_samples,
+                        (const uint8_t**)frame->extended_data,
+                        frame->nb_samples
+                    );
+
+                    float* samples = reinterpret_cast<float*>(out_buf[0]);
+
+                    // Analyze the samples (clamp values and calculate)
+                    for (int i = 0; i < converted; ++i) {
+                        float s = samples[i];
+                        float abs_s = std::abs(s);
+
+                        // Clamp extreme values to avoid artifacts
+                        abs_s = std::clamp(abs_s, 0.0f, 1.0f);
+
+                        // Use std::max and std::min explicitly with the correct type
+                        max_amp = std::max<float>(max_amp, abs_s);
+                        min_amp = std::min<float>(min_amp, std::max<float>(abs_s, 1e-4f));  // Prevent zero min_amp
+
+                        sum_squares += static_cast<double>(s) * static_cast<double>(s);
+                        total++;
+
+                        if (abs_s >= 0.999f) clipped++;  // Count clipped samples
+                    }
+
+                    av_free(out_buf[0]);
+                }
+            }
+
+            av_packet_unref(pkt);
+        }
+
+        av_frame_free(&frame);
+        av_packet_free(&pkt);
+        swr_free(&swr);
+        av_channel_layout_uninit(&out_layout);
+        avcodec_free_context(&codec_ctx);
+
+        // Finalize results
+        info.peak_amplitude = max_amp;
+        info.rms_amplitude = total > 0 ? std::sqrt(sum_squares / total) : 0.0f;
+        info.dynamic_range_db = 20.0f * std::log10f((max_amp + 1e-9f) / (min_amp + 1e-9f));  // Prevent log(0)
+        info.clipped_samples = static_cast<int>(clipped);
+        info.total_samples = static_cast<int>(total);
+
+        return info;
     }
 
 

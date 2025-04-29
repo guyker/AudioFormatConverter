@@ -46,4 +46,5 @@ namespace FFmpeg
     std::vector<Stream> GetStreamInformation(AVFormatContext* fmt_ctx);
 
     AudioQualityInfo analyze_audio_quality(AVFormatContext* fmt_ctx);
+    AudioAnalysisInfo analyze_audio_recording(AVFormatContext* fmt_ctx);
 }

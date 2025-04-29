@@ -28,6 +28,7 @@
 #include "rapidjson/ostreamwrapper.h"
 #include <future>
 
+//#include "FFmpeg.h"
 
 namespace fs = std::filesystem;
 
@@ -202,6 +203,9 @@ struct FFprobeOutput {
     std::map<std::string, LibraryVersion> library_versions; // Library versions from -show_versions, key is library name
     std::vector<PixelFormat> pixel_formats; // Pixel formats array from -show_pixel_formats
 */
+
+    //FFmpeg::AudioAnalysisInfo audio_analysis; // Audio analysis information
+    //std::optional<FFmpeg::AudioAnalysisInfo> audio_analysis; // Audio analysis information
 };
 
 
