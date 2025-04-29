@@ -19,6 +19,14 @@ namespace FFmpeg
         bool is_high_quality;  // Simple quality estimation
     };
 
+    struct AudioAnalysisInfo {
+        float peak_amplitude;       // 0.0 - 1.0
+        float rms_amplitude;        // Root mean square
+        float dynamic_range_db;     // in decibels
+        int clipped_samples;        // how many samples clipped
+        int total_samples;          // total processed
+    };
+
     struct FFmpegLogItem {
         std::string url;
         std::string level;
