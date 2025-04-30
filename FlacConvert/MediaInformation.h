@@ -50,8 +50,12 @@ struct AudioAnalysisInfo {
     int clipped_samples;        // how many samples clipped
     int total_samples;          // total processed
 
-    int samples_too_big;
-    int samples_negative;
+    float noise_floor_rms = 0.0f;
+    float estimated_snr_db = 0.0f;
+    bool low_noise_floor_rms = false;
+    bool high_noise_comb = false;
+    int samples_too_big = 0;
+    int samples_negative = 0;
 };
 
 

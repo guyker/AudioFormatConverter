@@ -284,6 +284,9 @@ namespace FFmpeg {
     void log_warning(const char* message) {
         spdlog::warn(message);
     }
+    void log_info(const char* message) {
+        spdlog::info(message);
+    }
 
     std::shared_ptr<AudioAnalysisInfo> analyze_audio_recording(AVFormatContext* fmt_ctx)
     {
@@ -418,6 +421,47 @@ namespace FFmpeg {
 
                         if (abs_s >= 0.999f) {
                             clipped++;
+                        }
+
+                        //Noise [NEW]
+                        // 
+                        // Inside the loop (after sample processing):
+                        float noise_energy_sum = 0.0f;
+                        int64_t noise_sample_count = 0;
+                        const float noise_threshold = 0.01f; // Anything below this is considered noise-level
+
+                        // Add this inside the sample processing loop (after abs_s = clamp...):
+                        if (abs_s < noise_threshold) {
+                            noise_energy_sum += static_cast<float>(s * s);
+                            noise_sample_count++;
+                        }
+
+                        // ... After the existing RMS, DR, clipping analysis
+                        info->noise_floor_rms = (noise_sample_count > 0)
+                            ? std::sqrt(noise_energy_sum / noise_sample_count)
+                            : 0.0f;
+
+                        // Optional SNR estimation (Signal-to-Noise Ratio in dB)
+                        info->estimated_snr_db = (info->noise_floor_rms > 0.0f)
+                            ? 20.0f * std::log10(info->rms_amplitude / (info->noise_floor_rms + 1e-12f))
+                            : 0.0f;
+
+                        // Noise indicators
+                        if (info->noise_floor_rms > 0.02f && info->estimated_snr_db < 20.0f) {
+                            log_warning("High noise floor or low SNR detected. Possible background noise.");
+                            info->high_noise_comb = true;
+                        }
+                        else
+                        {
+                            info->high_noise_comb = false;
+                        }
+                        if (info->noise_floor_rms < 1e-4f) {
+                            info->low_noise_floor_rms = true;
+                            //log_info("Very low noise floor detected – clean signal.");
+                        }
+                        else
+                        {
+                            info->low_noise_floor_rms = false;
                         }
                     }
 

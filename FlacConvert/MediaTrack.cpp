@@ -172,6 +172,12 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
             json << "    \"dynamic_range_db\": " << audio_quality.dynamic_range_db << ",\n";
             json << "    \"clipped_samples\": " << audio_quality.clipped_samples << ",\n";
             json << "    \"total_samples\": " << audio_quality.total_samples << ",\n";
+			json << "    \"noise_floor_rms\": \"" << audio_quality.noise_floor_rms << "\",\n";
+			json << "    \"estimated_snr_db\": \"" << audio_quality.estimated_snr_db << "\",\n";
+
+            json << "    \"low_noise_floor_rms\": \"" << (audio_quality.low_noise_floor_rms ? "true" : "false") << "\",\n";
+            json << "    \"high_noise_comb\": \"" << (audio_quality.high_noise_comb ? "true" : "false") << "\",\n";
+
             json << "    \"samples_too_big\": " << audio_quality.samples_too_big << ",\n";
             json << "    \"samples_negative\": " << audio_quality.samples_negative << "";
             json << "\n    },\n";
