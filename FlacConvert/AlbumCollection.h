@@ -39,6 +39,7 @@
 
 #include <filesystem>
 #include "MediaAlbum.h"
+#include "CommonUtils.h"
 
 enum class SortBy { AlbumName, Artist, AlbumArtist, Year, TrackCount };
 
@@ -50,6 +51,7 @@ public:
 
 	// load albums from directory / Directly from media files FLAC/MP3
 	// bIncludeMetadata = true - load media metadata / Calling ImportMetadata
+	CommonUtils::Generator<MediaAlbumListPtr> LoadAlbumsCo(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata = false);
 	MediaAlbumListPtr LoadAlbums(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata = false);
 
 	//Import/update Media Metadata from the current loaded Album Collection (get JSON from media files)

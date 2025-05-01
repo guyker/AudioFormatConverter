@@ -8,10 +8,10 @@
 #include <chrono>
 #include <filesystem>
 
+
 namespace CommonUtils {
-
-
-
+    
+	// Function to convert a string to uintmax_t
     std::uintmax_t stringToUintmax(const std::string& str) {
         if (str.empty()) {
             throw std::invalid_argument("Empty string");

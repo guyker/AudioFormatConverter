@@ -37,7 +37,115 @@ using namespace rapidjson;
 
 
 
+CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata) {
 
+    std::chrono::steady_clock::time_point startTimePoint = std::chrono::steady_clock::now();
+    //std::chrono::steady_clock::time_point endLoadTime = startLoadTime;
+    spdlog::info("===Loading album collection from storage===");
+
+    // Clear existing albums
+    //_AlbumList.clear();
+    MediaAlbumListPtr albumListPtr = std::make_shared<std::vector<MediaAlbum>>();
+
+    // Map to collect tracks per folder
+    std::map<fs::path, TrackInfoList> albumMap;
+
+    try {
+        spdlog::info("First pass: Find all folders, Please wait (might take a few minutes)...");
+
+        long long folderCount = 0;
+
+        // First pass: Find all folders - Discove folders
+        for (const auto& entry : fs::recursive_directory_iterator(
+            albumCollectionDirPath, fs::directory_options::skip_permission_denied)) {
+
+            //progress update
+            std::cout << "\rScnning albums, Please wait... " << ++folderCount;
+
+            try {
+                auto relativePath = fs::relative(entry.path(), albumCollectionDirPath);
+                auto depth = std::distance(relativePath.begin(), relativePath.end());
+                if (depth > AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth) {
+                    continue;
+                }
+                if (entry.is_directory()) {
+                    albumMap[entry.path()];
+                }
+            }
+            catch (const fs::filesystem_error& e) {
+                spdlog::error("Error accessing {}: {}", CommonUtils::utf8string_to_string(entry.path().u8string()), e.what());
+            }
+        }
+        std::cout << "\rScnning albums, Please wait... " << folderCount << " Completed" << std::endl;
+
+        spdlog::info("First pass: Completed, found {} Folders [{}]", albumMap.size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        startTimePoint = std::chrono::steady_clock::now();
+
+
+        spdlog::info("Second pass: Collect tracks one level deep...");
+        // Second pass: Collect files one level deep
+        for (auto& [folderPath, trackList] : albumMap) {
+            try {
+                for (const auto& entry : fs::directory_iterator(
+                    folderPath, fs::directory_options::skip_permission_denied)) {
+                    if (entry.is_regular_file() && MediaTrack::IsFileAcceptedAudioFile(entry)) {
+                        uintmax_t fileSize{ 0 };
+                        try {
+                            fileSize = fs::file_size(entry.path());
+                        }
+                        catch (const fs::filesystem_error& e) {
+                            spdlog::error("Error getting file size for {}: {}", CommonUtils::utf8string_to_string(entry.path().u8string()), e.what());
+                        }
+
+                        trackList.push_back({ entry.path().filename().wstring(), fileSize, FFprobeOutput{}, std::nullopt, std::nullopt });
+                    }
+                }
+            }
+            catch (const fs::filesystem_error& e) {
+                spdlog::error("Error iterating {}: {}",
+                    CommonUtils::utf8string_to_string(folderPath.u8string()), e.what());
+            }
+        }
+
+        // Convert map to std::shared_ptr<std::vector<MediaAlbum>>
+        for (auto& [albumPath, trackList] : albumMap) {
+            if (!trackList.empty()) {
+                albumListPtr->emplace_back(fs::directory_entry(albumPath), std::move(trackList));
+            }
+        }
+
+   //     if (albumListPtr->size() > 100)
+   //     {
+   //         co_yield albumListPtr;
+			//albumListPtr->clear();
+   //     }
+
+        //spdlog::info("Second pass: Completed, {} Albums [{}]", albumListPtr->size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        spdlog::info("Second pass: Completed [{}]", CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        startTimePoint = std::chrono::steady_clock::now();
+
+    }
+    catch (const fs::filesystem_error& e) {
+        spdlog::error("Error iterating {}: {}",
+            CommonUtils::utf8string_to_string(albumCollectionDirPath.u8string()), e.what());
+    }
+
+
+    if (bIncludeMetadata) {
+        spdlog::info("Third pass: Collecting Metadata...");
+
+        auto nAlbums = ImportMetadata(albumListPtr, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+
+        spdlog::info("Third pass: Completed, ffmpeg issues: {} [{}]", FFmpeg::get_ffmpeg_logs().size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        startTimePoint = std::chrono::steady_clock::now();
+    }
+    else
+    {
+        spdlog::warn("Third pass: [skipped]");
+    }
+
+    co_yield albumListPtr;
+}
 
 MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata) {
     

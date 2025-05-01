@@ -12,10 +12,56 @@
 
 #include <filesystem>    
 #include <chrono>
-
+#include <coroutine>
 
 namespace CommonUtils
 {
+
+    // Generator type
+    template<typename T>
+    struct Generator {
+        struct promise_type {
+            T current_value;
+            // get_return_object() is called by the compiler to build the Generator
+            Generator get_return_object() {
+                return Generator{ std::coroutine_handle<promise_type>::from_promise(*this) };
+            }
+            // start suspended so we control when the first element runs
+            std::suspend_always initial_suspend() noexcept { return {}; }
+            // suspend at the end so caller can clean up
+            std::suspend_always final_suspend() noexcept { return {}; }
+            // handle co_yield: store the yielded value and suspend
+            std::suspend_always yield_value(T value) noexcept {
+                current_value = value;
+                return {};
+            }
+            void return_void() noexcept {}
+            void unhandled_exception() { std::terminate(); }
+        };
+
+        using handle_type = std::coroutine_handle<promise_type>;
+        handle_type handle;
+
+        explicit Generator(handle_type h) : handle(h) {}
+        ~Generator() {
+            if (handle) handle.destroy();
+        }
+
+        // resume to next suspension (i.e. next co_yield)
+        bool resume() {
+            if (!handle || handle.done())
+                return false;
+            handle.resume();
+            return !handle.done();
+        }
+
+        // get the value most recently yielded
+        T value() const {
+            return handle.promise().current_value;
+        }
+    };
+
+
     std::uintmax_t stringToUintmax(const std::string& str);
 
 

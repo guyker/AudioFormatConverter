@@ -100,11 +100,25 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         spdlog::info("===>ScanFolderAndCreateJSON - Processing new collection: {}...", mediaEntry.mediaPath);
 
         AlbumCollection ac;
-        auto albumListPtr = ac.LoadAlbums(mediaEntry.mediaPath, true); //load albume list from directory path
-        //ac.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });         // sort by album size - optional
-        ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });         // sort by album size - optional
 
-        ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory)); // save to json
+        auto gen = ac.LoadAlbumsCo(mediaEntry.mediaPath, true); //load albume list from directory path
+        // Drive the coroutine: each resume moves to the next element
+        while (gen.resume()) {
+			static int count = 0;
+            std::cout << "resumed after yielding: " << gen.value() << "\n";
+			auto albumListPtr = gen.value();
+            //ac.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });         // sort by album size - optional
+            ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });         // sort by album size - optional
+
+            ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++count)); // save to json
+        }
+
+
+        //auto albumListPtr = ac.LoadAlbums(mediaEntry.mediaPath, true); //load albume list from directory path
+        ////ac.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });         // sort by album size - optional
+        //ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });         // sort by album size - optional
+
+        //ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory)); // save to json
 
         auto endTime = std::chrono::steady_clock::now();
         

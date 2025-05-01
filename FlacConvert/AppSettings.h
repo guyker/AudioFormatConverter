@@ -48,9 +48,14 @@ struct MediaDirectoryElement
 	std::string mediaPath{};
 	std::optional<std::string> mediaName{};
 
-	std::string getMediaJsonPath(std::string outDir) const
+	std::string getMediaJsonPath(std::string outDir, int count = 0) const
 	{
-		std::string fileName = mediaName.value_or(std::string("data")) + ".json";
+		std::string fileName = mediaName.value_or(std::string("data"));
+		if (count > 0)
+		{
+			fileName += std::string("_") + std::to_string(count);
+		}
+		fileName += ".json";
 		std::filesystem::path path = std::filesystem::path(outDir) / (std::string("media_out_") + fileName);
 
 		return path.string();
