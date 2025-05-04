@@ -60,7 +60,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
             albumCollectionDirPath, fs::directory_options::skip_permission_denied)) {
 
             //progress update
-            std::cout << "\rScnning albums, Please wait... " << ++folderCount;
+            std::cout << "\rScnning folders, Please wait... " << ++folderCount;
 
             try {
                 auto relativePath = fs::relative(entry.path(), albumCollectionDirPath);
@@ -76,7 +76,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
                 spdlog::error("Error accessing {}: {}", CommonUtils::utf8string_to_string(entry.path().u8string()), e.what());
             }
         }
-        std::cout << "\rScnning albums, Please wait... " << folderCount << " Completed" << std::endl;
+        std::cout << "\rScnning folders, Please wait... Completed, " << folderCount << " folder found" << std::endl;
 
         spdlog::info("First pass: Completed, found {} Folders [{}]", albumMap.size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();
@@ -84,6 +84,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
 
         spdlog::info("Second pass: Collect tracks one level deep...");
         // Second pass: Collect files one level deep
+        long long albumCount = 0;
         for (auto& [folderPath, trackList] : albumMap) {
             try {
                 for (const auto& entry : fs::directory_iterator(
@@ -100,12 +101,20 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
                         trackList.push_back({ entry.path().filename().wstring(), fileSize, FFprobeOutput{}, std::nullopt, std::nullopt });
                     }
                 }
+				//progress update
+				if (trackList.size() > 0) {
+                    std::cout << "\rScnning albums, Please wait... " << ++albumCount;
+				}
+
             }
             catch (const fs::filesystem_error& e) {
                 spdlog::error("Error iterating {}: {}",
                     CommonUtils::utf8string_to_string(folderPath.u8string()), e.what());
             }
         }
+
+        std::cout << "\rScnning albums, Please wait...  Completed, " << albumCount << " Albums found" << std::endl;
+
 
         // Convert map to std::shared_ptr<std::vector<MediaAlbum>>
         for (auto& [albumPath, trackList] : albumMap) {
@@ -318,6 +327,11 @@ std::pair<long long, long long> AlbumCollection::GetNumberOfItemsInFolder(std::f
 //Load all media media information from the preloaded album list (albumList)
 size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool bAsync)
 {
+	if (albumListPtr == nullptr || albumListPtr->empty())
+	{
+		return 0;
+	}
+
     size_t albumCount = 0;
        
     for (auto& [albumPath, trackList] : *albumListPtr)
