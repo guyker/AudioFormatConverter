@@ -138,8 +138,9 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
 
     }
     catch (const fs::filesystem_error& e) {
-        spdlog::error("Error iterating {}: {}",
-            CommonUtils::utf8string_to_string(albumCollectionDirPath.u8string()), e.what());
+        spdlog::error("Error iterating {}: {}", CommonUtils::utf8string_to_string(albumCollectionDirPath.u8string()), e.what());
+
+        co_return;
     }
 
 
