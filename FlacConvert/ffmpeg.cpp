@@ -497,13 +497,12 @@ namespace FFmpeg {
             log_warning("RMS amplitude unusually high. Audio may be overly loud or distorted.");
         }
         if (info->clipped_samples > 0) {
-            fprintf(stderr, "Info: %d clipped samples detected.\n", info->clipped_samples);
+            //fprintf(stderr, "Info: %d clipped samples detected.\n", info->clipped_samples);
         }
 
         float clip_ratio = static_cast<float>(info->clipped_samples) / info->total_samples;
         if (clip_ratio > 0.0001f) {
-            std::cerr << "[WARN] High clipping: " << info->clipped_samples << " samples ("
-                << (clip_ratio * 100.0f) << "%)\n";
+            //std::cerr << "[WARN] High clipping: " << info->clipped_samples << " samples (" << (clip_ratio * 100.0f) << "%)\n";
         }
 
         return info;

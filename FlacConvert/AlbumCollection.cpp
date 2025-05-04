@@ -112,6 +112,9 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
             if (!trackList.empty()) {
                 albumListPtr->emplace_back(fs::directory_entry(albumPath), std::move(trackList));
             }
+            else {
+//				spdlog::warn("Empty folder/album: {}", CommonUtils::utf8string_to_string(albumPath.u8string()).c_str());
+            }
         }
 
    //     if (albumListPtr->size() > 100)
