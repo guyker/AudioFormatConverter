@@ -124,7 +124,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             //}
 
             // Load albums in batches
-            for (auto albumListPtr : ac.LoadAlbumsCo(mediaEntry.mediaPath, true, 1000)) {
+            for (auto albumListPtr : ac.LoadAlbumsCo(mediaEntry.mediaPath, true, AppSettingsJson::AppSetting()->AlbumsSplitThreshold)) {
                 spdlog::info("Received batch with {} albums", albumListPtr->size());
                 static int count = 0;
                 ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } }); // sort - optional
@@ -299,6 +299,7 @@ int main()
     spdlog::info("UseAsyncFFmpegCalls: {}", AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
     spdlog::info("UseFFmpegLibraryAPI: {}", AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI);
     spdlog::info("ExtraAudioQualityMetrics: {}", AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics);
+    spdlog::info("AlbumsSplitThreshold: {}", AppSettingsJson::AppSetting()->AlbumsSplitThreshold);
 
     spdlog::info("----------------");
 
