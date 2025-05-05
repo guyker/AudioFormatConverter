@@ -93,7 +93,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     // Convert map to std::shared_ptr<std::vector<MediaAlbum>> in batches
     MediaAlbumListPtr albumListPtr = std::make_shared<std::vector<MediaAlbum>>();
     albumListPtr->reserve(batchSize); // Optimize allocation
-    int totalBatchCount = albumMap.size() / AppSettingsJson::AppSetting()->AlbumsSplitThreshold;
+    int totalBatchCount = albumCount / AppSettingsJson::AppSetting()->AlbumsSplitThreshold;
     int batchCount = 0;
 
     spdlog::info("Converting albums to batches of {}...", batchSize);

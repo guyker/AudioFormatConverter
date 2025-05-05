@@ -101,7 +101,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 
         AlbumCollection ac;
 
-        auto gen = ac.LoadAlbumsCo(mediaEntry.mediaPath, true, 10); //load albume list from directory path
+    //    auto gen = ac.LoadAlbumsCo(mediaEntry.mediaPath, true, 10); //load albume list from directory path
         // Drive the coroutine: each resume moves to the next element
    //     while (gen.resume()) {
 			//static int count = 0;
@@ -122,6 +122,26 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             //        spdlog::info("Album: {}", CommonUtils::utf8string_to_string(album.path.path().u8string()));
             //    }
             //}
+
+            bool isError = false;
+            int index = 0;
+            while (!isError) {
+                auto oldFile = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++index);
+                if (fs::exists(oldFile)) {
+                    std::error_code ec;
+                    if (fs::remove(oldFile, ec)) {
+                      //  std::cout << "File deleted successfully.\n";
+                    }
+                    else {
+                     //   spdlog::error("Failed to delete file: {}", ec.message().c_str());
+						isError = true;
+                    }
+                }
+                else {
+                //    spdlog::error("File does not exist. [{}]", oldFile.c_str());
+					isError = true;
+                }
+            }
 
             // Load albums in batches
             for (auto albumListPtr : ac.LoadAlbumsCo(mediaEntry.mediaPath, true, AppSettingsJson::AppSetting()->AlbumsSplitThreshold)) {
