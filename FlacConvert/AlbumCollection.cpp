@@ -96,6 +96,16 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     int totalBatchCount = albumCount / AppSettingsJson::AppSetting()->AlbumsSplitThreshold;
     int batchCount = 0;
 
+    //erase all empty folders
+    for (auto it = albumMap.begin(); it != albumMap.end(); ) {
+        if (it->second.size() == 0) { // Replace with appropriate check
+            it = albumMap.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+
     spdlog::info("Converting albums to batches of {}...", batchSize);
     for (auto& [albumPath, trackList] : albumMap) {
         if (!trackList.empty()) {
