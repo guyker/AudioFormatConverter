@@ -354,9 +354,9 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         }
     }
 
-    CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), std::string{});
+    CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), "Completed.", true);
 
-    std::cout << std::endl;
+    //std::cout << std::endl;
 
     return albumCount;
 }

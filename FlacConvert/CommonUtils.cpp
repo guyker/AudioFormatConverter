@@ -7,6 +7,7 @@
 #include <iostream>
 #include <chrono>
 #include <filesystem>
+#include <spdlog/spdlog.h>
 
 
 namespace CommonUtils {
@@ -123,7 +124,7 @@ namespace CommonUtils {
         return 0;
     }
 
-    void show_progress_bar(int total, std::string prefix, size_t count, size_t size, std::string name) {
+    void show_progress_bar(int total, std::string prefix, size_t count, size_t size, std::string name, bool isCompleted) {
         const char* spinner = "|/-\\";
         int spinner_index = 0;
         const int bar_width = 20; // Width of the progress bar (characters)
@@ -154,7 +155,14 @@ namespace CommonUtils {
 
         // Print bar, percentage, and spinner
         std::cout << "\rProgress: [" << bar << "] " << percent << "% " << avarageDuration << spinner[spinner_index] << " " << normalized_count << "/" << size << " " << emprryString << std::flush;
-        if (count <= size)
+        if (isCompleted)
+        {
+            std::cout << "\r";
+            std::string green_bar = "[\033[32m" + bar + "\033[0m]";
+            std::string green_name = "\033[32m" + name + "\033[0m";
+            spdlog::info("Progress: {} {}% {}/{} - {}", green_bar, percent, normalized_count, size, green_name);
+        }
+        else
         {
             std::cout << "\rProgress: [" << bar << "] " << percent << "% " <<avarageDuration << spinner[spinner_index] << " " << normalized_count << "/" << size << " " << name << std::flush;
         }
