@@ -22,43 +22,100 @@ namespace CommonUtils
     struct Generator {
         struct promise_type {
             T current_value;
-            // get_return_object() is called by the compiler to build the Generator
+            std::exception_ptr exception = nullptr;
+
             Generator get_return_object() {
                 return Generator{ std::coroutine_handle<promise_type>::from_promise(*this) };
             }
-            // start suspended so we control when the first element runs
+
             std::suspend_always initial_suspend() noexcept { return {}; }
-            // suspend at the end so caller can clean up
             std::suspend_always final_suspend() noexcept { return {}; }
-            // handle co_yield: store the yielded value and suspend
+            void return_void() noexcept {}
+
             std::suspend_always yield_value(T value) noexcept {
-                current_value = value;
+                current_value = std::move(value);
                 return {};
             }
-            void return_void() noexcept {}
-            void unhandled_exception() { std::terminate(); }
+
+            void unhandled_exception() noexcept {
+                exception = std::current_exception(); // Store exception
+            }
         };
 
         using handle_type = std::coroutine_handle<promise_type>;
         handle_type handle;
 
         explicit Generator(handle_type h) : handle(h) {}
+        Generator(const Generator&) = delete;
+        Generator(Generator&& other) noexcept : handle(other.handle) { other.handle = nullptr; }
         ~Generator() {
             if (handle) handle.destroy();
         }
 
-        // resume to next suspension (i.e. next co_yield)
+        // Manual resume and value access
         bool resume() {
-            if (!handle || handle.done())
+            if (!handle || handle.done()) {
                 return false;
+            }
             handle.resume();
+            if (handle.promise().exception) {
+                std::rethrow_exception(handle.promise().exception);
+            }
             return !handle.done();
         }
 
-        // get the value most recently yielded
         T value() const {
+            if (handle.promise().exception) {
+                std::rethrow_exception(handle.promise().exception);
+            }
             return handle.promise().current_value;
         }
+
+        // Iterator for range-based for loop
+        struct Iterator {
+            handle_type coro;
+
+            Iterator(handle_type h) : coro(h) {}
+            Iterator& operator++() {
+                if (!coro.done()) {
+                    coro.resume();
+                    if (coro.promise().exception) {
+                        std::rethrow_exception(coro.promise().exception);
+                    }
+                }
+                return *this;
+            }
+
+            bool operator==(std::default_sentinel_t) const {
+                return coro.done();
+            }
+
+            T& operator*() const {
+                if (coro.promise().exception) {
+                    std::rethrow_exception(coro.promise().exception);
+                }
+                return coro.promise().current_value;
+            }
+
+            T* operator->() const {
+                if (coro.promise().exception) {
+                    std::rethrow_exception(coro.promise().exception);
+                }
+                return &coro.promise().current_value;
+            }
+        };
+
+        Iterator begin() {
+            if (!handle.done()) {
+                handle.resume();
+                if (handle.promise().exception) {
+                    std::rethrow_exception(handle.promise().exception);
+                }
+            }
+            return Iterator{ handle };
+        }
+
+        std::default_sentinel_t end() { return {}; }
     };
 
 

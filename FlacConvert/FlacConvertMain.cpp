@@ -101,17 +101,50 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 
         AlbumCollection ac;
 
-        auto gen = ac.LoadAlbumsCo(mediaEntry.mediaPath, true); //load albume list from directory path
+        auto gen = ac.LoadAlbumsCo(mediaEntry.mediaPath, true, 10); //load albume list from directory path
         // Drive the coroutine: each resume moves to the next element
-        while (gen.resume()) {
-			static int count = 0;
-            std::cout << "resumed after yielding: " << gen.value() << "\n";
-			auto albumListPtr = gen.value();
-            //ac.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });         // sort by album size - optional
-            ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });         // sort by album size - optional
+   //     while (gen.resume()) {
+			//static int count = 0;
+   //         std::cout << "resumed after yielding: " << gen.value() << "\n";
+			//auto albumListPtr = gen.value();
+   //         //ac.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });         // sort by album size - optional
+   //         ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });         // sort by album size - optional
 
-            ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++count)); // save to json
+   //         ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++count)); // save to json
+   //     }
+
+        try {
+            //auto generator = ac.LoadAlbumsCo(mediaEntry.mediaPath, true, 10);
+            //while (generator.resume()) {
+            //    auto albumListPtr = generator.value();
+            //    spdlog::info("Received batch with {} albums", albumListPtr->size());
+            //    for (const auto& album : *albumListPtr) {
+            //        spdlog::info("Album: {}", CommonUtils::utf8string_to_string(album.path.path().u8string()));
+            //    }
+            //}
+
+            // Load albums in batches
+            for (auto albumListPtr : ac.LoadAlbumsCo(mediaEntry.mediaPath, true, 1000)) {
+                spdlog::info("Received batch with {} albums", albumListPtr->size());
+                static int count = 0;
+                ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } }); // sort - optional
+                ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++count)); // save to json
+            }
         }
+        catch (const std::filesystem::filesystem_error& e) {
+            spdlog::error("Filesystem error: {}", e.what());
+            return 1;
+        }
+        catch (const std::exception& e) {
+            spdlog::error("General error: {}", e.what());
+            return 1;
+        }
+        catch (...) {
+            spdlog::error("Unknown error");
+            return 1;
+        }
+
+
 
 
         //auto albumListPtr = ac.LoadAlbums(mediaEntry.mediaPath, true); //load albume list from directory path
