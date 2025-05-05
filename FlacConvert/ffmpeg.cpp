@@ -1,5 +1,3 @@
-
-
 #include "FFmpeg.h"
 
 #include <cstdarg>
@@ -39,7 +37,7 @@ namespace FFmpeg {
 
     void ffmpeg_log_callback(void* avcl, int level, const char* fmt, va_list vl) {
 
-        return; // Disable logging for now
+     //   return; // Disable logging for now
 
         // Check if the log level is above the set level
         if (level > av_log_get_level()) {
@@ -152,7 +150,7 @@ namespace FFmpeg {
         }
     }
 
-    std::vector<FFmpegLogItem> get_ffmpeg_logs() {
+    std::vector<FFmpegLogItem>& get_ffmpeg_logs() {
         std::lock_guard<std::mutex> lock(ffmpeg_log_mutex);
         return ffmpeg_logs;
     }
@@ -290,7 +288,7 @@ namespace FFmpeg {
 
     std::shared_ptr<AudioAnalysisInfo> analyze_audio_recording(AVFormatContext* fmt_ctx)
     {
-		std::shared_ptr<AudioAnalysisInfo> info = std::make_shared<AudioAnalysisInfo>();
+        std::shared_ptr<AudioAnalysisInfo> info = std::make_shared<AudioAnalysisInfo>();
         //AudioAnalysisInfo info = { 0, 0, 0, 0, 0, 0, 0};
         //AudioAnalysisInfo info;
 
@@ -394,7 +392,7 @@ namespace FFmpeg {
                     );
 
                     float* samples = reinterpret_cast<float*>(out_buf[0]);
-					std::vector<float> sample_vector(samples, samples + converted);
+                    std::vector<float> sample_vector(samples, samples + converted);
                     for (int i = 0; i < converted; ++i) {
                         float s = samples[i];
                         float abs_s = std::abs(s);

@@ -18,7 +18,7 @@ namespace FFmpeg
 
     void initialize_ffmpeg_logging();
     void ffmpeg_log_callback(void* avcl, int level, const char* fmt, va_list vl);
-    std::vector<FFmpegLogItem> get_ffmpeg_logs();
+    std::vector<FFmpegLogItem>& get_ffmpeg_logs();
     void clear_ffmpeg_logs();
 
     FFprobeOutput GetFFprobeMetadataAPI(const std::filesystem::path filePath);

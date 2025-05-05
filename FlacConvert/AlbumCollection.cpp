@@ -338,6 +338,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
             if (MediaTrack::IsValidMedia(trackPath)) {
                 auto path2Fixed = trackPath.lexically_normal().native();
 
+                CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), name);
                 if (bAsync)
                 {
                     auto miFuture = std::async(std::launch::async, MediaTrack::ReadMediaInfoFromJsonFile, path2Fixed);
@@ -357,6 +358,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         {
             for (auto& [furure_ret, mediaInfo, mediaInfoString] : asyncFutureList)
             {
+                CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), name);
                 auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
                 mediaInfo = mediaInfo_ret;
                 mediaInfoString = mediaInfoString_ret;
@@ -373,8 +375,12 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
 
 void SaveAlbumsToJSON_FFmpegError(std::filesystem::path outPath)
 {
-    std::vector<FFmpeg::FFmpegLogItem> ffmpegErrorList = FFmpeg::get_ffmpeg_logs();
+    std::vector<FFmpeg::FFmpegLogItem>& ffmpegErrorList = FFmpeg::get_ffmpeg_logs();
 
+    if (ffmpegErrorList.empty())
+    {
+        return;
+    }
 
     // Create a RapidJSON Document and set it as an array.
     Document document;
@@ -394,6 +400,8 @@ void SaveAlbumsToJSON_FFmpegError(std::filesystem::path outPath)
 
         document.PushBack(trackObj, allocator);
     }
+
+	ffmpegErrorList.clear();
 
     // Create a StringBuffer to hold the JSON output.
     StringBuffer buffer;
@@ -415,8 +423,11 @@ void SaveAlbumsToJSON_FFmpegError(std::filesystem::path outPath)
 
 std::list<MediaTrack> SaveAlbumsToJSON_LasrErrorList;
 
-void SaveAlbumsToJSON_LasrError(std::list<MediaTrack> mediaTracks, std::filesystem::path outPath)
+void SaveAlbumsToJSON_LasrError(std::list<MediaTrack>& mediaTracks, std::filesystem::path outPath)
 {
+    if (SaveAlbumsToJSON_LasrErrorList.empty()) {
+		return;
+    }
 
     // Create a RapidJSON Document and set it as an array.
     Document document;
@@ -454,6 +465,8 @@ void SaveAlbumsToJSON_LasrError(std::list<MediaTrack> mediaTracks, std::filesyst
         // Add the track object to the JSON array.
         document.PushBack(trackObj, allocator);
 	}
+
+	SaveAlbumsToJSON_LasrErrorList.clear();
 
     // Create a StringBuffer to hold the JSON output.
     StringBuffer buffer;
@@ -566,6 +579,17 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
     Writer<StringBuffer> writer(buffer);
     mediaDoc.Accept(writer);
     const char* json = buffer.GetString();
+
+
+    fs::path parent = path.parent_path();
+    if (!parent.empty() && !fs::exists(parent)) {
+        // 2. Create all levels of directories
+        std::error_code ec;
+        if (!fs::create_directories(parent, ec)) {
+            std::cerr << "Failed to create directories: " << ec.message() << "\n";
+            return false;
+        }
+    }
 
     // Save the JSON string to a file
     std::ofstream file(path);

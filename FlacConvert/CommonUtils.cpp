@@ -126,7 +126,7 @@ namespace CommonUtils {
 
     void show_progress_bar(int total, std::string prefix, size_t count, size_t size, std::string name, bool isCompleted) {
         const char* spinner = "|/-\\";
-        int spinner_index = 0;
+        static int spinner_index = 0;
         const int bar_width = 20; // Width of the progress bar (characters)
 
         static std::chrono::steady_clock::time_point lastTime{ std::chrono::steady_clock::now() };
@@ -151,10 +151,10 @@ namespace CommonUtils {
         auto emprryString = getEraseLineString(static_cast<int>(10 + name.size()));
 
         auto av_duration = avarage_duration(count, size);        
-		std::string avarageDuration = (size >= count) ? "" : " [" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + "] ";
+		std::string avarageDuration = (size <= count) ? "" : " [" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + "] ";
 
         // Print bar, percentage, and spinner
-        std::cout << "\rProgress: [" << bar << "] " << percent << "% " << avarageDuration << spinner[spinner_index] << " " << normalized_count << "/" << size << " " << emprryString << std::flush;
+        std::cout << "\rProgress: [" << bar << "] " << percent << "% " << spinner[spinner_index] << " " << normalized_count << "/" << size << "" << avarageDuration << " " << emprryString << std::flush;
         if (isCompleted)
         {
             std::cout << "\r";
@@ -164,7 +164,7 @@ namespace CommonUtils {
         }
         else
         {
-            std::cout << "\rProgress: [" << bar << "] " << percent << "% " <<avarageDuration << spinner[spinner_index] << " " << normalized_count << "/" << size << " " << name << std::flush;
+            std::cout << "\rProgress: [" << bar << "] " << percent << "% " << spinner[spinner_index] << " " << normalized_count << "/" << size << "" << avarageDuration << " " << name << std::flush;
         }
 
         // Update spinner
