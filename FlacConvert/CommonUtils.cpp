@@ -150,7 +150,7 @@ namespace CommonUtils {
         auto emprryString = getEraseLineString(static_cast<int>(10 + name.size()));
 
         auto av_duration = avarage_duration(count, size);        
-		std::string avarageDuration = " [" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + "] ";
+		std::string avarageDuration = (size >= count) ? "" : " [" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + "] ";
 
         // Print bar, percentage, and spinner
         std::cout << "\rProgress: [" << bar << "] " << percent << "% " << avarageDuration << spinner[spinner_index] << " " << normalized_count << "/" << size << " " << emprryString << std::flush;

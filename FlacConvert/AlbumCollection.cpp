@@ -93,6 +93,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     // Convert map to std::shared_ptr<std::vector<MediaAlbum>> in batches
     MediaAlbumListPtr albumListPtr = std::make_shared<std::vector<MediaAlbum>>();
     albumListPtr->reserve(batchSize); // Optimize allocation
+    int totalBatchCount = albumMap.size() / AppSettingsJson::AppSetting()->AlbumsSplitThreshold;
     int batchCount = 0;
 
     spdlog::info("Converting albums to batches of {}...", batchSize);
@@ -101,7 +102,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
             albumListPtr->emplace_back(fs::directory_entry(albumPath), std::move(trackList));
             if (albumListPtr->size() >= batchSize) {
                 if (bIncludeMetadata) {
-                    spdlog::info("Collecting metadata for batch {}...", batchCount + 1);
+                    spdlog::info("Collecting metadata for batch {}/{}...", batchCount + 1, totalBatchCount);
                     ImportMetadata(albumListPtr, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
                 }
                 spdlog::info("Yielding batch {} with {} albums", ++batchCount, albumListPtr->size());
@@ -115,7 +116,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     // Yield and process final batch
     if (!albumListPtr->empty()) {
         if (bIncludeMetadata) {
-            spdlog::info("Collecting metadata for final batch {}...", batchCount + 1);
+            spdlog::info("Collecting metadata for final batch {}/{}...", batchCount + 1, totalBatchCount);
             ImportMetadata(albumListPtr, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
         }
         spdlog::info("Yielding final batch {} with {} albums", ++batchCount, albumListPtr->size());
@@ -353,7 +354,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         }
     }
 
-    CommonUtils::show_progress_bar(20, "Processing...", ++albumCount, albumListPtr->size(), std::string{});
+    CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), std::string{});
 
     std::cout << std::endl;
 
@@ -399,7 +400,7 @@ void SaveAlbumsToJSON_FFmpegError(std::filesystem::path outPath)
     outFile << buffer.GetString();
     outFile.close();
 
-    std::cout << "JSON file created successfully as tracks.json" << std::endl;
+ //   std::cout << "JSON file created successfully as tracks.json" << std::endl;
 }
 
 std::list<MediaTrack> SaveAlbumsToJSON_LasrErrorList;
@@ -459,7 +460,7 @@ void SaveAlbumsToJSON_LasrError(std::list<MediaTrack> mediaTracks, std::filesyst
     outFile << buffer.GetString();
     outFile.close();
 
-    std::cout << "JSON file created successfully as tracks.json" << std::endl;
+ //   std::cout << "JSON file created successfully as tracks.json" << std::endl;
 }
 
 
