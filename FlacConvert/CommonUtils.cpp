@@ -128,6 +128,7 @@ namespace CommonUtils {
 
         auto av_duration = avarage_duration(count, size);        
 		std::string avarageDuration = (size <= count) ? "" : " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + ")";
+		std::string avarageDurationTotal = (totalCount <= currentCount) ? "" : " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (totalCount - currentCount))) + ")";
 
         std::cout << "\r" << "\033[K " << std::flush;              // Move cursor to start of line and clear from cursor to end of line
 
@@ -144,8 +145,8 @@ namespace CommonUtils {
         else
         {            
 			auto spinnerChar = CommonUtils::get_utf8_char_at(spinner, spinner_index);
-            std::string progressStr = std::format("\rProgress: [{}] {} {}% {}/{}{} [{}/{}] - {}", 
-                bar, spinnerChar, percent, normalized_count, size, avarageDuration, currentCount, totalCount, name);
+            std::string progressStr = std::format("\rProgress: [{}] {} {}% {}/{}{}/{} - {}", 
+                bar, spinnerChar, percent, normalized_count, size, avarageDuration, avarageDurationTotal, name);
             std::cout << progressStr << std::flush;
 
             spinner_index = (spinner_index + 1) % spinnerSize;
