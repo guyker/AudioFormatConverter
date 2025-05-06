@@ -190,7 +190,7 @@ namespace CommonUtils
 
 
     void show_circular_progress(std::string str = "");
-    void show_progress_bar(int total, std::string prefix, size_t count, size_t size, std::string name, bool isCompleted = false);
+    void show_progress_bar(int total, std::string prefix, size_t count, size_t size, std::string name, size_t currentCount = 0, size_t totalCount = 0, bool isCompleted = false);
     void show_progress_bar2(int total, int delay_ms);
 
     inline std::string utf8string_to_string(const std::u8string& u8str) {

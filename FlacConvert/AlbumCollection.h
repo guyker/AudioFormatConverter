@@ -56,7 +56,7 @@ public:
 
 	//Import/update Media Metadata from the current loaded Album Collection (get JSON from media files)
 	//Normally this function should be called after LoadAlbums
-	size_t ImportMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool bAsync = true);
+	size_t ImportMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr, size_t currentCount = 0, size_t totalCount = 0, bool bAsync = true);
 
 
 	//Export albums tracks information to a Database

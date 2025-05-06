@@ -107,14 +107,16 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     }
 
     spdlog::info("Converting albums to batches of {}...", batchSize);
+    size_t albumIndex = 0;
     for (auto& [albumPath, trackList] : albumMap) {
         if (!trackList.empty()) {
             albumListPtr->emplace_back(fs::directory_entry(albumPath), std::move(trackList));
             if (albumListPtr->size() >= batchSize) {
                 if (bIncludeMetadata) {
                     spdlog::info("Collecting metadata for batch {}/{}...", batchCount + 1, totalBatchCount);
-                    ImportMetadata(albumListPtr, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+                    ImportMetadata(albumListPtr, albumIndex, albumMap.size(), AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
                 }
+                albumIndex += batchSize;
                 spdlog::info("Yielding batch {} with {} albums", ++batchCount, albumListPtr->size());
                 co_yield albumListPtr;
                 albumListPtr = std::make_shared<std::vector<MediaAlbum>>();
@@ -127,7 +129,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     if (!albumListPtr->empty()) {
         if (bIncludeMetadata) {
             spdlog::info("Collecting metadata for final batch {}/{}...", batchCount + 1, totalBatchCount);
-            ImportMetadata(albumListPtr, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+            ImportMetadata(albumListPtr, 0, 0, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
         }
         spdlog::info("Yielding final batch {} with {} albums", ++batchCount, albumListPtr->size());
         co_yield albumListPtr;
@@ -227,7 +229,7 @@ MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollect
     if (bIncludeMetadata) {
         spdlog::info("Third pass: Collecting Metadata...");
 
-        auto nAlbums = ImportMetadata(albumListPtr, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+        auto nAlbums = ImportMetadata(albumListPtr, 0, 0, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
 
         spdlog::info("Third pass: Completed, ffmpeg issues: {} [{}]", FFmpeg::get_ffmpeg_logs().size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();
@@ -302,7 +304,7 @@ std::pair<long long, long long> AlbumCollection::GetNumberOfItemsInFolder(std::f
 //currently I have a list of async objects that fills up when I scan each album, at the end of each album, I wait for the completion of all tracks, I want something similar but at the Album list level.in another words I want to improve performance by keeping the track processing queue lenght to N(pre defince number)
 
 //Load all media media information from the preloaded album list (albumList)
-size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool bAsync)
+size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr, size_t currentCount, size_t totalCount, bool bAsync)
 {
 	if (albumListPtr == nullptr || albumListPtr->empty())
 	{
@@ -324,7 +326,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         }
 
 
-        CommonUtils::show_progress_bar(20, "Processing...", albumCount++, albumListPtr->size(), name);
+        CommonUtils::show_progress_bar(20, "Processing...", albumCount++, albumListPtr->size(), name, currentCount++, totalCount);
         //Update progress indicator
     //    CommonUtils::show_circular_progress(std::format("Processing... {}/{} - {}", ++albumCount, albumList.size(), name));
 
@@ -366,7 +368,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         }
     }
 
-    CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), "Completed.", true);
+    CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), "Completed.", 0, 0, true);
 
     //std::cout << std::endl;
 
