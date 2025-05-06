@@ -63,32 +63,6 @@ namespace CommonUtils {
         spinner_index = (spinner_index + 1) % 4;
     }
 
-	std::string getEraseLineString(int length) {
-        std::string emptyLastLineString;
-        static int last_message_length = 0;
-        if (last_message_length > 0) {
-            // Clear the last line
-            emptyLastLineString = std::string(last_message_length, ' ');
-        }
-        last_message_length = length;        
-
-        return emptyLastLineString;
-	}
-
-    //void update_progress(spdlog::logger& logger, float progress) {
-    //    static std::mutex mtx;
-    //    std::lock_guard<std::mutex> lock(mtx);
-
-    //    int bar_width = 20;
-    //    int pos = bar_width * progress;
-
-    //    logger.info("\r[{0:.<{1}}] {2:>3}%",
-    //        std::string(pos, '='),
-    //        bar_width,
-    //        int(progress * 100.0));
-
-    //    std::fflush(stdout);
-    //}
 
 
 
@@ -126,6 +100,8 @@ namespace CommonUtils {
 
     void show_progress_bar(int total, std::string prefix, size_t count, size_t size, std::string name, bool isCompleted) {
         const char* spinner = "|/-\\";
+        //static std::wstring spinner = L"\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F";
+
         static int spinner_index = 0;
         const int bar_width = 20; // Width of the progress bar (characters)
 
@@ -148,30 +124,29 @@ namespace CommonUtils {
             bar[j] = '=';
         }
 
-        auto emprryString = getEraseLineString(static_cast<int>(10 + name.size()));
-
         auto av_duration = avarage_duration(count, size);        
-		std::string avarageDuration = (size <= count) ? "" : " [" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + "] ";
+		std::string avarageDuration = (size <= count) ? "" : " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + ")";
+
+        std::cout << "\r" << "\033[K " << std::flush;              // Move cursor to start of line and clear from cursor to end of line
 
         // Print bar, percentage, and spinner
-        std::cout << "\rProgress: [" << bar << "] " << percent << "% " << spinner[spinner_index] << " " << normalized_count << "/" << size << "" << avarageDuration << " " << emprryString << std::flush;
         if (isCompleted)
         {
             std::cout << "\r";
-            std::string green_bar = "[\033[32m" + bar + "\033[0m]";
+            //std::string green_bar = "[\033[32m" + bar + "\033[0m]";
+            std::string green_bar = "[" + bar + "]";
             std::string green_name = "\033[32m" + name + "\033[0m";
             spdlog::info("Progress: {} {}% {}/{} - {}", green_bar, percent, normalized_count, size, green_name);
         }
         else
         {
-            std::cout << "\rProgress: [" << bar << "] " << percent << "% " << spinner[spinner_index] << " " << normalized_count << "/" << size << "" << avarageDuration << " " << name << std::flush;
+            //auto spinnerChar = CommonUtils::wstring_to_utf8(spinner[spinner_index]);
+            std::string progressStr = std::format("\rProgress: [{}] {} {}% {}/{}{} - {}", bar, spinner[spinner_index], percent, normalized_count, size, avarageDuration, name);
+            std::cout << progressStr << std::flush;
         }
 
         // Update spinner
         spinner_index = (spinner_index + 1) % 4;
-
-        // Simulate work
-     //   std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
     }
 
 

@@ -324,7 +324,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         }
 
 
-        CommonUtils::show_progress_bar(20, "Processing...", ++albumCount, albumListPtr->size(), name);
+        CommonUtils::show_progress_bar(20, "Processing...", albumCount++, albumListPtr->size(), name);
         //Update progress indicator
     //    CommonUtils::show_circular_progress(std::format("Processing... {}/{} - {}", ++albumCount, albumList.size(), name));
 
@@ -338,7 +338,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
             if (MediaTrack::IsValidMedia(trackPath)) {
                 auto path2Fixed = trackPath.lexically_normal().native();
 
-                CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), name);
+         //       CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), name);
                 if (bAsync)
                 {
                     auto miFuture = std::async(std::launch::async, MediaTrack::ReadMediaInfoFromJsonFile, path2Fixed);
@@ -358,7 +358,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         {
             for (auto& [furure_ret, mediaInfo, mediaInfoString] : asyncFutureList)
             {
-                CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), name);
+     //           CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), name);
                 auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
                 mediaInfo = mediaInfo_ret;
                 mediaInfoString = mediaInfoString_ret;

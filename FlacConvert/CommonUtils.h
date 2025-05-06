@@ -241,6 +241,18 @@ namespace CommonUtils
         return ""; // Return empty string if not found
     }
 
+    static std::string wstring_to_utf8(const std::wstring& wstr) {
+        if (wstr.empty()) return {};
+
+        int size_needed = WideCharToMultiByte(CP_UTF8, 0,
+            wstr.c_str(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
+
+        std::string result(size_needed, 0);
+        WideCharToMultiByte(CP_UTF8, 0,
+            wstr.c_str(), (int)wstr.size(), &result[0], size_needed, nullptr, nullptr);
+
+        return result;
+    }
 
 
     // Function to convert UTF-8 string to wstring (cross-platform)
