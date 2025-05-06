@@ -289,6 +289,7 @@ int main()
 #ifdef _WIN32
 #include <windows.h>
     SetConsoleOutputCP(CP_UTF8); // For Unicode output
+    SetConsoleCP(CP_UTF8);
     // Enable ANSI escape codes in Windows Console
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD dwMode = 0;

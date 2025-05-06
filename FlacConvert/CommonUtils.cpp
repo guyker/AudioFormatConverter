@@ -98,6 +98,16 @@ namespace CommonUtils {
         return 0;
     }
 
+	std::string get_raw_progress_bar(int total, int count) {
+		const int bar_width = 20; // Width of the progress bar (characters)
+		int filled = (count * bar_width) / total;
+		std::string bar(bar_width, ' ');
+		for (int j = 0; j < filled; ++j) {
+			bar[j] = '=';
+		}
+		return bar;
+	}
+
     void show_progress_bar(int total, std::string prefix, size_t count, size_t size, std::string name, size_t currentCount, size_t totalCount, bool isCompleted) {
         //const char* spinner = "|/-\\";
         static std::string spinnerDone = std::string(reinterpret_cast<const char*>(u8"\u2714"));
@@ -106,6 +116,7 @@ namespace CommonUtils {
         static int spinner_index = 0;
 
         const int bar_width = 20; // Width of the progress bar (characters)
+        const int bar_width_t = 20; // Width of the progress bar (characters)
 
         static std::chrono::steady_clock::time_point lastTime{ std::chrono::steady_clock::now() };
 		
@@ -115,20 +126,28 @@ namespace CommonUtils {
 
 
         auto normalized_count = std::min<size_t>(count, size);
+        auto normalized_total_count = std::min<size_t>(currentCount, totalCount);
         int i = bar_width * normalized_count / size;
-
         int percent = (i * 100) / total;
-        int filled = (i * bar_width) / total;
+        i = bar_width * normalized_total_count / totalCount;
+        int percent_total = (i * 100) / totalCount;
 
-        // Build progress bar
-        std::string bar(bar_width, ' ');
-        for (int j = 0; j < filled; ++j) {
-            bar[j] = '=';
-        }
+        //int filled = (i * bar_width) / total;
+
+        //// Build progress bar (total)
+        //std::string bar(bar_width, ' ');
+        //for (int j = 0; j < filled; ++j) {
+        //    bar[j] = '=';
+        //}
+
+		auto bar = get_raw_progress_bar(size, normalized_count);
+		auto bar_total = get_raw_progress_bar(totalCount, normalized_total_count);
 
         auto av_duration = avarage_duration(count, size);        
 		std::string avarageDuration = (size <= count) ? "" : " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + ")";
-		std::string avarageDurationTotal = (totalCount <= currentCount) ? "" : " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (totalCount - currentCount))) + ")";
+		std::string avarageDurationTotal = (totalCount <= currentCount) ? "" : " (" + 
+            CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (totalCount - currentCount))) + " - " +
+            std::to_string(currentCount) + "/" + std::to_string(totalCount) + ")";
 
         std::cout << "\r" << "\033[K " << std::flush;              // Move cursor to start of line and clear from cursor to end of line
 
@@ -136,8 +155,7 @@ namespace CommonUtils {
         if (isCompleted)
         {
             std::cout << "\r";
-            //std::string green_bar = "[\033[32m" + bar + "\033[0m]";
-            std::string green_bar = "[" + bar + "]";
+            std::string green_bar = "[" + bar_total + "]";
             std::string green_name = "\033[32m" + name + "\033[0m";
 			std::string spinnerDoneGreen = "\033[32m" + spinnerDone + "\033[0m";
             spdlog::info("{}  Progress: {} {}% {}/{} - {}", spinnerDoneGreen, green_bar, percent, normalized_count, size, green_name);
@@ -145,8 +163,10 @@ namespace CommonUtils {
         else
         {            
 			auto spinnerChar = CommonUtils::get_utf8_char_at(spinner, spinner_index);
-            std::string progressStr = std::format("\rProgress: [{}] {} {}% {}/{}{}/{} - {}", 
-                bar, spinnerChar, percent, normalized_count, size, avarageDuration, avarageDurationTotal, name);
+            //std::string progressStr = std::format("\rProgress: [{}] {} {}% {}/{}{}/{} - {}", 
+            //    bar, spinnerChar, percent, normalized_count, size, avarageDuration, avarageDurationTotal, name);
+            std::string progressStr = std::format("\rProgress: [{}] {} {}% {}/{}{} \"{}\"", 
+                bar_total, spinnerChar, percent, normalized_count, size, avarageDurationTotal, name);
             std::cout << progressStr << std::flush;
 
             spinner_index = (spinner_index + 1) % spinnerSize;
