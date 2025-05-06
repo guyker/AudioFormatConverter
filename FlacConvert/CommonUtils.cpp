@@ -99,10 +99,12 @@ namespace CommonUtils {
     }
 
     void show_progress_bar(int total, std::string prefix, size_t count, size_t size, std::string name, bool isCompleted) {
-        const char* spinner = "|/-\\";
-        //static std::wstring spinner = L"\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F";
-
+        //const char* spinner = "|/-\\";
+        static std::string spinnerDone = std::string(reinterpret_cast<const char*>(u8"\u2714"));
+        static std::string spinner = std::string(reinterpret_cast<const char*>(u8"\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F"));
+		static auto spinnerSize = CommonUtils::utf8_char_count( spinner);
         static int spinner_index = 0;
+
         const int bar_width = 20; // Width of the progress bar (characters)
 
         static std::chrono::steady_clock::time_point lastTime{ std::chrono::steady_clock::now() };
@@ -136,17 +138,18 @@ namespace CommonUtils {
             //std::string green_bar = "[\033[32m" + bar + "\033[0m]";
             std::string green_bar = "[" + bar + "]";
             std::string green_name = "\033[32m" + name + "\033[0m";
-            spdlog::info("Progress: {} {}% {}/{} - {}", green_bar, percent, normalized_count, size, green_name);
+			std::string spinnerDoneGreen = "\033[32m" + spinnerDone + "\033[0m";
+            spdlog::info("{}  Progress: {} {}% {}/{} - {}", spinnerDoneGreen, green_bar, percent, normalized_count, size, green_name);
         }
         else
-        {
-            //auto spinnerChar = CommonUtils::wstring_to_utf8(spinner[spinner_index]);
-            std::string progressStr = std::format("\rProgress: [{}] {} {}% {}/{}{} - {}", bar, spinner[spinner_index], percent, normalized_count, size, avarageDuration, name);
+        {            
+			auto spinnerChar = CommonUtils::get_utf8_char_at(spinner, spinner_index);
+            std::string progressStr = std::format("\rProgress: [{}] {} {}% {}/{}{} - {}", bar, spinnerChar, percent, normalized_count, size, avarageDuration, name);
             std::cout << progressStr << std::flush;
+
+            spinner_index = (spinner_index + 1) % spinnerSize;
         }
 
-        // Update spinner
-        spinner_index = (spinner_index + 1) % 4;
     }
 
 

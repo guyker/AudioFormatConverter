@@ -241,6 +241,42 @@ namespace CommonUtils
         return ""; // Return empty string if not found
     }
 
+    static size_t utf8_char_count(const std::string& str) {
+        size_t count = 0;
+        for (unsigned char c : str) {
+            // In UTF-8, a leading byte starts with 0b0xxxxxxx or 0b11xxxxxx
+            if ((c & 0b11000000) != 0b10000000) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    // Extract the N-th UTF-8 codepoint from the string
+    static std::string get_utf8_char_at(const std::string& utf8_str, size_t index) {
+        size_t i = 0, char_count = 0;
+        while (i < utf8_str.size()) {
+            if (char_count == index) {
+                size_t char_len = 1;
+                unsigned char c = static_cast<unsigned char>(utf8_str[i]);
+                if ((c & 0xF8) == 0xF0) char_len = 4;      // 4-byte char
+                else if ((c & 0xF0) == 0xE0) char_len = 3; // 3-byte char
+                else if ((c & 0xE0) == 0xC0) char_len = 2; // 2-byte char
+                return utf8_str.substr(i, char_len);
+            }
+
+            // Advance to next UTF-8 character
+            unsigned char c = static_cast<unsigned char>(utf8_str[i]);
+            if ((c & 0xF8) == 0xF0) i += 4;
+            else if ((c & 0xF0) == 0xE0) i += 3;
+            else if ((c & 0xE0) == 0xC0) i += 2;
+            else i += 1;
+
+            ++char_count;
+        }
+        return "";  // index out of bounds
+    }
+
     static std::string wstring_to_utf8(const std::wstring& wstr) {
         if (wstr.empty()) return {};
 
