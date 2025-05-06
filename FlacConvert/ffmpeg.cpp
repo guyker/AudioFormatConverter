@@ -376,7 +376,7 @@ namespace FFmpeg {
 
             if (avcodec_send_packet(codec_ctx, pkt) >= 0) {
                 while (avcodec_receive_frame(codec_ctx, frame) == 0) {
-                    int out_samples = av_rescale_rnd(
+                    auto out_samples = av_rescale_rnd(
                         swr_get_delay(swr, codec_ctx->sample_rate) + frame->nb_samples,
                         out_rate, codec_ctx->sample_rate, AV_ROUND_UP
                     );
@@ -455,7 +455,7 @@ namespace FFmpeg {
                         }
                         if (info->noise_floor_rms < 1e-4f) {
                             info->low_noise_floor_rms = true;
-                            //log_info("Very low noise floor detected – clean signal.");
+                            //log_info("Very low noise floor detected â€“ clean signal.");
                         }
                         else
                         {
