@@ -129,7 +129,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     if (!albumListPtr->empty()) {
         if (bIncludeMetadata) {
             spdlog::info("Collecting metadata for final batch {}/{}...", batchCount + 1, totalBatchCount);
-            ImportMetadata(albumListPtr, 0, 0, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+            ImportMetadata(albumListPtr, albumIndex, albumMap.size(), AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
         }
         spdlog::info("Yielding final batch {} with {} albums", ++batchCount, albumListPtr->size());
         co_yield albumListPtr;
@@ -368,7 +368,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         }
     }
 
-    CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), "Completed.", 0, 0, true);
+    CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), "Completed.", currentCount, totalCount, true);
 
     //std::cout << std::endl;
 
