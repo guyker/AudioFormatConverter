@@ -98,8 +98,8 @@ namespace CommonUtils {
         return 0;
     }
 
-	std::string get_raw_progress_bar(int total, int count) {
-		const int bar_width = 20; // Width of the progress bar (characters)
+	std::string get_raw_progress_bar(int total, int count, int barWidth) {
+		const int bar_width = barWidth; // Width of the progress bar (characters)
 		int filled = (count * bar_width) / total;
 		std::string bar(bar_width, ' ');
 		for (int j = 0; j < filled; ++j) {
@@ -133,33 +133,38 @@ namespace CommonUtils {
         int percent_total = (i * 100) / totalCount;
 
 
-        auto bar = get_raw_progress_bar(size, normalized_count);
-        auto bar_total = get_raw_progress_bar(totalCount, normalized_total_count);
+        auto bar = get_raw_progress_bar(size, normalized_count, 20);
+        auto bar_total = get_raw_progress_bar(totalCount, normalized_total_count, 20);
 
         auto av_duration = avarage_duration(count, size);
-        std::string avarageDuration = (size <= count) ? "" : " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + ")";
-        std::string avarageDurationTotal = (totalCount <= currentCount) ? "" : " (" +
-            CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (totalCount - currentCount))) + " - " +
+        std::string avarageDuration = (size <= count) ? "" :
+            " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + " - " + 
+            std::to_string(count) + "/" + std::to_string(size) + ")";
+        std::string avarageDurationTotal = (totalCount <= currentCount) ? "" :
+            " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (totalCount - currentCount))) + " - " +
             std::to_string(currentCount) + "/" + std::to_string(totalCount) + ")";
 
-        std::cout << "\r" << "\033[K " << std::flush;              // Move cursor to start of line and clear from cursor to end of line
+       // std::cout << "\r" << "\033[K " << std::flush;              // Move cursor to start of line and clear from cursor to end of line
+        std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
+        std::cout << "\33[A\33[2K\r";  // Move up 1 line, clear it, and return to start
 
         // Print bar, percentage, and spinner
         if (isCompleted)
         {
-            std::cout << "\r";
-            std::string green_bar = "[" + bar_total + "]";
+         //   std::cout << "\r";
             std::string green_name = "\033[32m" + name + "\033[0m";
             std::string spinnerDoneGreen = "\033[32m" + spinnerDone + "\033[0m";
-            spdlog::info("{}  Progress: {} {}% {}/{} - {}", spinnerDoneGreen, green_bar, percent, normalized_count, size, green_name);
+            spdlog::info("{}  Progress: {} {}% {}/{} - {}", spinnerDoneGreen, bar, percent, normalized_count, size, green_name);
         }
         else
         {
             auto spinnerChar = CommonUtils::get_utf8_char_at(spinner, spinner_index);
-            //std::string progressStr = std::format("\rProgress: [{}] {} {}% {}/{}{}/{} - {}", 
-            //    bar, spinnerChar, percent, normalized_count, size, avarageDuration, avarageDurationTotal, name);
-            std::string progressStr = std::format("\rProgress: [{}] {} {}% {}/{}{} \"{}\"",
-                bar_total, spinnerChar, percent, normalized_count, size, avarageDurationTotal, name);
+            std::string progressTotalStr = std::format("Overall Progress: {} [{}] {}%{}",
+                spinnerChar,
+                bar_total, percent_total, avarageDurationTotal);
+            std::cout << progressTotalStr << std::endl;
+
+            std::string progressStr =      std::format("Current Batch:      [{}] {}%{} \"{}\"", bar, percent, avarageDuration, name);
             std::cout << progressStr << std::flush;
 
             spinner_index = (spinner_index + 1) % spinnerSize;
