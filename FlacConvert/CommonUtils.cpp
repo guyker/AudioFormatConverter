@@ -175,7 +175,14 @@ namespace CommonUtils {
          //   std::cout << "\r";
             std::string green_name = "\033[32m" + progressInfoPtr->name + "\033[0m";
             std::string spinnerDoneGreen = "\033[32m" + spinnerDone + "\033[0m";
-            spdlog::info("{}  Progress: {} {}% {}/{} - {}", spinnerDoneGreen, bar, percent, normalized_count, size, green_name);
+
+            if (bSubProgress) {
+                spdlog::info("{}  Progress: {} {}% {}/{} - {}", spinnerDoneGreen, bar, percent, normalized_count, size, green_name);
+            }
+            else
+            {
+                spdlog::info("{}  Progress: {} {}% {}/{} - {}", spinnerDoneGreen, bar, percent, normalized_count, size, green_name);
+            }
         }
         else
         {

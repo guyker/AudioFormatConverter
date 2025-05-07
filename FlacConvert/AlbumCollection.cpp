@@ -370,8 +370,9 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
             }
         }
     }
-
-    auto progressInfoPtr = std::make_shared<CommonUtils::ProgressBarInfo>("Processing...", albumCount, albumListPtr->size(), "Completed.", 20);
+    
+    auto subProgressInfoPtr = std::make_shared<CommonUtils::ProgressBarInfo>("Processing...", albumCount, albumListPtr->size(), "Completed.", 20);
+    auto progressInfoPtr = std::make_shared<CommonUtils::ProgressBarInfo>("Processing...", currentCount, totalCount, "Completed.", 20, subProgressInfoPtr);
     CommonUtils::show_progress_bar(progressInfoPtr, CommonUtils::ProgressBarType::Complete);
 
  //   CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), "Completed.", currentCount, totalCount, CommonUtils::ProgressBarType::Complete);
