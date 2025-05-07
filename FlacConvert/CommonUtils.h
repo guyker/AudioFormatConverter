@@ -15,6 +15,9 @@
 #include <coroutine>
 #include <optional>
 
+
+namespace fs = std::filesystem;
+
 namespace CommonUtils
 {
 
@@ -125,6 +128,7 @@ namespace CommonUtils
 
     constexpr std::array<char, 4> ProgressCircleChars = { '|', '/', '-', '\\' };
 
+    std::size_t deleteFilesWithSamePrefix(const fs::path& filePath);
 
     
 

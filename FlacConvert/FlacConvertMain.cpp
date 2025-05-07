@@ -125,7 +125,8 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 
             bool isError = false;
             int index = 0;
-            while (!isError) {
+            //while (!isError) {
+            while (index < 100) {
                 auto oldFile = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++index);
                 if (fs::exists(oldFile)) {
                     std::error_code ec;
@@ -141,6 +142,8 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                 //    spdlog::error("File does not exist. [{}]", oldFile.c_str());
 					isError = true;
                 }
+
+				CommonUtils::deleteFilesWithSamePrefix(oldFile);
             }
 
             // Load albums in batches

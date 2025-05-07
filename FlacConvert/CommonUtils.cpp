@@ -8,6 +8,7 @@
 #include <chrono>
 #include <filesystem>
 #include <spdlog/spdlog.h>
+#include <system_error>
 
 
 namespace CommonUtils {
@@ -197,5 +198,52 @@ namespace CommonUtils {
 
             spinner_index = (spinner_index + 1) % spinnerSize;
         }
+    }
+
+    // Deletes all regular files in the same directory as 'filePath'
+// whose filenames start with the filename of 'filePath'.
+// Returns the number of files removed.
+    std::size_t deleteFilesWithSamePrefix(const fs::path& filePath) {
+        std::size_t removedCount = 0;
+        std::error_code ec;
+
+        // Derive prefix from the filename
+        std::string prefix = filePath.filename().string();
+        if (prefix.empty()) {
+            std::cerr << "Error: filePath has no filename component: " << filePath << "\n";
+            return 0;
+        }
+
+        // Get parent directory
+        fs::path dir = filePath.parent_path();
+        if (dir.empty() || !fs::exists(dir, ec) || !fs::is_directory(dir, ec)) {
+            std::cerr << "Error: invalid directory: " << dir << " (" << ec.message() << ")\n";
+            return 0;
+        }
+
+        // Iterate through the directory
+        for (auto const& entry : fs::directory_iterator(dir, ec)) {
+            if (ec) {
+                std::cerr << "Directory iteration error: " << ec.message() << "\n";
+                break;
+            }
+            // Only consider regular files
+            if (!entry.is_regular_file(ec) || ec)
+                continue;
+
+            const std::string fname = entry.path().filename().string();
+            // If filename starts with our prefix, delete it
+            if (fname.rfind(prefix, 0) == 0) {
+                if (fs::remove(entry.path(), ec)) {
+                    ++removedCount;
+                }
+                else {
+                    std::cerr << "Failed to remove " << entry.path()
+                        << ": " << ec.message() << "\n";
+                }
+            }
+        }
+
+        return removedCount;
     }
 }
