@@ -13,6 +13,7 @@
 #include <filesystem>    
 #include <chrono>
 #include <coroutine>
+#include <optional>
 
 namespace CommonUtils
 {
@@ -195,10 +196,21 @@ namespace CommonUtils
 		Complete
 	};
 
+	struct ProgressBarInfo
+	{        
+
+        std::string prefix;
+		size_t count;
+		size_t size;
+		std::string name;
+
+        int bar_size{ 20 };
+
+       std::shared_ptr<ProgressBarInfo> subProgressInfoPtr;
+	};
+
     void show_circular_progress(std::string str = "");
-    void show_progress_bar(int total, std::string prefix, size_t count, size_t size,
-        std::string name, size_t currentCount = 0, size_t totalCount = 0,
-        ProgressBarType progressType = ProgressBarType::Progress);
+    void show_progress_bar(std::shared_ptr<ProgressBarInfo> progressInfoPtr, ProgressBarType progressType = ProgressBarType::Progress);
 
     inline std::string utf8string_to_string(const std::u8string& u8str) {
         return std::string(u8str.begin(), u8str.end());
