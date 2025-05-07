@@ -326,7 +326,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         }
 
 
-        CommonUtils::show_progress_bar(20, "Processing...", albumCount++, albumListPtr->size(), name, currentCount++, totalCount);
+        CommonUtils::show_progress_bar(20, "Processing...", albumCount++, albumListPtr->size(), name, currentCount++, totalCount, CommonUtils::ProgressBarType::Progress);
         //Update progress indicator
     //    CommonUtils::show_circular_progress(std::format("Processing... {}/{} - {}", ++albumCount, albumList.size(), name));
 
@@ -368,7 +368,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         }
     }
 
-    CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), "Completed.", currentCount, totalCount, true);
+    CommonUtils::show_progress_bar(20, "Processing...", albumCount, albumListPtr->size(), "Completed.", currentCount, totalCount, CommonUtils::ProgressBarType::Complete);
 
     //std::cout << std::endl;
 

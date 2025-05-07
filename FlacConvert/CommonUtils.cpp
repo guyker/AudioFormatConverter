@@ -108,7 +108,9 @@ namespace CommonUtils {
 		return bar;
 	}
 
-    void show_progress_bar(int total, std::string prefix, size_t count, size_t size, std::string name, size_t currentCount, size_t totalCount, bool isCompleted) {
+    void show_progress_bar(int total, std::string prefix, size_t count, size_t size,
+        std::string name, size_t currentCount, size_t totalCount,
+        ProgressBarType progressType) {
         //const char* spinner = "|/-\\";
         static std::string spinnerDone = std::string(reinterpret_cast<const char*>(u8"\u2714"));
         static std::string spinner = std::string(reinterpret_cast<const char*>(u8"\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F"));
@@ -144,12 +146,15 @@ namespace CommonUtils {
             " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (totalCount - currentCount))) + " - " +
             std::to_string(currentCount) + "/" + std::to_string(totalCount) + ")";
 
-       // std::cout << "\r" << "\033[K " << std::flush;              // Move cursor to start of line and clear from cursor to end of line
-        std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
-        std::cout << "\33[A\33[2K\r";  // Move up 1 line, clear it, and return to start
+		if (progressType != ProgressBarType::Init)
+		{
+			//std::cout << "\r" << "\033[K " << std::flush;              // Move cursor to start of line and clear from cursor to end of line
+			std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
+			std::cout << "\33[A\33[2K\r";  // Move up 1 line, clear it, and return to start
+		}
 
         // Print bar, percentage, and spinner
-        if (isCompleted)
+        if (progressType == ProgressBarType::Complete)
         {
          //   std::cout << "\r";
             std::string green_name = "\033[32m" + name + "\033[0m";
