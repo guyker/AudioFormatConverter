@@ -107,9 +107,6 @@ namespace CommonUtils {
 		}
 		return bar;
 	}
-//    void show_progress_bar(ProgressBarInfo progressInfo, std::optional<ProgressBarInfo> progressSubInfo, ProgressBarType progressType) {
-    //void show_progress_bar(int total, std::string prefix, size_t count, size_t size,
-    //    std::string name, size_t currentCount, size_t totalCount,
 
     void show_progress_bar(std::shared_ptr<ProgressBarInfo> progressInfoPtr, ProgressBarType progressType) {
         //const char* spinner = "|/-\\";
@@ -160,7 +157,7 @@ namespace CommonUtils {
             auto i2 = sub_bar_width_total * sub_normalized_total_count / sub_totalCount;
 
             int sub_percent_total = (i2 * 100) / sub_bar_width_total;
-            auto sub_bar_total = get_raw_progress_bar(sub_totalCount, sub_normalized_total_count, 20);
+            auto sub_bar_total = get_raw_progress_bar(sub_totalCount, sub_normalized_total_count, progressInfoPtr->subProgressInfoPtr->bar_size);
             std::string sub_avarageDurationTotal = (sub_totalCount <= sub_currentCount) ? "" :
                 " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (sub_totalCount - sub_currentCount))) + " - " +
                 std::to_string(sub_currentCount) + "/" + std::to_string(sub_totalCount) + ")";
@@ -177,11 +174,11 @@ namespace CommonUtils {
             std::string spinnerDoneGreen = "\033[32m" + spinnerDone + "\033[0m";
 
             if (bSubProgress) {
-                spdlog::info("{}  Progress: {} {}% {}/{} - {}", spinnerDoneGreen, bar, percent, normalized_count, size, green_name);
+                spdlog::info("{}  Progress: [{}] {}% {}/{} - {}", spinnerDoneGreen, bar, percent, normalized_count, size, green_name);
             }
             else
             {
-                spdlog::info("{}  Progress: {} {}% {}/{} - {}", spinnerDoneGreen, bar, percent, normalized_count, size, green_name);
+                spdlog::info("{}  Progress: [{}] {}% {}/{} - {}", spinnerDoneGreen, bar, percent, normalized_count, size, green_name);
             }
         }
         else

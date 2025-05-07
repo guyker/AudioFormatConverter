@@ -286,16 +286,19 @@ int main()
     spdlog::info("FFmpeg version: {}.{}.{}", LIBAVCODEC_VERSION_MINOR, LIBAVCODEC_VERSION_MINOR, LIBAVCODEC_VERSION_MICRO);
     spdlog::info("----------------");
 
+
 #ifdef _WIN32
 #include <windows.h>
+    SetConsoleCP(CP_UTF8);         // For input
     SetConsoleOutputCP(CP_UTF8); // For Unicode output
-    SetConsoleCP(CP_UTF8);
-    // Enable ANSI escape codes in Windows Console
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    DWORD dwMode = 0;
-    GetConsoleMode(hOut, &dwMode);
-    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    SetConsoleMode(hOut, dwMode);
+//    std::wcout.imbue(std::locale("en_US.utf8"));
+    //SetConsoleCP(CP_UTF8);
+    //// Enable ANSI escape codes in Windows Console
+    //HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    //DWORD dwMode = 0;
+    //GetConsoleMode(hOut, &dwMode);
+    //dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    //SetConsoleMode(hOut, dwMode);
 #endif
 
     auto appSettingPtr = AppSettingsJson::AppSetting();
