@@ -134,8 +134,8 @@ namespace CommonUtils {
         int percent = (i * 100) / bar_width;
         auto bar = get_raw_progress_bar(size, normalized_count, 20);
         std::string avarageDuration = (size <= count) ? "" :
-            " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + " - " + 
-            std::to_string(count) + "/" + std::to_string(size) + ")";
+            " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + ")";
+            //std::to_string(count) + "/" + std::to_string(size) + ")";
 
 
         std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
@@ -160,11 +160,13 @@ namespace CommonUtils {
             int sub_percent_total = (i2 * 100) / sub_bar_width_total;
             auto sub_bar_total = get_raw_progress_bar(sub_totalCount, sub_normalized_total_count, progressInfoPtr->subProgressInfoPtr->bar_size);
             std::string sub_avarageDurationTotal = (sub_totalCount <= sub_currentCount) ? "" :
-                " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (sub_totalCount - sub_currentCount))) + " - " +
-                std::to_string(sub_currentCount) + "/" + std::to_string(sub_totalCount) + ")";
+                " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (sub_totalCount - sub_currentCount))) + ")";
+                //+" - " + std::to_string(sub_currentCount) + "/" + std::to_string(sub_totalCount) + ")";
 
-            subProgressStr = std::format("Current Batch:      [{}] {}%{} \"{}\"",
-                sub_bar_total, sub_percent_total, sub_avarageDurationTotal, progressInfoPtr->name);
+            subProgressStr = std::format("Current Batch:      [{}] {}% {}/{}{} \"{}\"",
+                sub_bar_total, sub_percent_total,
+				sub_currentCount, sub_totalCount,
+                sub_avarageDurationTotal, progressInfoPtr->name);
         }
 	
         // Print bar, percentage, and spinner
@@ -185,9 +187,12 @@ namespace CommonUtils {
         else
         {
             auto spinnerChar = CommonUtils::get_utf8_char_at(spinner, spinner_index);
-            std::string progressTotalStr = std::format("Overall Progress: {} [{}] {}%{}",
+            std::string progressTotalStr = std::format("Overall Progress: {} [{}] {}% {}/{}{}",
                 spinnerChar,
-                bar, percent, avarageDuration);
+                bar, percent,
+                progressInfoPtr->count,
+                progressInfoPtr->size,
+                avarageDuration);
 
             std::cout << progressTotalStr;
 
