@@ -194,11 +194,22 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
     {
 		auto mediaJsonPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory);
 
-        std::cout << "Processing: {}" << mediaJsonPath << std::endl;
+        bool isError = false;
+        int index = 0;
+        while (!isError) {
+            auto mediaJsonPartPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++index);
+            if (fs::exists(mediaJsonPartPath)) {
+                std::cout << "Processing: {}" << mediaJsonPath << std::endl;
 
-        auto albumListChunk = albumCollection.LoadAlbumsFromJSON(mediaJsonPath);
-        albumListPtr->insert(albumListPtr->end(), albumListChunk->begin(), albumListChunk->end());
-
+                auto albumListChunk = albumCollection.LoadAlbumsFromJSON(mediaJsonPartPath);
+                if (!albumListChunk->empty()) {
+                    albumListPtr->insert(albumListPtr->end(), albumListChunk->begin(), albumListChunk->end());
+                }
+            }
+            else {
+                isError = true;
+            }
+        }
     }
 
     albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
@@ -236,15 +247,34 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
 
     for (auto& mediaEntry : mediaDirectoryList)
     {
-        auto mediaJsonPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory);
+        //auto mediaJsonPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory);
         auto mediaDBPath = mediaEntry.getMediaDBPath(AppSettingsJson::AppSetting()->OutDirectory);
 
-        auto albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaJsonPath);
+        bool isError = false;
+        int index = 0;
+        while (!isError) {
+            auto mediaJsonPartPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++index);
+            if (fs::exists(mediaJsonPartPath)) {
+                std::cout << "Processing: {}" << mediaJsonPartPath << std::endl;
 
-    //    albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
-        albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumName, true } });
+                    auto albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaJsonPartPath);
 
-        albumCollection.ExportToDatabase(albumListPtr, mediaDBPath);
+                //    albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
+                    albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumName, true } });
+
+                    albumCollection.ExportToDatabase(albumListPtr, mediaDBPath);
+            }
+            else {
+                isError = true;
+            }
+        }
+
+    //    auto albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaJsonPath);
+
+    ////    albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
+    //    albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumName, true } });
+
+    //    albumCollection.ExportToDatabase(albumListPtr, mediaDBPath);
     }
 
     return 0;
