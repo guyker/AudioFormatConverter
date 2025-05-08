@@ -106,7 +106,10 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
         }
     }
 
-    spdlog::info("Converting albums to batches of {}...", batchSize);
+    if (albumMap.size() > AppSettingsJson::AppSetting()->AlbumsSplitThreshold)
+    {
+        spdlog::info("Converting albums to batches of {}...", batchSize);
+    }
     size_t albumIndex = 0;
     for (auto& [albumPath, trackList] : albumMap) {
         if (!trackList.empty()) {
@@ -131,7 +134,10 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
             spdlog::info("Collecting metadata for final batch {}/{}...", batchCount + 1, totalBatchCount);
             ImportMetadata(albumListPtr, albumIndex, albumMap.size(), AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
         }
-        spdlog::info("Yielding final batch {} with {} albums", ++batchCount, albumListPtr->size());
+        if (albumMap.size() > AppSettingsJson::AppSetting()->AlbumsSplitThreshold)
+        {
+            spdlog::info("Yielding final batch {} with {} albums", ++batchCount, albumListPtr->size());
+        }
         co_yield albumListPtr;
     }
 
@@ -324,8 +330,11 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         {
 			spdlog::error("Error: Album path is not a directory or does not have a filename. " + CommonUtils::utf8string_to_string(albumPath.path().generic_u8string()));
         }
-
-        auto subProgressInfoPtr = std::make_shared<CommonUtils::ProgressBarInfo>("Processing...", albumCount++, albumListPtr->size(), name, 20);
+        std::shared_ptr<CommonUtils::ProgressBarInfo> subProgressInfoPtr{ nullptr };
+        if (AppSettingsJson::AppSetting()->AlbumsSplitThreshold < totalCount)
+        {
+            subProgressInfoPtr = std::make_shared<CommonUtils::ProgressBarInfo>("Processing...", albumCount++, albumListPtr->size(), name, 20);
+        }
         auto progressInfoPtr = std::make_shared<CommonUtils::ProgressBarInfo>("Processing...", currentCount++, totalCount, name, 20, subProgressInfoPtr);
         CommonUtils::show_progress_bar(progressInfoPtr, CommonUtils::ProgressBarType::Progress);
 

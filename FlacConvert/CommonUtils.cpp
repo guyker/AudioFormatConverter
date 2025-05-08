@@ -222,7 +222,7 @@ namespace CommonUtils {
         // Get parent directory
         fs::path dir = filePath.parent_path();
         if (dir.empty() || !fs::exists(dir, ec) || !fs::is_directory(dir, ec)) {
-            std::cerr << "Error: invalid directory: " << dir << " (" << ec.message() << ")\n";
+//            std::cerr << "Error: invalid directory: " << dir << " (" << ec.message() << ")\n";
             return 0;
         }
 

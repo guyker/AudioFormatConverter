@@ -97,7 +97,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
     for (auto& mediaEntry : mediaDirectoryList)
     {
         auto startTime = std::chrono::steady_clock::now();
-        spdlog::info("===>ScanFolderAndCreateJSON - Processing new collection: {}...", mediaEntry.mediaPath);
+        spdlog::info("===>ScanFolderAndCreateJSON - Processing new collection: \"{}\"", mediaEntry.mediaPath);
 
         AlbumCollection ac;
 
@@ -147,9 +147,9 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             }
 
             // Load albums in batches
+            int count = 0;
             for (auto albumListPtr : ac.LoadAlbumsCo(mediaEntry.mediaPath, true, AppSettingsJson::AppSetting()->AlbumsSplitThreshold)) {
                 spdlog::info("Received batch with {} albums", albumListPtr->size());
-                static int count = 0;
                 ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } }); // sort - optional
                 ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++count)); // save to json
             }
@@ -178,7 +178,8 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 
         auto endTime = std::chrono::steady_clock::now();
         
-        spdlog::info("<===ScanFolderAndCreateJSON - Processing time for {} = {}ms", mediaEntry.mediaPath, std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count());
+        spdlog::info("<===ScanFolderAndCreateJSON - Processing time: {}ms, - \"{}\"",
+            std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count(), mediaEntry.mediaPath);
     }
 
     return 0;
@@ -252,7 +253,7 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
 
         bool isError = false;
         int index = 0;
-        while (!isError) {
+        while (index < 100) {
             auto mediaJsonPartPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++index);
             if (fs::exists(mediaJsonPartPath)) {
                 std::cout << "Processing: {}" << mediaJsonPartPath << std::endl;
@@ -263,9 +264,6 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
                     albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumName, true } });
 
                     albumCollection.ExportToDatabase(albumListPtr, mediaDBPath);
-            }
-            else {
-                isError = true;
             }
         }
 
