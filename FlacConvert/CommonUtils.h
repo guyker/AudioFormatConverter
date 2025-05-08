@@ -197,6 +197,7 @@ namespace CommonUtils
 	{
         Init,
         Progress,
+		SubProgress,
 		Complete
 	};
 
