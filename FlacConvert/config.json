@@ -27,6 +27,7 @@
       "dbPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac2.db"
     }
   ],
+  "LogLevel": 1,
   "UseAsyncFFmpegCalls": true,
   "UseFFmpegLibraryAPI": true,
   "ExtraAudioQualityMetrics": false,

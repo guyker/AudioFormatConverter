@@ -90,6 +90,7 @@ struct AppSettingsJson
 	std::string OutDirectory{};
 	std::string DatabaseFileName{};
 
+	int LogLevel { 1 };
 	bool UseAsyncFFmpegCalls { true };
 	bool UseFFmpegLibraryAPI { true };
 	bool ExtraAudioQualityMetrics{ false };
@@ -118,6 +119,7 @@ struct AppSettingsJson
 			"1.0.0",
 			AppSettingsJson::DefaultOutDirectory,
 			AppSettingsJson::DefaultDatabaseFileName,
+			1,
 			true, //UseAsyncFFmpegCalls
 			true, //UseFFmpegLibraryAPI
 			false, //ExtraAudioQualityMetrics

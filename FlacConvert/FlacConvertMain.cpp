@@ -382,10 +382,11 @@ int main()
 
     spdlog::info("----------------");
 
-    spdlog::info("UseAsyncFFmpegCalls: {}", AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
-    spdlog::info("UseFFmpegLibraryAPI: {}", AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI);
-    spdlog::info("ExtraAudioQualityMetrics: {}", AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics);
-    spdlog::info("AlbumsSplitThreshold: {}", AppSettingsJson::AppSetting()->AlbumsSplitThreshold);
+    spdlog::info("Log Level: {}", AppSettingsJson::AppSetting()->LogLevel);
+    spdlog::info("Use Async FFmpeg Calls: {}", AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+    spdlog::info("Use ffmpeg Library API: {}", AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI);
+    spdlog::info("Extra Audio Quality Metrics: {}", AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics);
+    spdlog::info("Albums Split Threshold: {}", AppSettingsJson::AppSetting()->AlbumsSplitThreshold);
 
     spdlog::info("----------------");
 

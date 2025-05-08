@@ -37,9 +37,9 @@ namespace FFmpeg {
 
     void ffmpeg_log_callback(void* avcl, int level, const char* fmt, va_list vl) {
 
-     //   return; // Disable logging for now
+        //   return; // Disable logging for now
 
-        // Check if the log level is above the set level
+           // Check if the log level is above the set level
         if (level > av_log_get_level()) {
             return; // Skip logs above set level
         }
@@ -123,31 +123,34 @@ namespace FFmpeg {
             ffmpeg_logs.push_back(FFmpegLogItem{ context,  level_str, message });
         }
 
-        // Optionally forward to spdlog
-        auto logger = spdlog::get("console");
-        if (logger) {
-            switch (level) {
-            case AV_LOG_PANIC:
-            case AV_LOG_FATAL:
-                logger->critical("FFmpeg: {}", message);
-                break;
-            case AV_LOG_ERROR:
-                logger->error("FFmpeg: {}", message);
-                break;
-            case AV_LOG_WARNING:
-                logger->warn("FFmpeg: {}", message);
-                break;
-            case AV_LOG_INFO:
-                logger->info("FFmpeg: {}", message);
-                break;
-            case AV_LOG_VERBOSE:
-            case AV_LOG_DEBUG:
-                logger->debug("FFmpeg: {}", message);
-                break;
-            default:
-                break;
+        if (false)
+        {
+            // Optionally forward to spdlog
+            auto logger = spdlog::get("console");
+            if (logger) {
+                switch (level) {
+                case AV_LOG_PANIC:
+                case AV_LOG_FATAL:
+                    logger->critical("FFmpeg: {}", message);
+                    break;
+                case AV_LOG_ERROR:
+                    logger->error("FFmpeg: {}", message);
+                    break;
+                case AV_LOG_WARNING:
+                    logger->warn("FFmpeg: {}", message);
+                    break;
+                case AV_LOG_INFO:
+                    logger->info("FFmpeg: {}", message);
+                    break;
+                case AV_LOG_VERBOSE:
+                case AV_LOG_DEBUG:
+                    logger->debug("FFmpeg: {}", message);
+                    break;
+                default:
+                    break;
+                }
             }
-        }
+        }    
     }
 
     std::vector<FFmpegLogItem>& get_ffmpeg_logs() {

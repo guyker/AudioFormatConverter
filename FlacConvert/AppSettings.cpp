@@ -181,6 +181,7 @@ std::string AppSettingsJson::toJsonString() const {
     }
     doc.AddMember("MediaDirectoryList", mediaArray, allocator);
 
+    doc.AddMember("LogLevel", LogLevel, allocator);
     doc.AddMember("UseAsyncFFmpegCalls", UseAsyncFFmpegCalls, allocator);
     doc.AddMember("UseFFmpegLibraryAPI", UseFFmpegLibraryAPI, allocator);
     doc.AddMember("ExtraAudioQualityMetrics", ExtraAudioQualityMetrics, allocator);
@@ -286,6 +287,9 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
         }
     }
 
+    if (doc.HasMember("LogLevel") && doc["LogLevel"].IsInt()) {
+        LogLevel = doc["LogLevel"].GetInt();
+    }
     if (doc.HasMember("UseAsyncFFmpegCalls") && doc["UseAsyncFFmpegCalls"].IsBool()) {
         UseAsyncFFmpegCalls = doc["UseAsyncFFmpegCalls"].GetBool();
     }
