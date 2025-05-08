@@ -23,6 +23,10 @@
 #include <string>
 #include <any>
 
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+
+
 #include "AlbumCollection.h"
 #include "FolderConvert.h"
 
@@ -33,8 +37,7 @@
 #include "AppSettings.h"
 #include "CommonUtils.h"
 
-#include <spdlog/spdlog.h>
-//#include <spdlog/sinks/basic_file_sink.h>
+
 #include "PlatformUtils.h"
 
 #include "FFmpeg.h"
@@ -94,10 +97,16 @@ int ConvertFLACToFLAC(std::vector<MediaDirectoryElement> mediaDirectoryList)
 
 int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryList)
 {
+    //auto logger = spdlog::get("console");
+    //if (!logger) {
+    //    logger = spdlog::stdout_color_mt("console");
+    //}
+  //  auto logger = spdlog::stdout_color_mt("console");
+
     for (auto& mediaEntry : mediaDirectoryList)
     {
         auto startTime = std::chrono::steady_clock::now();
-        spdlog::info("");
+        spdlog::info("-----------");
         spdlog::info("Scan Start=============>ScanFolderAndCreateJSON - Processing new collection: \"{}\"", mediaEntry.mediaPath);
 
         AlbumCollection ac;
@@ -147,6 +156,16 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 				CommonUtils::deleteFilesWithSamePrefix(oldFile);
             }
 
+
+            // Save the original pattern
+            //auto old_pattern = logger->pattern();
+            // Temporarily set a new pattern with a tab prefix
+            //logger->set_pattern("\t[%T] [%l] %v");
+
+            //std::string default_pattern = "[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%l%$] %v";
+//            logger->set_pattern("[%^{%l}%$] %v");
+            //logger->set_pattern(default_pattern);
+
             // Load albums in batches
             int count = 0;
             for (auto albumListPtr : ac.LoadAlbumsCo(mediaEntry.mediaPath, true, AppSettingsJson::AppSetting()->AlbumsSplitThreshold)) {
@@ -168,14 +187,6 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             return 1;
         }
 
-
-
-
-        //auto albumListPtr = ac.LoadAlbums(mediaEntry.mediaPath, true); //load albume list from directory path
-        ////ac.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });         // sort by album size - optional
-        //ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });         // sort by album size - optional
-
-        //ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory)); // save to json
 
         auto endTime = std::chrono::steady_clock::now();
         
@@ -311,12 +322,31 @@ ConvertActionEnum GetUserAction()
 	return action;
 }
 
+void init_logger()
+{
+    //spdlog::set_default_logger(spdlog::stdout_color_mt("console"));
 
+    auto console_logger = spdlog::stdout_color_mt("console");
+
+    // Set log level globally (e.g., to debug)
+    console_logger->set_level(spdlog::level::debug); // Show all debug+ messages
+
+    // Optional: Set a pattern (e.g., with color and timestamp)
+    //console_logger->set_pattern("[%H:%M:%S %z] [%^%l%$] %v");
+    console_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%t] [%^%l%$] %v");
+
+    // Set as the default logger
+    spdlog::set_default_logger(console_logger);
+
+}
 
 int main()
 {
+    init_logger();
+
     spdlog::info("FFmpeg version: {}.{}.{}", LIBAVCODEC_VERSION_MINOR, LIBAVCODEC_VERSION_MINOR, LIBAVCODEC_VERSION_MICRO);
     spdlog::info("----------------");
+
 
 
 #ifdef _WIN32

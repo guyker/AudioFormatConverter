@@ -85,11 +85,13 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
         }
         // Progress update
         if (!trackList.empty()) {
-            std::cout << "\rScanning albums, Please wait... " << ++albumCount;
+            std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
+            std::cout << "Scanning albums, Please wait... " << ++albumCount;
         }
     }
 
-    std::cout << "\rScanning albums, Please wait... Completed, " << albumCount << " albums found" << std::endl;
+    std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
+    spdlog::info("Scanning albums, Please wait... Completed, {} albums found ", albumCount);
     spdlog::info("Second pass: Completed, found {} albums [{}]", albumCount, CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
     startTimePoint = std::chrono::steady_clock::now();
 
@@ -949,15 +951,15 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicateAlbums(std::shared_ptr<D
 
 
 SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_ptr<DirectoryContentEntryList> albumListPtr, const std::vector<DirectoryContentEntryList::const_iterator>& group) {
-    auto logger = spdlog::get("console");
-    if (!logger) {
-        logger = spdlog::stdout_color_mt("console");
-    }
+    //auto logger = spdlog::get("console");
+    //if (!logger) {
+    //    logger = spdlog::stdout_color_mt("console");
+    //}
 
     SimilarDirectoryEntryList duplicatedAlbumList;
 
     if (group.size() < 2) {
-        logger->debug("Group too small for duplicates: {} albums", group.size());
+        spdlog::warn("Group too small for duplicates: {} albums", group.size());
         return duplicatedAlbumList;
     }
 
@@ -975,12 +977,12 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
 
     for (const auto& it : group) {
         if (it == albumListPtr->end()) {
-            logger->warn("Invalid iterator in group");
+            spdlog::warn("Invalid iterator in group");
             continue;
         }
         const auto& [dirEntry, trackList] = *it;
         if (trackList.empty()) {
-            logger->warn("Empty track list for album at iterator index {}", std::distance(albumListPtr->cbegin(), it));
+            spdlog::warn("Empty track list for album at iterator index {}", std::distance(albumListPtr->cbegin(), it));
             continue;
         }
 
@@ -1000,22 +1002,22 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
                     }
                 }
                 if (invalid) {
-                    logger->warn("Invalid characters in album name: {}", dirEntry.path().string());
+                    spdlog::warn("Invalid characters in album name: {}", dirEntry.path().string());
                     albumName = "sanitized_album_" + std::to_string(std::distance(albumListPtr->cbegin(), it));
                 }
             }
             else {
-                logger->warn("Non-existent or invalid directory: {}", dirEntry.path().string());
+                spdlog::warn("Non-existent or invalid directory: {}", dirEntry.path().string());
             }
         }
         catch (const fs::filesystem_error& e) {
-            logger->error("Filesystem error accessing path: {} ({})", dirEntry.path().string(), e.what());
+            spdlog::error("Filesystem error accessing path: {} ({})", dirEntry.path().string(), e.what());
         }
         catch (const std::exception& e) {
-            logger->error("Unexpected error accessing filename: {} ({})", dirEntry.path().string(), e.what());
+            spdlog::error("Unexpected error accessing filename: {} ({})", dirEntry.path().string(), e.what());
         }
         catch (...) {
-            logger->error("Unknown error accessing filename for iterator index {}", std::distance(albumListPtr->cbegin(), it));
+            spdlog::error("Unknown error accessing filename for iterator index {}", std::distance(albumListPtr->cbegin(), it));
         }
 
         // Extract metadata from first track
@@ -1050,7 +1052,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
             }
         }
         else if (lastError) {
-            logger->debug("Metadata error for track: {} ({})", (dirEntry.path() / trackName).string(), lastError.value());
+            spdlog::debug("Metadata error for track: {} ({})", (dirEntry.path() / trackName).string(), lastError.value());
         }
 
         // Collect sorted track durations
@@ -1095,7 +1097,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
                 }
 
                 if (isDuplicate) {
-                    logger->info("Duplicate albums: {} and {} (album: {}, artist: {})",
+                    spdlog::info("Duplicate albums: {} and {} (album: {}, artist: {})",
                         CommonUtils::utf8string_to_string(dir1.path().u8string()), 
                         CommonUtils::utf8string_to_string(dir2.path().u8string()),
                         key.album.empty() ? "(unknown)" : key.album,
@@ -1107,7 +1109,8 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
         }
     }
 
-    logger->info("Found {} duplicate groups in group of {} albums", duplicatedAlbumList.size(), group.size());
+    spdlog::info("Found {} duplicate groups in group of {} albums", duplicatedAlbumList.size(), group.size());
+
     return duplicatedAlbumList;
 }
 
