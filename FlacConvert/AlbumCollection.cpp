@@ -635,13 +635,13 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
 	std::shared_ptr<DirectoryContentEntryList> albumListPtr = std::make_shared<DirectoryContentEntryList>();
 
     if (!fs::exists(path)) {
-        std::cout << "**** no file - json file not found Error parsing JSON: " << std::endl;
+        spdlog::error("**** no file - json file not found Error parsing JSON: ");
         return nullptr;
     }
 
     std::ifstream file(path, std::ios::binary);
     if (!file) {
-        std::cout << "****Error file=null - parsing JSON: " << std::endl;
+        spdlog::error("****Error file=null - parsing JSON: ");
         return nullptr;
     }
 
@@ -677,6 +677,8 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
 
     //Albums
     int iAlbumCount = 0;
+    spdlog::info("");
+	auto albumListSize = doc.GetArray().Capacity();
     for (const auto& albumVal : doc.GetArray()) {
         TrackInfoList trackList;
 
@@ -706,8 +708,10 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
 
 
         // Updated logging to reflect new album name source
-        auto albumLogStr = std::format(L"Album [{}]: {}", ++iAlbumCount, albumpath);
-        std::wcout << albumLogStr << '\r';
+        std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
+        std::cout << "\33[A\33[2K\r";  // Move up 1 line, clear it, and return to start
+        //auto albumLogStr = std::format(L"Album [{}]: {}", ++iAlbumCount, albumpath);
+        spdlog::info("Loading albums... Album {}/{}", ++iAlbumCount, albumListSize);
 
 
         const auto& mediaTrackList = albumVal["Tracks"].GetArray();

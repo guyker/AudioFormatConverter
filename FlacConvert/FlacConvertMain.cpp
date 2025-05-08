@@ -268,7 +268,7 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
         while (index < 100) {
             auto mediaJsonPartPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++index);
             if (fs::exists(mediaJsonPartPath)) {
-                std::cout << "Processing: {}" << mediaJsonPartPath << std::endl;
+                spdlog::info("Processing: {}", mediaJsonPartPath);
 
                     auto albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaJsonPartPath);
 
