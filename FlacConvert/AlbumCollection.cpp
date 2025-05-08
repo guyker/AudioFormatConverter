@@ -65,13 +65,16 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
         }
     }
 
-    std::cout << "\rScanning folders, Please wait... Completed, " << folderCount << " folders found" << std::endl;
+    //std::cout << "\rScanning folders, Please wait... Completed, " << folderCount << " folders found" << std::endl;
+    std::cout << "\r";
+    spdlog::info("Scanning folders, Please wait... Completed, {} folders found", folderCount);
     spdlog::info("First pass: Completed, found {} folders [{}]", albumMap.size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
     startTimePoint = std::chrono::steady_clock::now();
 
     int albumCount = 0;
     spdlog::info("Second pass: Collect tracks one level deep...");
     // Second pass: Collect files one level deep
+    std::cout << "Scanning albums, Please wait... ";
     for (auto& [folderPath, trackList] : albumMap) {
         for (const auto& entry : fs::directory_iterator(
             folderPath, fs::directory_options::skip_permission_denied)) {

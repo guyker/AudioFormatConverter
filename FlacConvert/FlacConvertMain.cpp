@@ -97,7 +97,8 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
     for (auto& mediaEntry : mediaDirectoryList)
     {
         auto startTime = std::chrono::steady_clock::now();
-        spdlog::info("===>ScanFolderAndCreateJSON - Processing new collection: \"{}\"", mediaEntry.mediaPath);
+        spdlog::info("");
+        spdlog::info("Scan Start=============>ScanFolderAndCreateJSON - Processing new collection: \"{}\"", mediaEntry.mediaPath);
 
         AlbumCollection ac;
 
