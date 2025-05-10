@@ -136,7 +136,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             bool isError = false;
             int index = 0;
             //while (!isError) {
-            while (index < 100) {
+            while (index < 200) {
                 auto oldFile = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++index);
                 if (fs::exists(oldFile)) {
                     std::error_code ec;
@@ -225,7 +225,7 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
         }
     }
 
-    albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
+    albumCollection.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });
     auto dupList = albumCollection.FindDuplicateAlbums(albumListPtr);
 
     auto iCount = dupList.size();
@@ -262,10 +262,12 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
     {
         //auto mediaJsonPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory);
         auto mediaDBPath = mediaEntry.getMediaDBPath(AppSettingsJson::AppSetting()->OutDirectory);
+        spdlog::info("Creating Data Base: {}", mediaDBPath);
+        spdlog::info("-------------------");
 
         bool isError = false;
         int index = 0;
-        while (index < 100) {
+        while (index < 200) {
             auto mediaJsonPartPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++index);
             if (fs::exists(mediaJsonPartPath)) {
                 spdlog::info("Processing: {}", mediaJsonPartPath);

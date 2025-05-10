@@ -17,6 +17,8 @@
 #include "rapidjson/document.h"
 #include "rapidjson/error/en.h"
 #include "rapidjson/stringbuffer.h"
+#include "rapidjson/error/error.h"
+
 #include <iostream>
 
 #include "AlbumCollection.h"
@@ -58,6 +60,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
         auto relativePath = fs::relative(entry.path(), albumCollectionDirPath);
         auto depth = std::distance(relativePath.begin(), relativePath.end());
         if (depth > AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth) {
+            spdlog::error("Recursion rirectory search depth reached, depth: {}", depth);
             continue;
         }
         if (entry.is_directory()) {
@@ -178,6 +181,7 @@ MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollect
                 auto relativePath = fs::relative(entry.path(), albumCollectionDirPath);
                 auto depth = std::distance(relativePath.begin(), relativePath.end());
                 if (depth > AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth) {
+                    spdlog::error("Recursion rirectory search depth reached, depth: {}", depth);
                     continue;
                 }
                 if (entry.is_directory()) {
@@ -551,7 +555,21 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
 				}
 
               //  std::string utf8Json = PlatformUtils::wstringToUtf8_ver2(mediaInfoString);
+
                 trackDoc.Parse(jsonString.c_str());
+                // or, more broadly, strip all control codes except \n, \r, \t
+                if (trackDoc.HasParseError() && trackDoc.GetParseError() == ParseErrorCode::kParseErrorStringInvalidEncoding) {
+                    jsonString.erase(
+                        std::remove_if(
+                            jsonString.begin(), jsonString.end(),
+                            [](unsigned char c) {
+                                return (c < 0x20) && (c != '\n') && (c != '\r') && (c != '\t');
+                            }
+                        ),
+                        jsonString.end()
+                    );
+                    trackDoc.Parse(jsonString.c_str());
+                }
                 if (trackDoc.HasParseError()) {
                     // Get error code and message
                     rapidjson::ParseErrorCode errorCode = trackDoc.GetParseError();
@@ -560,7 +578,7 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                     item.LastErroString = errorMsg;
                     SaveAlbumsToJSON_LasrErrorList.push_back(item);
                     spdlog::error("Error parsing JSON: ", errorMsg);
-                    continue;
+//                    continue;
                 }
                 else
                 {
