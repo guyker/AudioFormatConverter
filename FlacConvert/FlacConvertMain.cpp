@@ -225,10 +225,12 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
         }
     }
 
+    spdlog::info("Finding duplicated albums...");
     albumCollection.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });
     auto dupList = albumCollection.FindDuplicateAlbums(albumListPtr);
 
     auto iCount = dupList.size();
+    spdlog::info("Found {} duplicated albums", iCount);
     int iCurrent = 0;
     for (auto entry : dupList)
     {
