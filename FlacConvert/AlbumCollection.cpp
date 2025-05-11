@@ -881,7 +881,7 @@ bool CompareTags(std::vector<MediaTrack>& tList1, std::vector<MediaTrack>& tList
 void AlbumCollection::SortAlbums(std::shared_ptr<std::vector<MediaAlbum>> albumListPtr,
                                  const std::vector<std::pair<SortBy, bool>>& criteria)
 {
-    std::ranges::stable_sort(*albumListPtr, [&](auto& a, auto& b) {
+    std::ranges::stable_sort(*albumListPtr, [&criteria](auto& a, auto& b) {
         const auto& [dirEntryA, tracksA] = a;
         const auto& [dirEntryB, tracksB] = b;
 
