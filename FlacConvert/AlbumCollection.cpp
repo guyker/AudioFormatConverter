@@ -909,7 +909,7 @@ void AlbumCollection::SortAlbums(std::shared_ptr<std::vector<MediaAlbum>> albumL
                 break;
 
             case SortBy::TrackCount:
-                result = static_cast<int>(a.trackList.size()) - static_cast<int>(b.trackList.size());
+                result = static_cast<int>(a.trackList.size()) > static_cast<int>(b.trackList.size());
                 break;
 
             default:
