@@ -111,60 +111,14 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 
         AlbumCollection ac;
 
-    //    auto gen = ac.LoadAlbumsCo(mediaEntry.mediaPath, true, 10); //load albume list from directory path
-        // Drive the coroutine: each resume moves to the next element
-   //     while (gen.resume()) {
-			//static int count = 0;
-   //         std::cout << "resumed after yielding: " << gen.value() << "\n";
-			//auto albumListPtr = gen.value();
-   //         //ac.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });         // sort by album size - optional
-   //         ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });         // sort by album size - optional
-
-   //         ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++count)); // save to json
-   //     }
-
         try {
-            //auto generator = ac.LoadAlbumsCo(mediaEntry.mediaPath, true, 10);
-            //while (generator.resume()) {
-            //    auto albumListPtr = generator.value();
-            //    spdlog::info("Received batch with {} albums", albumListPtr->size());
-            //    for (const auto& album : *albumListPtr) {
-            //        spdlog::info("Album: {}", CommonUtils::utf8string_to_string(album.path.path().u8string()));
-            //    }
-            //}
+            auto generator = mediaEntry.getMediaJsonPathCo(AppSettingsJson::AppSetting()->OutDirectory);
+            while (generator.resume()) {
+                std::error_code ec;
+                fs::remove(generator.value(), ec);
 
-            bool isError = false;
-            int index = 0;
-            //while (!isError) {
-            while (index < 200) {
-                auto oldFile = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++index);
-                if (fs::exists(oldFile)) {
-                    std::error_code ec;
-                    if (fs::remove(oldFile, ec)) {
-                      //  std::cout << "File deleted successfully.\n";
-                    }
-                    else {
-                     //   spdlog::error("Failed to delete file: {}", ec.message().c_str());
-						isError = true;
-                    }
-                }
-                else {
-                //    spdlog::error("File does not exist. [{}]", oldFile.c_str());
-					isError = true;
-                }
-
-				CommonUtils::deleteFilesWithSamePrefix(oldFile);
+                CommonUtils::deleteFilesWithSamePrefix(generator.value());
             }
-
-
-            // Save the original pattern
-            //auto old_pattern = logger->pattern();
-            // Temporarily set a new pattern with a tab prefix
-            //logger->set_pattern("\t[%T] [%l] %v");
-
-            //std::string default_pattern = "[%Y-%m-%d %H:%M:%S.%e] [%n] [%^%l%$] %v";
-//            logger->set_pattern("[%^{%l}%$] %v");
-            //logger->set_pattern(default_pattern);
 
             // Load albums in batches
             int count = 0;
@@ -205,24 +159,23 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
 
     for (auto& mediaEntry : mediaDirectoryList)
     {
-		auto mediaJsonPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory);
-
-        bool isError = false;
-        int index = 0;
-        while (!isError) {
-            auto mediaJsonPartPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++index);
+        auto generator = mediaEntry.getMediaJsonPathCo(AppSettingsJson::AppSetting()->OutDirectory);
+        while (generator.resume()) {
+			auto mediaJsonPartPath = generator.value();
             if (fs::exists(mediaJsonPartPath)) {
-                std::cout << "Processing: {}" << mediaJsonPath << std::endl;
+                std::cout << "Processing: {}" << mediaJsonPartPath << std::endl;
 
                 auto albumListChunk = albumCollection.LoadAlbumsFromJSON(mediaJsonPartPath);
                 if (!albumListChunk->empty()) {
                     albumListPtr->insert(albumListPtr->end(), albumListChunk->begin(), albumListChunk->end());
                 }
             }
-            else {
-                isError = true;
+            else
+            {
+				spdlog::error("Error: Json file not found: {}", mediaJsonPartPath);
             }
         }
+
     }
 
     spdlog::info("Finding duplicated albums...");
@@ -262,33 +215,29 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
 
     for (auto& mediaEntry : mediaDirectoryList)
     {
-        //auto mediaJsonPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory);
         auto mediaDBPath = mediaEntry.getMediaDBPath(AppSettingsJson::AppSetting()->OutDirectory);
         spdlog::info("Creating Data Base: {}", mediaDBPath);
         spdlog::info("-------------------");
 
-        bool isError = false;
-        int index = 0;
-        while (index < 200) {
-            auto mediaJsonPartPath = mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++index);
+
+        auto generator = mediaEntry.getMediaJsonPathCo(AppSettingsJson::AppSetting()->OutDirectory);
+        while (generator.resume()) {
+			auto mediaJsonPartPath = generator.value();
             if (fs::exists(mediaJsonPartPath)) {
                 spdlog::info("Processing: {}", mediaJsonPartPath);
 
-                    auto albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaJsonPartPath);
+                auto albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaJsonPartPath);
 
                 //    albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
-                    albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumName, true } });
+                albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumName, true } });
 
-                    albumCollection.ExportToDatabase(albumListPtr, mediaDBPath);
+                albumCollection.ExportToDatabase(albumListPtr, mediaDBPath);
             }
+            else
+			{
+				spdlog::error("Error Exporting to DB: Json file not found: {}", mediaJsonPartPath);
+			}   
         }
-
-    //    auto albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaJsonPath);
-
-    ////    albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
-    //    albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumName, true } });
-
-    //    albumCollection.ExportToDatabase(albumListPtr, mediaDBPath);
     }
 
     return 0;

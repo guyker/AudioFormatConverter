@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <stdexcept>
 
+#include "CommonUtils.h"
 // RapidJSON headers
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -48,7 +49,24 @@ struct MediaDirectoryElement
 	std::string mediaPath{};
 	std::optional<std::string> mediaName{};
 
-	std::string getMediaJsonPath(std::string outDir, int count = 0) const
+	CommonUtils::Generator<std::string> getMediaJsonPathCo(std::string outDir) const
+	{
+		int index = 0;
+		while (++index < 1000) {
+			auto path = getMediaJsonPath(outDir, index);
+			if (fs::exists(path)) {
+				co_yield path;
+			}
+			else
+			{
+				co_return;
+			}
+		}
+
+		co_return;
+	}
+
+	std::string getMediaJsonPath(std::string outDir, int count) const
 	{
 		std::string fileName = mediaName.value_or(std::string("data"));
 		if (count > 0)
@@ -69,6 +87,7 @@ struct MediaDirectoryElement
 		return path.string();
 	}
 };
+
 
 
 struct AppSettingsJson
