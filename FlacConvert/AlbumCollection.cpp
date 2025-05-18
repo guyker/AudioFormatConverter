@@ -1074,7 +1074,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
             }
         }
         else if (lastError) {
-            spdlog::debug("Metadata error for track: {} ({})", (dirEntry.path() / trackName).string(), lastError.value());
+            spdlog::error("Metadata error for track: {} ({})", (dirEntry.path() / trackName).string(), lastError.value());
         }
 
         // Collect sorted track durations

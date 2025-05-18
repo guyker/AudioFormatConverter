@@ -2,6 +2,8 @@
 #include "MediaConvertionTask.h"
 
 #include <string>
+#include <spdlog/spdlog.h>
+#include "CommonUtils.h"
 
 namespace fs = std::filesystem;
 
@@ -25,18 +27,17 @@ int MediaConvertionTask::ConvertFile()
 
 
         try {
-            std::wstring sourcePath { _sourcePath };
-            std::wcout << L"Processing: " << sourcePath << std::endl;
+            spdlog::info("Processing: {}", CommonUtils::utf8string_to_string(_sourcePath.u8string()));
             _status = _wsystem(commandW.c_str());
 
         }
         catch (const std::exception& ex) {
             _status = -1;
-            std::wcout << " ### COMMAND EXCEOTION :" << _sourcePath << std::endl << ex.what() << std::endl;
+            spdlog::error(" ### COMMAND EXCEOTION :{} - {}", CommonUtils::utf8string_to_string(_sourcePath.u8string()), ex.what());
         }
 
         if (_status == -1) {
-            std::wcout << " ### Error processing:" << _sourcePath << std::endl;
+            spdlog::error(" ### Error processing: {}", CommonUtils::utf8string_to_string(_sourcePath.u8string()));
         }
     }
 
@@ -69,11 +70,11 @@ int MediaConvertionTask::RenameAndRemoveTMPFile()
         fs::path sourcePath{ _sourcePath };
         auto path1Fixed = sourcePath.lexically_normal().native();
         if (!fs::exists(path1Fixed)) {
-            std::wcout << L"***Error rename: source does not exist: " << _sourcePath << std::endl;
+            spdlog::error("***Error rename: source does not exist: ", CommonUtils::utf8string_to_string(_sourcePath.u8string()));
             _status = -1;
         }
         else if (!fs::exists(_targetTMPPath)) {
-            std::wcout << L"***Error rename: target(tmp) does not exist: " << _targetPath << std::endl;
+            spdlog::error("***Error rename: target(tmp) does not exist: {}", CommonUtils::utf8string_to_string(_targetPath.u8string()));
             _status = -1;
         } 
         else {
@@ -83,7 +84,7 @@ int MediaConvertionTask::RenameAndRemoveTMPFile()
             }
             else {
                 auto errormessage { ec.message() };
-                std::wcout << "***Error delete: " << _sourcePath << ", " << ec.value() << L": " << std::endl;// std::wstring(ec.message()) << std::endl;
+                spdlog::error("***Error delete: {} - {}", CommonUtils::utf8string_to_string(_sourcePath.u8string()), ec.message());
                 //fs::remove(completedFiles.second, ec);
                 _status = -1;
             }

@@ -98,15 +98,17 @@ int FolderConvert::ConverAudioFolder(const std::filesystem::path& directory, con
             }
             else
             {
-                spdlog::warn("---Skipping: {}", entry.path().string());
+                
+                spdlog::warn("---Skipping: {}", CommonUtils::utf8string_to_string(entry.path().u8string()));
             }
         }
         else {
             if (entry.is_directory()) {
+				//spdlog::info("Skipped directory: {}", CommonUtils::utf8string_to_string(entry.path().u8string()));
             }
             else
             {
-                spdlog::error("***Unknown entry: {}", entry.path().string());
+                spdlog::error("***Unknown entry: {}", CommonUtils::utf8string_to_string(entry.path().u8string()));
             }
         }
     }

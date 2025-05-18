@@ -10,6 +10,8 @@
 
 #include <chrono>
 #include <thread>
+#include <spdlog/spdlog.h>
+#include "CommonUtils.h"
 
 int MediaConvertionAsyncTask::Run()
 {
@@ -18,7 +20,8 @@ int MediaConvertionAsyncTask::Run()
 
         if (!_asyncResult.valid())
         {
-            std::wcout << "***ERROR*** Invalid task: " << _sourcePath << std::endl;
+            auto sourPath = CommonUtils::utf8string_to_string(_sourcePath.u8string());
+            spdlog::error("***ERROR*** Invalid task: {}", sourPath);
             _status = -1;
         }
     }
@@ -35,7 +38,7 @@ int MediaConvertionAsyncTask::PostRun()
             RenameAndRemoveTMPFile();
         }
         else {
-            std::wcout << "***Error running aync task: " << _sourcePath << std::endl;
+            spdlog::error("***Error running aync task: {}", CommonUtils::utf8string_to_string(_sourcePath.u8string()));
         }
     }
 
