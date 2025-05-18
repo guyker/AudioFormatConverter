@@ -163,6 +163,10 @@ namespace FFmpeg {
         ffmpeg_logs.clear();
     }
 
+    std::list<MediaTrack> ffmpeg_LasrErrorList;
+
+
+
 
     //create a media file (on filesystem) from a media track
     std::wstring GetJsonMetadataShell(std::filesystem::path mediaFilePath)

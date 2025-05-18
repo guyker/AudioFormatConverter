@@ -439,11 +439,10 @@ void SaveAlbumsToJSON_FFmpegError(std::filesystem::path outPath)
  //   std::cout << "JSON file created successfully as tracks.json" << std::endl;
 }
 
-std::list<MediaTrack> SaveAlbumsToJSON_LasrErrorList;
 
-void SaveAlbumsToJSON_LasrError(std::list<MediaTrack>& mediaTracks, std::filesystem::path outPath)
+void AlbumCollection::SaveAlbumsToJSON_LasrError(std::list<MediaTrack>& mediaTracks, std::filesystem::path outPath)
 {
-    if (SaveAlbumsToJSON_LasrErrorList.empty()) {
+    if (ffmpeg_LasrErrorList.empty()) {
 		return;
     }
 
@@ -484,7 +483,7 @@ void SaveAlbumsToJSON_LasrError(std::list<MediaTrack>& mediaTracks, std::filesys
         document.PushBack(trackObj, allocator);
 	}
 
-	SaveAlbumsToJSON_LasrErrorList.clear();
+    ffmpeg_LasrErrorList.clear();
 
     // Create a StringBuffer to hold the JSON output.
     StringBuffer buffer;
@@ -576,7 +575,7 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                     const char* errorMsg = rapidjson::GetParseError_En(errorCode);
                     size_t errorOffset = trackDoc.GetErrorOffset();
                     item.LastErroString = errorMsg;
-                    SaveAlbumsToJSON_LasrErrorList.push_back(item);
+                    ffmpeg_LasrErrorList.push_back(item);
                     spdlog::error("Error parsing JSON: ", errorMsg);
 //                    continue;
                 }
@@ -637,9 +636,8 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
     }
 
 
-    SaveAlbumsToJSON_LasrError(SaveAlbumsToJSON_LasrErrorList, path);
-    SaveAlbumsToJSON_FFmpegError(path);
-
+    SaveAlbumsToJSON_LasrError(ffmpeg_LasrErrorList, path);
+    SaveAlbumsToJSON_FFmpegError(path);    
 
     return true;
 }
