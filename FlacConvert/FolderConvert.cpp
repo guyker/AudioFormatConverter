@@ -70,7 +70,7 @@ int FolderConvert::ConverAudioFolder(const std::filesystem::path& directory, con
         if (entry.is_directory()) {
             int ret = ConverAudioFolder(entry.path(), scanInfo, bAsync);
             if (ret == -1) {
-                std::cout << "***ERROR*** returned from ConverAudioFiles" << std::endl;
+                spdlog::error("***ERROR*** returned from ConverAudioFiles");
                 return -1;
             }
         }
@@ -98,7 +98,7 @@ int FolderConvert::ConverAudioFolder(const std::filesystem::path& directory, con
             }
             else
             {
-                std::wcout << L"---Skipping: " << entry.path() << std::endl;
+                spdlog::warn("---Skipping: {}", entry.path().string());
             }
         }
         else {
@@ -106,7 +106,7 @@ int FolderConvert::ConverAudioFolder(const std::filesystem::path& directory, con
             }
             else
             {
-                std::wcout << L"***UUNKNOWN ENTRY: " << entry.path() << std::endl;
+                spdlog::error("***Unknown entry: {}", entry.path().string());
             }
         }
     }
@@ -132,7 +132,7 @@ int FolderConvert::ConverAudioFolder(const std::filesystem::path& directory, con
     {
         if (item->GetStatus() != 0)
         {
-            std::cout << "***STOP*** error found: " << item->GetStatus() << std::endl;
+            spdlog::error("***Processing item error found: {}", item->GetStatus());
             return -1;
 
         }

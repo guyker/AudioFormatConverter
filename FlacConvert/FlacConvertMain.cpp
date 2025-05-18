@@ -45,50 +45,46 @@
 namespace fs = std::filesystem;
 
 
-enum ConvertActionEnum { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
+enum class ConvertActionEnum { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
 
 
 int ConvertFLACToFLAC(std::vector<MediaDirectoryElement> mediaDirectoryList)
 {
-    std::wcout << "Processing " << mediaDirectoryList.size() << " directories" << std::endl;
+    spdlog::info("Processing {}  directories", mediaDirectoryList.size());
 
     for (auto& mediaEntry: mediaDirectoryList)
     {
-        std::wcout << "Scanning: " << mediaEntry.mediaPath.c_str() << "..." << std::endl;
+        spdlog::info("Scanning: {}...", mediaEntry.mediaPath.c_str());
 
         auto startTime = std::chrono::steady_clock::now();
 
         ScanInfo scanInfo{};
         int retStatus = FolderConvert::ScanAudioFiles(scanInfo, mediaEntry.mediaPath);
 
-        std::wcout << "Files: " <<
-            scanInfo.convertable_file_count << " (Not Regular: " <<
-            scanInfo.not_regular_file_count << ", No extension: " <<
-            scanInfo.file_with_no_extension_count << ", Not convertable: " <<
-            scanInfo.not_convertable_file_count << ", Folders: " <<
-            scanInfo.folders_count << ")" << std::endl;
-        std::wcout << "Total Size:" << scanInfo.convertable_files_size << std::endl;
-        std::wcout << std::endl << "======================" << std::endl;
-
-
-
+        spdlog::info("Total convertable files: {}, Not regular: {} , No extension : {}, Not convertable: {}, Folders: {}",
+            scanInfo.convertable_file_count,
+            scanInfo.not_regular_file_count,
+            scanInfo.file_with_no_extension_count,
+            scanInfo.not_convertable_file_count,
+            scanInfo.folders_count);
+        spdlog::info("Total Size: {}", scanInfo.convertable_files_size);
+        spdlog::info("======================");
 
         //std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
         //std::getchar();
 
         auto ret = FolderConvert::ConverAudioFolder(mediaEntry.mediaPath, scanInfo, false);
         if (ret == -1) {
-            std::wcout << "***ERROR*** ConverAudioFiles" << std::endl;
+            spdlog::error("***ERROR*** ConverAudioFiles");
             return -1;
         }
 
-        std::wcout << std::endl << L"Success!!!" << std::endl;
+        spdlog::info("\nSuccess.");
 
         //log total execution time (millis)
         auto endTime = std::chrono::steady_clock::now();
-        std::wcout << "-->### Total processing time(milliseconds) : "
-            << std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count()
-            << " ms" << std::endl;
+        spdlog::info("-->### Total processing time(milliseconds): {}ms",
+            std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count());
     }
 
     return 0;
@@ -163,7 +159,7 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
         while (generator.resume()) {
 			auto mediaJsonPartPath = generator.value();
             if (fs::exists(mediaJsonPartPath)) {
-                std::cout << "Processing: {}" << mediaJsonPartPath << std::endl;
+                spdlog::info("Processing: {}", mediaJsonPartPath);
 
                 auto albumListChunk = albumCollection.LoadAlbumsFromJSON(mediaJsonPartPath);
                 if (!albumListChunk->empty()) {
@@ -245,30 +241,30 @@ int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
 
 ConvertActionEnum GetUserAction()
 {
-    ConvertActionEnum action{ NullEnum };
+    ConvertActionEnum action{ ConvertActionEnum::NullEnum };
 
-    std::cout << "Select run option [1 - Re/Convert FLAC, 2 - Scan directories, 3 - Get Duplicates, 4 - Update DB, XX 5 - Scan DIR to DB, ]" << std::endl;
+    spdlog::info("Select run option [1 - Re/Convert FLAC, 2 - Scan directories, 3 - Get Duplicates, 4 - Update DB, XX 5 - Scan DIR to DB, ]");
     char input = getchar();
     switch (input)
     {
     case '1':
-        action = ConverEnum;
+        action = ConvertActionEnum::ConverEnum;
         break;
     case '2':
-        action = CreateJSONEnum;
+        action = ConvertActionEnum::CreateJSONEnum;
         break;
     case '5':
-        action = CreateDBFromFolderEnum;
+        action = ConvertActionEnum::CreateDBFromFolderEnum;
         break;
     case '3':
-        action = ProcessJSONEnum;
+        action = ConvertActionEnum::ProcessJSONEnum;
         break;
     case '4':
-        action = PopulateJsonToDBEnum;
+        action = ConvertActionEnum::PopulateJsonToDBEnum;
         break;
     default:
-        std::cout << "Selection Error: " << input;
-        action = NullEnum;
+        spdlog::error("Selection Error, unknown {}", input);
+        action = ConvertActionEnum::NullEnum;
         break;
     }
 
@@ -319,7 +315,8 @@ int main()
     auto appSettingPtr = AppSettingsJson::AppSetting();
     if (appSettingPtr == nullptr)
     {
-        std::cout << CommonUtils::getSymbolConstexpr("stop_sign") << "Failed to load Configuration File" << std::endl;
+        //std::cout << CommonUtils::getSymbolConstexpr("stop_sign") << "Failed to load Configuration File" << std::endl;
+        spdlog::error("Failed to load Configuration File");
 
         return -1;
     }
@@ -355,33 +352,33 @@ int main()
         }
 	}
 
-    std::cout << std::endl;
+	spdlog::info("");
 
 
     auto action = GetUserAction();
     switch (action)
     {
-    case ConverEnum: //1
+    case ConvertActionEnum::ConverEnum: //1
         ConvertFLACToFLAC(mediaList);
         break;
 
-    case CreateJSONEnum: //2
+    case ConvertActionEnum::CreateJSONEnum: //2
         ScanFolderAndCreateJSON(mediaList);
         break;
 
-	case ProcessJSONEnum: //3
+	case ConvertActionEnum::ProcessJSONEnum: //3
         ScanFolderProcessJSONAndFindDuplicates(mediaList);
         break;
 
-	case PopulateJsonToDBEnum: //4    
+	case ConvertActionEnum::PopulateJsonToDBEnum: //4    
         ExportJSONToDB(mediaList);    
         break;
 
-    case CreateDBFromFolderEnum: //5
+    case ConvertActionEnum::CreateDBFromFolderEnum: //5
         break;
 
     default:
-        std::cout << "Acrtion not found: " << action;
+        spdlog::error("Acrtion not found: {}", static_cast<int>(action));
         break;
     }
 
