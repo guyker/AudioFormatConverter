@@ -148,17 +148,19 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 }
 
 
-void CompareAudioTracks(
+bool CompareAudioTracks(
     const std::vector<FFprobeOutput>& mediaInfoList1,
     const std::vector<FFprobeOutput>& mediaInfoList2)
 {
+    bool bAllSame{ true };
+
     size_t minSize = std::min(mediaInfoList1.size(), mediaInfoList2.size());
 
     for (size_t i = 0; i < minSize; ++i) {
         const auto& info1 = mediaInfoList1[i];
         const auto& info2 = mediaInfoList2[i];
 
-        std::cout << "Comparing Track #" << i + 1 << ":\n";
+		spdlog::info("Comparing Track #{}, \"{}\" VS \"{}\"", i + 1, info1.format.filename, info2.format.filename);
 
         if (!info1.audio_metrics.has_value() || !info2.audio_metrics.has_value()) {
             std::cout << "  Skipped: Missing audio metrics.\n";
@@ -211,21 +213,33 @@ void CompareAudioTracks(
 
             if (std::abs(q1.dynamic_range_db - q2.dynamic_range_db) > 1.0f) {
                 std::cout << "  Dynamic range differs: " << q1.dynamic_range_db << " dB vs " << q2.dynamic_range_db << " dB\n";
+				
+                different = true;
             }
 
             if (std::abs(q1.peak_amplitude - q2.peak_amplitude) > 0.05f) {
                 std::cout << "  Peak amplitude differs: " << q1.peak_amplitude << " vs " << q2.peak_amplitude << "\n";
+
+				different = true;
             }
 
             // Add other checks as needed
         }
+		
+        if (different) {
+			bAllSame = false;
+		}
     }
 
     // Check for extra tracks
     if (mediaInfoList1.size() != mediaInfoList2.size()) {
         std::cout << "\nDifferent number of tracks: "
             << mediaInfoList1.size() << " vs " << mediaInfoList2.size() << "\n";
+
+		bAllSame = false;
     }
+
+    return bAllSame;
 }
 
 int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> mediaDirectoryList)
@@ -263,6 +277,7 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
     int iCurrent = 0;
     for (auto entry : dupList)
     {
+        bool bDifferent = false;
         iCurrent++;
         auto [dir1, dir2] = entry;
 
@@ -284,19 +299,21 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
                 }
             }
 
-			CompareAudioTracks(mediaInfoList1, mediaInfoList2);
+            bDifferent = CompareAudioTracks(mediaInfoList1, mediaInfoList2);
         }
         catch (const fs::filesystem_error& e) {
             spdlog::error("Error getting track information: {}", e.what());
         }
 
+        if (!bDifferent)
+        {
+            std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir1) << std::endl;
+            std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir2) << std::endl << std::endl;
 
-        std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir1) << std::endl;
-        std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir2) << std::endl << std::endl;
-
-        PlatformUtils::waitForKeyPress();
-        PlatformUtils::OpenDirectoryInExplorer(dir1);
-        PlatformUtils::OpenDirectoryInExplorer(dir2);
+            PlatformUtils::waitForKeyPress();
+            PlatformUtils::OpenDirectoryInExplorer(dir1);
+            PlatformUtils::OpenDirectoryInExplorer(dir2);
+        }
 
         iCount--;
     }
