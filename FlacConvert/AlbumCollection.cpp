@@ -956,10 +956,10 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicateAlbums(std::shared_ptr<D
     // Process groups
     for (const auto& [trackCount, group] : trackCountGroups) {
         if (group.size() < 2) {
-            logger->debug("Skipping group with {} albums ({} tracks)", group.size(), trackCount);
+            logger->warn("Skipping group with {} albums ({} tracks)", group.size(), trackCount);
             continue;
         }
-        logger->debug("Checking {} albums with {} tracks", group.size(), trackCount);
+        logger->info("Checking {} albums with {} tracks", group.size(), trackCount);
         auto dupAlbums = FindDuplicationInGroup(albumListPtr, group);
         duplicatedAlbumList.insert(duplicatedAlbumList.end(), dupAlbums.begin(), dupAlbums.end());
     }
