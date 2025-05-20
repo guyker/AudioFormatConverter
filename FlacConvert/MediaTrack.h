@@ -114,6 +114,9 @@ struct MediaTrack
 	//returns media information (json string and media objec) from a media file (on file system)
 	static std::tuple<FFprobeOutput, std::optional<std::wstring>> ReadMetadataInfoFromFile(std::filesystem::path mediaFilePath, const bool bIncludeAudioQualityMetrics = false);
 
+	static bool CompareAudioTracks(const std::vector<FFprobeOutput>& mediaInfoList1, const std::vector<FFprobeOutput>& mediaInfoList2);
+
+
 	static std::string toJsonString(const FFprobeOutput& output);
 
 	static const std::string GetCreateTableSQL();

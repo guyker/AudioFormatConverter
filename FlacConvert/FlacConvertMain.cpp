@@ -148,99 +148,6 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 }
 
 
-bool CompareAudioTracks(
-    const std::vector<FFprobeOutput>& mediaInfoList1,
-    const std::vector<FFprobeOutput>& mediaInfoList2)
-{
-    bool bAllSame{ true };
-
-    size_t minSize = std::min(mediaInfoList1.size(), mediaInfoList2.size());
-
-    for (size_t i = 0; i < minSize; ++i) {
-        const auto& info1 = mediaInfoList1[i];
-        const auto& info2 = mediaInfoList2[i];
-
-		spdlog::info("Comparing Track #{}, \"{}\" VS \"{}\"", i + 1, info1.format.filename, info2.format.filename);
-
-        if (!info1.audio_metrics.has_value() || !info2.audio_metrics.has_value()) {
-            std::cout << "  Skipped: Missing audio metrics.\n";
-            continue;
-        }
-
-        const auto& m1 = info1.audio_metrics.value();
-        const auto& m2 = info2.audio_metrics.value();
-
-        bool different = false;
-
-        if (m1.codec_name != m2.codec_name) {
-            std::cout << "  Codec mismatch: " << m1.codec_name << " vs " << m2.codec_name << "\n";
-            different = true;
-        }
-
-        if (m1.sample_rate != m2.sample_rate) {
-            std::cout << "  Sample rate mismatch: " << m1.sample_rate << " Hz vs " << m2.sample_rate << " Hz\n";
-            different = true;
-        }
-
-        if (m1.channels != m2.channels) {
-            std::cout << "  Channels mismatch: " << m1.channels << " vs " << m2.channels << "\n";
-            different = true;
-        }
-
-        if (m1.bitrate != m2.bitrate) {
-            std::cout << "  Bitrate mismatch: " << m1.bitrate << " vs " << m2.bitrate << "\n";
-            different = true;
-        }
-
-        if (m1.is_lossless != m2.is_lossless) {
-            std::cout << "  Lossless flag mismatch: " << (m1.is_lossless ? "Yes" : "No") << " vs " << (m2.is_lossless ? "Yes" : "No") << "\n";
-            different = true;
-        }
-
-        if (m1.is_high_quality != m2.is_high_quality) {
-            std::cout << "  Quality flag mismatch: " << (m1.is_high_quality ? "High" : "Low") << " vs " << (m2.is_high_quality ? "High" : "Low") << "\n";
-            different = true;
-        }
-
-        if (!different) {
-            std::cout << " Audio quality matches.\n";
-        }
-
-        // Optionally compare audio_quality fields
-        if (info1.audio_quality && info2.audio_quality) {
-            const auto& q1 = info1.audio_quality.value();
-            const auto& q2 = info2.audio_quality.value();
-
-            if (std::abs(q1.dynamic_range_db - q2.dynamic_range_db) > 1.0f) {
-                std::cout << "  Dynamic range differs: " << q1.dynamic_range_db << " dB vs " << q2.dynamic_range_db << " dB\n";
-				
-                different = true;
-            }
-
-            if (std::abs(q1.peak_amplitude - q2.peak_amplitude) > 0.05f) {
-                std::cout << "  Peak amplitude differs: " << q1.peak_amplitude << " vs " << q2.peak_amplitude << "\n";
-
-				different = true;
-            }
-
-            // Add other checks as needed
-        }
-		
-        if (different) {
-			bAllSame = false;
-		}
-    }
-
-    // Check for extra tracks
-    if (mediaInfoList1.size() != mediaInfoList2.size()) {
-        std::cout << "\nDifferent number of tracks: "
-            << mediaInfoList1.size() << " vs " << mediaInfoList2.size() << "\n";
-
-		bAllSame = false;
-    }
-
-    return bAllSame;
-}
 
 int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> mediaDirectoryList)
 {
@@ -293,18 +200,12 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
 
                     auto miFuture = std::async(std::launch::async, MediaTrack::ReadMetadataInfoFromFile, entry.path(), bIncludeAudioQualityMetrics);
                     asyncFutureList1.push_back(std::move(miFuture));
-
-//                    std::tuple<FFprobeOutput, std::optional<std::wstring>> alvumInfo = MediaTrack::ReadMetadataInfoFromFile(entry.path());
-//                    mediaInfoList1.push_back(std::get<0>(alvumInfo));
                 }
             }
             for (const auto& entry : fs::recursive_directory_iterator(dir2)) {
-                //if (fs::is_regular_file(entry.status())) {
                 if (MediaTrack::IsValidMedia(entry)) {
                     auto miFuture = std::async(std::launch::async, MediaTrack::ReadMetadataInfoFromFile, entry.path(), bIncludeAudioQualityMetrics);
                     asyncFutureList2.push_back(std::move(miFuture));
-                    //std::tuple<FFprobeOutput, std::optional<std::wstring>> alvumInfo = MediaTrack::ReadMetadataInfoFromFile(entry.path());
-                    //mediaInfoList2.push_back(std::get<0>(alvumInfo));
                 }
             }
 
@@ -319,7 +220,7 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
                 mediaInfoList2.push_back(mediaInfo_ret);
             }
 
-            bDifferent = CompareAudioTracks(mediaInfoList1, mediaInfoList2);
+            bDifferent = MediaTrack::CompareAudioTracks(mediaInfoList1, mediaInfoList2);
         }
         catch (const fs::filesystem_error& e) {
             spdlog::error("Error getting track information: {}", e.what());
