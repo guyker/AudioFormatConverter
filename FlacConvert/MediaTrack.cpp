@@ -361,10 +361,10 @@ bool MediaTrack::CompareAudioTracks(const std::vector<FFprobeOutput>& mediaInfoL
         const auto& info1 = mediaInfoList1[i];
         const auto& info2 = mediaInfoList2[i];
 
-        spdlog::info("Comparing Track #{}, \"{}\" VS \"{}\"", i + 1, info1.format.filename, info2.format.filename);
+        //spdlog::info("Comparing Track #{}, \"{}\" vs \"{}\"", i + 1, info1.format.filename, info2.format.filename);
 
         if (!info1.audio_metrics.has_value() || !info2.audio_metrics.has_value()) {
-            std::cout << "  Skipped: Missing audio metrics.\n";
+            spdlog::warn("  Skipped: Missing audio metrics.");
             continue;
         }
 
@@ -374,37 +374,37 @@ bool MediaTrack::CompareAudioTracks(const std::vector<FFprobeOutput>& mediaInfoL
         bool different = false;
 
         if (m1.codec_name != m2.codec_name) {
-            std::cout << "  Codec mismatch: " << m1.codec_name << " vs " << m2.codec_name << "\n";
+            spdlog::warn("  Codec mismatch: {} vs {}", m1.codec_name, m2.codec_name);
             different = true;
         }
 
         if (m1.sample_rate != m2.sample_rate) {
-            std::cout << "  Sample rate mismatch: " << m1.sample_rate << " Hz vs " << m2.sample_rate << " Hz\n";
+            spdlog::warn("  Sample rate mismatch: {} Hz vs {} Hz", m1.sample_rate, m2.sample_rate);
             different = true;
         }
 
         if (m1.channels != m2.channels) {
-            std::cout << "  Channels mismatch: " << m1.channels << " vs " << m2.channels << "\n";
+            spdlog::warn("  Channels mismatch: {} vs {}", m1.channels, m2.channels);
             different = true;
         }
 
         if (m1.bitrate != m2.bitrate) {
-            std::cout << "  Bitrate mismatch: " << m1.bitrate << " vs " << m2.bitrate << "\n";
+            spdlog::warn("  Bitrate mismatch: {} vs {}", m1.bitrate, m2.bitrate);
             different = true;
         }
 
         if (m1.is_lossless != m2.is_lossless) {
-            std::cout << "  Lossless flag mismatch: " << (m1.is_lossless ? "Yes" : "No") << " vs " << (m2.is_lossless ? "Yes" : "No") << "\n";
+            spdlog::warn("  Lossless flag mismatch: {} vs {}", (m1.is_lossless ? "Yes" : "No"), (m2.is_lossless ? "Yes" : "No"));
             different = true;
         }
 
         if (m1.is_high_quality != m2.is_high_quality) {
-            std::cout << "  Quality flag mismatch: " << (m1.is_high_quality ? "High" : "Low") << " vs " << (m2.is_high_quality ? "High" : "Low") << "\n";
+            spdlog::warn("  Quality flag mismatch: {} vs {}", (m1.is_high_quality ? "High" : "Low"), (m2.is_high_quality ? "High" : "Low"));
             different = true;
         }
 
         if (!different) {
-            std::cout << " Audio quality matches.\n";
+//            spdlog::info(" Audio quality matches.\n");
         }
 
         // Optionally compare audio_quality fields
@@ -413,13 +413,13 @@ bool MediaTrack::CompareAudioTracks(const std::vector<FFprobeOutput>& mediaInfoL
             const auto& q2 = info2.audio_quality.value();
 
             if (std::abs(q1.dynamic_range_db - q2.dynamic_range_db) > 1.0f) {
-                std::cout << "  Dynamic range differs: " << q1.dynamic_range_db << " dB vs " << q2.dynamic_range_db << " dB\n";
+                spdlog::warn("  Dynamic range differs: {} dB vs {} dB", q1.dynamic_range_db, q2.dynamic_range_db);
 
                 different = true;
             }
 
             if (std::abs(q1.peak_amplitude - q2.peak_amplitude) > 0.05f) {
-                std::cout << "  Peak amplitude differs: " << q1.peak_amplitude << " vs " << q2.peak_amplitude << "\n";
+                spdlog::warn("  Peak amplitude differs: {} vs {}", q1.peak_amplitude, q2.peak_amplitude);
 
                 different = true;
             }
@@ -434,8 +434,7 @@ bool MediaTrack::CompareAudioTracks(const std::vector<FFprobeOutput>& mediaInfoL
 
     // Check for extra tracks
     if (mediaInfoList1.size() != mediaInfoList2.size()) {
-        std::cout << "\nDifferent number of tracks: "
-            << mediaInfoList1.size() << " vs " << mediaInfoList2.size() << "\n";
+        spdlog::warn("\nDifferent number of tracks: {} vs {}", mediaInfoList1.size(), mediaInfoList2.size());
 
         bAllSame = false;
     }

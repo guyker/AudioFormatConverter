@@ -220,6 +220,8 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
                 mediaInfoList2.push_back(mediaInfo_ret);
             }
 
+			spdlog::info("==>Comparing \"{}\" vs \"{}\"", CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
+
             bDifferent = MediaTrack::CompareAudioTracks(mediaInfoList1, mediaInfoList2);
         }
         catch (const fs::filesystem_error& e) {
