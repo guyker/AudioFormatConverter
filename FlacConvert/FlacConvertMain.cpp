@@ -281,22 +281,41 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
         iCurrent++;
         auto [dir1, dir2] = entry;
 
+        std::vector<MediaLoadingFuture> asyncFutureList1;
+        std::vector<MediaLoadingFuture> asyncFutureList2;
 		std::vector<FFprobeOutput> mediaInfoList1;
 		std::vector<FFprobeOutput> mediaInfoList2;
         try {
             for (const auto& entry : fs::recursive_directory_iterator(dir1)) {
                 //if (fs::is_regular_file(entry.status())) {
                 if (MediaTrack::IsValidMedia(entry)) {
-                    std::tuple<FFprobeOutput, std::optional<std::wstring>> alvumInfo = MediaTrack::ReadMediaInfoFromJsonFile(entry.path());
-                    mediaInfoList1.push_back(std::get<0>(alvumInfo));
+
+                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMediaInfoFromJsonFile, entry.path());
+                    asyncFutureList1.push_back(std::move(miFuture));
+
+//                    std::tuple<FFprobeOutput, std::optional<std::wstring>> alvumInfo = MediaTrack::ReadMediaInfoFromJsonFile(entry.path());
+//                    mediaInfoList1.push_back(std::get<0>(alvumInfo));
                 }
             }
             for (const auto& entry : fs::recursive_directory_iterator(dir2)) {
                 //if (fs::is_regular_file(entry.status())) {
                 if (MediaTrack::IsValidMedia(entry)) {
-                    std::tuple<FFprobeOutput, std::optional<std::wstring>> alvumInfo = MediaTrack::ReadMediaInfoFromJsonFile(entry.path());
-                    mediaInfoList2.push_back(std::get<0>(alvumInfo));
+                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMediaInfoFromJsonFile, entry.path());
+                    asyncFutureList2.push_back(std::move(miFuture));
+                    //std::tuple<FFprobeOutput, std::optional<std::wstring>> alvumInfo = MediaTrack::ReadMediaInfoFromJsonFile(entry.path());
+                    //mediaInfoList2.push_back(std::get<0>(alvumInfo));
                 }
+            }
+
+            for (auto& furure_ret : asyncFutureList1)
+            {
+                auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
+                mediaInfoList1.push_back(mediaInfo_ret);
+            }
+            for (auto& furure_ret : asyncFutureList2)
+            {
+                auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
+                mediaInfoList2.push_back(mediaInfo_ret);
             }
 
             bDifferent = CompareAudioTracks(mediaInfoList1, mediaInfoList2);
