@@ -39,7 +39,7 @@ std::tuple<FFprobeOutput, std::optional<std::wstring>> MediaTrack::ReadMetadataI
         }
     }
     catch (const std::exception& ex) {
-		spdlog::error("Error in ReadMetadataInfoFromFile: ", ex.what());
+		spdlog::error("Error in ReadMetadataInfoFromFile: {}", ex.what());
         //try
         //{
         //    auto mediaInfo = FFmpeg::GetFFprobeMetadataShell(mediaFilePath);
@@ -98,6 +98,8 @@ bool TryParseFFprobeFormat(const Value& doc, FFprobeOutput &mediaInfo)
 // Parse the streams section of the FFprobe output
 bool TryParseFFprobeStreams(const Value& doc, FFprobeOutput& mediaInfo)
 {
+    bool parsed = false;
+
     if (doc.HasMember("streams") && doc["streams"].IsArray()) {
         for (const auto& s : doc["streams"].GetArray()) {
             Stream stream;
@@ -126,10 +128,11 @@ bool TryParseFFprobeStreams(const Value& doc, FFprobeOutput& mediaInfo)
                 stream.tags = JsonUtils::GetKeyValueMap(s["tags"]);
             }
             mediaInfo.streams.push_back(stream);
+			parsed = true;
         }
     }
 
-    return false;
+    return parsed;
 }
 
 FFprobeOutput MediaTrack::ParseFFprobeInformation(const Value& doc)
@@ -440,6 +443,82 @@ bool MediaTrack::CompareAudioTracks(const std::vector<FFprobeOutput>& mediaInfoL
     }
 
     return bAllSame;
+}
+
+std::string MediaTrack::GenerateComparisonReport(
+    const std::vector<FFprobeOutput>& mediaInfoList1,
+    const std::vector<FFprobeOutput>& mediaInfoList2)
+{
+    std::ostringstream report;
+    report << std::left << std::setw(30) << "Metric"
+        << std::setw(35) << "Album 1"
+        << std::setw(35) << "Album 2"
+        << "Match\n";
+    report << std::string(110, '-') << '\n';
+
+    size_t maxSize = std::max(mediaInfoList1.size(), mediaInfoList2.size());
+
+    for (size_t i = 0; i < maxSize; ++i) {
+        report << "Track #" << i + 1 << "\n";
+
+        if (i >= mediaInfoList1.size() || i >= mediaInfoList2.size()) {
+            report << "  Track missing in one of the albums.\n\n";
+            continue;
+        }
+
+        const auto& info1 = mediaInfoList1[i];
+        const auto& info2 = mediaInfoList2[i];
+
+        if (!info1.audio_metrics.has_value() || !info2.audio_metrics.has_value()) {
+            report << "  Missing audio metrics.\n\n";
+            continue;
+        }
+
+        const auto& m1 = info1.audio_metrics.value();
+        const auto& m2 = info2.audio_metrics.value();
+
+        auto compare = [&](const std::string& label, const auto& val1, const auto& val2) {
+            bool match = (val1 == val2);
+            report << std::setw(30) << label
+                << std::setw(35) << val1
+                << std::setw(35) << val2
+                << (match ? "Yes" : "No") << "\n";
+            return match;
+            };
+
+        compare("Codec", m1.codec_name, m2.codec_name);
+        compare("Sample Rate (Hz)", m1.sample_rate, m2.sample_rate);
+        compare("Channels", m1.channels, m2.channels);
+        compare("Bitrate", m1.bitrate, m2.bitrate);
+        compare("Lossless", m1.is_lossless ? "Yes" : "No", m2.is_lossless ? "Yes" : "No");
+        compare("High Quality", m1.is_high_quality ? "Yes" : "No", m2.is_high_quality ? "Yes" : "No");
+
+        if (info1.audio_quality && info2.audio_quality) {
+            const auto& q1 = info1.audio_quality.value();
+            const auto& q2 = info2.audio_quality.value();
+
+            auto float_compare = [&](const std::string& label, float v1, float v2, float tolerance) {
+                bool match = std::abs(v1 - v2) <= tolerance;
+                report << std::setw(30) << label
+                    << std::setw(35) << std::fixed << std::setprecision(2) << v1
+                    << std::setw(35) << std::fixed << std::setprecision(2) << v2
+                    << (match ? "Yes" : "No") << "\n";
+                return match;
+                };
+
+            float_compare("Dynamic Range (dB)", q1.dynamic_range_db, q2.dynamic_range_db, 1.0f);
+            float_compare("Peak Amplitude", q1.peak_amplitude, q2.peak_amplitude, 0.05f);
+        }
+
+        report << std::string(110, '-') << "\n";
+    }
+
+    if (mediaInfoList1.size() != mediaInfoList2.size()) {
+        report << "\nNOTE: Album track count differs: "
+            << mediaInfoList1.size() << " vs " << mediaInfoList2.size() << "\n";
+    }
+
+    return report.str();
 }
 
 const std::string MediaTrack::GetCreateTableSQL() {

@@ -115,6 +115,7 @@ struct MediaTrack
 	static std::tuple<FFprobeOutput, std::optional<std::wstring>> ReadMetadataInfoFromFile(std::filesystem::path mediaFilePath, const bool bIncludeAudioQualityMetrics = false);
 
 	static bool CompareAudioTracks(const std::vector<FFprobeOutput>& mediaInfoList1, const std::vector<FFprobeOutput>& mediaInfoList2);
+	static std::string GenerateComparisonReport(const std::vector<FFprobeOutput>& mediaInfoList1, const std::vector<FFprobeOutput>& mediaInfoList2);
 
 
 	static std::string toJsonString(const FFprobeOutput& output);

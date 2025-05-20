@@ -184,16 +184,14 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
     int iCurrent = 0;
     for (auto entry : dupList)
     {
-        bool bDifferent = false;
+        bool bSimilarAudioMetrics = false;
         iCurrent++;
         auto [dir1, dir2] = entry;
 
-        std::vector<MediaLoadingFuture> asyncFutureList1;
-        std::vector<MediaLoadingFuture> asyncFutureList2;
-		std::vector<FFprobeOutput> mediaInfoList1;
-		std::vector<FFprobeOutput> mediaInfoList2;
         bool bIncludeAudioQualityMetrics = true;
         try {
+            std::vector<MediaLoadingFuture> asyncFutureList1;
+            std::vector<MediaLoadingFuture> asyncFutureList2;
             for (const auto& entry : fs::recursive_directory_iterator(dir1)) {
                 //if (fs::is_regular_file(entry.status())) {
                 if (MediaTrack::IsValidMedia(entry)) {
@@ -209,6 +207,8 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
                 }
             }
 
+            std::vector<FFprobeOutput> mediaInfoList1;
+            std::vector<FFprobeOutput> mediaInfoList2;
             for (auto& furure_ret : asyncFutureList1)
             {
                 auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
@@ -222,13 +222,18 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
 
 			spdlog::info("==>Comparing \"{}\" vs \"{}\"", CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
 
-            bDifferent = MediaTrack::CompareAudioTracks(mediaInfoList1, mediaInfoList2);
+            bSimilarAudioMetrics = MediaTrack::CompareAudioTracks(mediaInfoList1, mediaInfoList2);
+            if (!bSimilarAudioMetrics)
+            {
+                auto reportStr = MediaTrack::GenerateComparisonReport(mediaInfoList1, mediaInfoList2);
+                spdlog::info("{}", reportStr);
+            }
         }
         catch (const fs::filesystem_error& e) {
             spdlog::error("Error getting track information: {}", e.what());
         }
 
-        if (!bDifferent)
+        if (!bSimilarAudioMetrics)
         {
             std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir1) << std::endl;
             std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir2) << std::endl << std::endl;
