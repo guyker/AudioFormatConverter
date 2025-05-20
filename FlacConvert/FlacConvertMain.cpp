@@ -285,24 +285,25 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
         std::vector<MediaLoadingFuture> asyncFutureList2;
 		std::vector<FFprobeOutput> mediaInfoList1;
 		std::vector<FFprobeOutput> mediaInfoList2;
+        bool bIncludeAudioQualityMetrics = true;
         try {
             for (const auto& entry : fs::recursive_directory_iterator(dir1)) {
                 //if (fs::is_regular_file(entry.status())) {
                 if (MediaTrack::IsValidMedia(entry)) {
 
-                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMediaInfoFromJsonFile, entry.path());
+                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMetadataInfoFromFile, entry.path(), bIncludeAudioQualityMetrics);
                     asyncFutureList1.push_back(std::move(miFuture));
 
-//                    std::tuple<FFprobeOutput, std::optional<std::wstring>> alvumInfo = MediaTrack::ReadMediaInfoFromJsonFile(entry.path());
+//                    std::tuple<FFprobeOutput, std::optional<std::wstring>> alvumInfo = MediaTrack::ReadMetadataInfoFromFile(entry.path());
 //                    mediaInfoList1.push_back(std::get<0>(alvumInfo));
                 }
             }
             for (const auto& entry : fs::recursive_directory_iterator(dir2)) {
                 //if (fs::is_regular_file(entry.status())) {
                 if (MediaTrack::IsValidMedia(entry)) {
-                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMediaInfoFromJsonFile, entry.path());
+                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMetadataInfoFromFile, entry.path(), bIncludeAudioQualityMetrics);
                     asyncFutureList2.push_back(std::move(miFuture));
-                    //std::tuple<FFprobeOutput, std::optional<std::wstring>> alvumInfo = MediaTrack::ReadMediaInfoFromJsonFile(entry.path());
+                    //std::tuple<FFprobeOutput, std::optional<std::wstring>> alvumInfo = MediaTrack::ReadMetadataInfoFromFile(entry.path());
                     //mediaInfoList2.push_back(std::get<0>(alvumInfo));
                 }
             }

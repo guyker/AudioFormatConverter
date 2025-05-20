@@ -21,7 +21,7 @@ namespace FFmpeg
     std::vector<FFmpegLogItem>& get_ffmpeg_logs();
     void clear_ffmpeg_logs();
 
-    FFprobeOutput GetFFprobeMetadataAPI(const std::filesystem::path filePath);
+    FFprobeOutput GetFFprobeMetadataAPI(const std::filesystem::path filePath, const bool bIncludeAudioQualityMetrics = false);
     FFprobeOutput GetFFprobeMetadataShell(const std::filesystem::path filePath);
     std::wstring GetJsonMetadataShell(std::filesystem::path filePath);
 

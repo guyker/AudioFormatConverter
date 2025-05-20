@@ -357,15 +357,16 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
             if (MediaTrack::IsValidMedia(trackPath)) {
                 auto path2Fixed = trackPath.lexically_normal().native();
 
+				auto bIncludeAudioQualityMetrics = AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics;
                 if (bAsync)
                 {
-                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMediaInfoFromJsonFile, path2Fixed);
+                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMetadataInfoFromFile, path2Fixed, bIncludeAudioQualityMetrics);
                     asyncFutureList.push_back({ std::move(miFuture), mediaInfo, mediaInfoString });
 
                 }
                 else
                 {
-                    auto [mi_ret, jsonString_ret] = MediaTrack::ReadMediaInfoFromJsonFile(path2Fixed);
+                    auto [mi_ret, jsonString_ret] = MediaTrack::ReadMetadataInfoFromFile(path2Fixed, bIncludeAudioQualityMetrics);
                     mediaInfoString = jsonString_ret;
                     mediaInfo = mi_ret;
                     CommonUtils::show_progress_bar(progressInfoPtr, CommonUtils::ProgressBarType::SubProgress);

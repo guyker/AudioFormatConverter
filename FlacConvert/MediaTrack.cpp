@@ -17,17 +17,17 @@
 #include "FFmpeg.h"
 #include "PlatformUtils.h"
 #include "JsonUtils.h"
-
+#include "AppSettings.h"
 
 
 //returns media information (json string and media objec) from a media file (on file system)
-std::tuple<FFprobeOutput, std::optional<std::wstring>> MediaTrack::ReadMediaInfoFromJsonFile(std::filesystem::path mediaFilePath)
+std::tuple<FFprobeOutput, std::optional<std::wstring>> MediaTrack::ReadMetadataInfoFromFile(std::filesystem::path mediaFilePath, const bool bIncludeAudioQualityMetrics)
 {
     try
     {
         if (AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI)
         {
-            auto mediaInfo = FFmpeg::GetFFprobeMetadataAPI(mediaFilePath);
+            auto mediaInfo = FFmpeg::GetFFprobeMetadataAPI(mediaFilePath, bIncludeAudioQualityMetrics);
             //return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(sonString(mediaInfo)));
             return std::make_tuple(mediaInfo, std::nullopt);
         }
@@ -39,15 +39,15 @@ std::tuple<FFprobeOutput, std::optional<std::wstring>> MediaTrack::ReadMediaInfo
         }
     }
     catch (const std::exception& ex) {
-		spdlog::error("Error in ReadMediaInfoFromJsonFile: ", ex.what());
+		spdlog::error("Error in ReadMetadataInfoFromFile: ", ex.what());
         //try
         //{
         //    auto mediaInfo = FFmpeg::GetFFprobeMetadataShell(mediaFilePath);
-        //    spdlog::info("Fixed by shell execution (ReadMediaInfoFromJsonFile-#2)");
+        //    spdlog::info("Fixed by shell execution (ReadMetadataInfoFromFile-#2)");
         //    return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJsonString(mediaInfo)));
         //}
         //catch (const std::exception& ex) {
-        //    spdlog::error("Error (ReadMediaInfoFromJsonFile-#2): ", ex.what());
+        //    spdlog::error("Error (ReadMetadataInfoFromFile-#2): ", ex.what());
         //}
     }
 

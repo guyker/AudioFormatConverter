@@ -230,7 +230,7 @@ namespace FFmpeg {
 
 
 
-    FFprobeOutput GetFFprobeMetadataAPI(const std::filesystem::path filePath)
+    FFprobeOutput GetFFprobeMetadataAPI(const std::filesystem::path filePath, const bool bIncludeAudioQualityMetrics)
     {
         // Initialize FFmpeg (not needed in newer versions, but safe to call)
         // av_register_all();
@@ -275,7 +275,7 @@ namespace FFmpeg {
         output.streams = FFmpeg::GetStreamInformation(fmt_ctx);
 
         // Audio Quality
-        if (AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics)
+        if (bIncludeAudioQualityMetrics)
         {
             output.audio_metrics = analyze_audio_metrics(fmt_ctx);
             output.audio_quality = *analyze_audio_recording(fmt_ctx);
