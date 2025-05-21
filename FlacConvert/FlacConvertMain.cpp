@@ -154,6 +154,7 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
 	AlbumCollection albumCollection;
 	std::shared_ptr<DirectoryContentEntryList> albumListPtr = std::make_shared<DirectoryContentEntryList>();
 
+	//load all albums from all JSON files
     for (auto& mediaEntry : mediaDirectoryList)
     {
         auto generator = mediaEntry.getMediaJsonPathCo(AppSettingsJson::AppSetting()->OutDirectory);
@@ -207,26 +208,28 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
                 }
             }
 
-            std::vector<FFprobeOutput> mediaInfoList1;
-            std::vector<FFprobeOutput> mediaInfoList2;
+            std::vector<MediaTrack> mediaInfoList1;
+            std::vector<MediaTrack> mediaInfoList2;
+            uintmax_t trackNumber = 0;
             for (auto& furure_ret : asyncFutureList1)
             {
                 auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
-                mediaInfoList1.push_back(mediaInfo_ret);
+                mediaInfoList1.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
             }
+            trackNumber = 0;
             for (auto& furure_ret : asyncFutureList2)
             {
                 auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
-                mediaInfoList2.push_back(mediaInfo_ret);
+                mediaInfoList2.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
             }
 
-			spdlog::info("==>Comparing \"{}\" vs \"{}\"", CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
+			spdlog::info("==>Comparing\nAlbum1: \"{}\"\nAlbum2: \"{}\"", CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
 
             bSimilarAudioMetrics = MediaTrack::CompareAudioTracks(mediaInfoList1, mediaInfoList2);
-            if (!bSimilarAudioMetrics)
+      //      if (!bSimilarAudioMetrics)
             {
                 auto reportStr = MediaTrack::GenerateComparisonReport(mediaInfoList1, mediaInfoList2);
-                spdlog::info("{}", reportStr);
+                spdlog::info("\n{}", reportStr);
             }
         }
         catch (const fs::filesystem_error& e) {

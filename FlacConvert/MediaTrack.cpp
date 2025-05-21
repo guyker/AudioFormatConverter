@@ -354,15 +354,15 @@ FFprobeOutput MediaTrack::ParseFFprobeInformation(std::wstring jsonString)
 }
 
 
-bool MediaTrack::CompareAudioTracks(const std::vector<FFprobeOutput>& mediaInfoList1, const std::vector<FFprobeOutput>& mediaInfoList2)
+bool MediaTrack::CompareAudioTracks(const std::vector<MediaTrack>& mediaInfoList1, const std::vector<MediaTrack>& mediaInfoList2)
 {
     bool bAllSame{ true };
 
     size_t minSize = std::min(mediaInfoList1.size(), mediaInfoList2.size());
 
     for (size_t i = 0; i < minSize; ++i) {
-        const auto& info1 = mediaInfoList1[i];
-        const auto& info2 = mediaInfoList2[i];
+        const auto& info1 = mediaInfoList1[i].formatInfo;
+        const auto& info2 = mediaInfoList2[i].formatInfo;
 
         //spdlog::info("Comparing Track #{}, \"{}\" vs \"{}\"", i + 1, info1.format.filename, info2.format.filename);
 
@@ -446,8 +446,8 @@ bool MediaTrack::CompareAudioTracks(const std::vector<FFprobeOutput>& mediaInfoL
 }
 
 std::string MediaTrack::GenerateComparisonReport(
-    const std::vector<FFprobeOutput>& mediaInfoList1,
-    const std::vector<FFprobeOutput>& mediaInfoList2)
+    const std::vector<MediaTrack>& mediaInfoList1,
+    const std::vector<MediaTrack>& mediaInfoList2)
 {
     std::ostringstream report;
     report << std::left << std::setw(30) << "Metric"
@@ -466,8 +466,8 @@ std::string MediaTrack::GenerateComparisonReport(
             continue;
         }
 
-        const auto& info1 = mediaInfoList1[i];
-        const auto& info2 = mediaInfoList2[i];
+        const auto& info1 = mediaInfoList1[i].formatInfo;
+        const auto& info2 = mediaInfoList2[i].formatInfo;
 
         if (!info1.audio_metrics.has_value() || !info2.audio_metrics.has_value()) {
             report << "  Missing audio metrics.\n\n";
