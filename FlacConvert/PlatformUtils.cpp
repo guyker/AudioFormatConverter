@@ -154,19 +154,51 @@ namespace PlatformUtils {
 #endif
     }
 
+
     void waitForKeyPress() {
+        printf("Press any key to continue...\n");
+        fflush(stdout); // Ensure prompt is displayed immediately
+
 #ifdef _WIN32
-        _getch(); // Windows: Use _getch
+#include <conio.h>
+        _getch(); // Windows: Use _getch for non-blocking key press
 #else
+#include <termios.h>
+#include <unistd.h>
         struct termios oldt, newt;
-        tcgetattr(STDIN_FILENO, &oldt);
+        // Get current terminal settings
+        if (tcgetattr(STDIN_FILENO, &oldt) != 0) {
+            fprintf(stderr, "Error: Failed to get terminal attributes\n");
+            return;
+        }
         newt = oldt;
+        // Disable canonical mode and echo
         newt.c_lflag &= ~(ICANON | ECHO);
-        tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-        getchar();
-        tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+        if (tcsetattr(STDIN_FILENO, TCSANOW, &newt) != 0) {
+            fprintf(stderr, "Error: Failed to set terminal attributes\n");
+            return;
+        }
+        getchar(); // Wait for a single key press
+        // Restore original terminal settings
+        if (tcsetattr(STDIN_FILENO, TCSANOW, &oldt) != 0) {
+            fprintf(stderr, "Error: Failed to restore terminal attributes\n");
+        }
 #endif
     }
+
+//    void waitForKeyPress() {
+//#ifdef _WIN32
+//        _getch(); // Windows: Use _getch
+//#else
+//        struct termios oldt, newt;
+//        tcgetattr(STDIN_FILENO, &oldt);
+//        newt = oldt;
+//        newt.c_lflag &= ~(ICANON | ECHO);
+//        tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+//        getchar();
+//        tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+//#endif
+//    }
 }
 
 

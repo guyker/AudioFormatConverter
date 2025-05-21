@@ -154,6 +154,7 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
 	AlbumCollection albumCollection;
 	std::shared_ptr<DirectoryContentEntryList> albumListPtr = std::make_shared<DirectoryContentEntryList>();
 
+    //Step 1
 	//load all albums from all JSON files
     for (auto& mediaEntry : mediaDirectoryList)
     {
@@ -176,10 +177,18 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
 
     }
 
+    //Step 2
+	//sort albums by track count, find duplicates in the collection
     spdlog::info("Finding duplicated albums...");
     albumCollection.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });
     auto dupList = albumCollection.FindDuplicateAlbums(albumListPtr);
 
+
+    std::vector<std::tuple<MediaAlbum, MediaAlbum>> similarAlbumList;
+
+
+	//Step 3
+	//compare audio quality of the duplicated albums
     auto iCount = dupList.size();
     spdlog::info("Found {} duplicated albums", iCount);
     int iCurrent = 0;
@@ -208,29 +217,36 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
                 }
             }
 
-            std::vector<MediaTrack> mediaInfoList1;
-            std::vector<MediaTrack> mediaInfoList2;
+         //   std::vector<MediaTrack> mediaInfoList1;
+         //   std::vector<MediaTrack> mediaInfoList2;
+			MediaAlbum mediaAlbum1;
+			MediaAlbum mediaAlbum2;
             uintmax_t trackNumber = 0;
             for (auto& furure_ret : asyncFutureList1)
             {
                 auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
-                mediaInfoList1.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
+				mediaAlbum1.trackList.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
+             //   mediaInfoList1.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
+
             }
             trackNumber = 0;
             for (auto& furure_ret : asyncFutureList2)
             {
                 auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
-                mediaInfoList2.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
+                mediaAlbum2.trackList.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
+                //   mediaInfoList2.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
             }
 
-			spdlog::info("==>Comparing\nAlbum1: \"{}\"\nAlbum2: \"{}\"", CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
+			similarAlbumList.push_back(std::make_tuple(mediaAlbum1, mediaAlbum2));
 
-            bSimilarAudioMetrics = MediaTrack::CompareAudioTracks(mediaInfoList1, mediaInfoList2);
-			spdlog::info("Audio quality matches: {}", bSimilarAudioMetrics ? "Similar metrics" : "Different quality");
+			spdlog::info("Comparing potentially duplicated slbums [{}/{}]:\n\tAlbum1: \"{}\"\n\tAlbum2: \"{}\"", 
+                iCurrent, iCount, CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
+
+            bSimilarAudioMetrics = MediaTrack::CompareAudioTracks(mediaAlbum1.trackList, mediaAlbum2.trackList);
+//			spdlog::info("Audio quality matches: {}", bSimilarAudioMetrics ? "Similar metrics" : "Different quality");
             if (!bSimilarAudioMetrics)
             {
-                auto reportStr = MediaTrack::GenerateComparisonReport(mediaInfoList1, mediaInfoList2);
-                spdlog::info("\n{}", reportStr);
+                spdlog::info("Audio Metrics:\n{}", MediaTrack::GenerateComparisonReport(mediaAlbum1.trackList, mediaAlbum2.trackList));
             }
         }
         catch (const fs::filesystem_error& e) {
@@ -239,8 +255,8 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
 
         if (!bSimilarAudioMetrics)
         {
-            std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir1) << std::endl;
-            std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir2) << std::endl << std::endl;
+            //std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir1) << std::endl;
+            //std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir2) << std::endl << std::endl;
 
             PlatformUtils::waitForKeyPress();
             PlatformUtils::OpenDirectoryInExplorer(dir1);

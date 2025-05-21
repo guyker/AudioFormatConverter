@@ -27,8 +27,6 @@ struct MediaAlbum
 {
 	std::filesystem::directory_entry path;
 	std::vector<MediaTrack> trackList;
-
-
 };
 
 using SimilarDirectoryEntryList = std::vector<std::tuple <std::wstring, std::wstring>>;
