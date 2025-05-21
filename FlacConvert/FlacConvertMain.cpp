@@ -226,7 +226,8 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
 			spdlog::info("==>Comparing\nAlbum1: \"{}\"\nAlbum2: \"{}\"", CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
 
             bSimilarAudioMetrics = MediaTrack::CompareAudioTracks(mediaInfoList1, mediaInfoList2);
-      //      if (!bSimilarAudioMetrics)
+			spdlog::info("Audio quality matches: {}", bSimilarAudioMetrics ? "Similar metrics" : "Different quality");
+            if (!bSimilarAudioMetrics)
             {
                 auto reportStr = MediaTrack::GenerateComparisonReport(mediaInfoList1, mediaInfoList2);
                 spdlog::info("\n{}", reportStr);
