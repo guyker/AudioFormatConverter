@@ -13,5 +13,5 @@ namespace PlatformUtils {
 	void OpenDirectoryInExplorer(std::wstring dirName);
 	void OpenDirectory(const std::filesystem::path& path);
 
-	void waitForKeyPress();
+	int waitForKeyPress(std::string message);
 }

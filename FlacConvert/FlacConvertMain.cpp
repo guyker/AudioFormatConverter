@@ -233,7 +233,7 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
             trackNumber = 0;
             for (auto& furure_ret : asyncFutureList2)
             {
-                auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
+                auto [  mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
                 mediaAlbum2.trackList.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
                 //   mediaInfoList2.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
             }
@@ -249,22 +249,27 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
             {
                 spdlog::info("Audio Metrics:\n{}", MediaTrack::GenerateComparisonReport(mediaAlbum1.trackList, mediaAlbum2.trackList));
             }
+
+
+          //  if (!bSimilarAudioMetrics)
+            {
+                //std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir1) << std::endl;
+                //std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir2) << std::endl << std::endl;
+
+                int retKey = PlatformUtils::waitForKeyPress("<<Press 'Y' to open Albums location>>");
+                //if (!(retKey == 27 || retKey == 'n' || retKey == 'N')) // or "N" ESC key
+                if (retKey == 'y' || retKey == 'Y')
+                {
+                    PlatformUtils::OpenDirectoryInExplorer(dir1);
+                    PlatformUtils::OpenDirectoryInExplorer(dir2);
+                }
+            }
+
+            iCount--;
         }
         catch (const fs::filesystem_error& e) {
             spdlog::error("Error getting track information: {}", e.what());
         }
-
-        if (!bSimilarAudioMetrics)
-        {
-            //std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir1) << std::endl;
-            //std::wcout << std::format(L"[{}/{}] - {}", iCurrent, iCount, dir2) << std::endl << std::endl;
-
-            PlatformUtils::waitForKeyPress();
-            PlatformUtils::OpenDirectoryInExplorer(dir1);
-            PlatformUtils::OpenDirectoryInExplorer(dir2);
-        }
-
-        iCount--;
     }
 
     return 0;
