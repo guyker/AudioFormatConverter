@@ -91,7 +91,7 @@ int ConvertFLACToFLAC(std::vector<MediaDirectoryElement> mediaDirectoryList)
 }
 
 
-int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryList)
+int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryList, bool bIncludeMetadata)
 {
     //auto logger = spdlog::get("console");
     //if (!logger) {
@@ -108,6 +108,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         AlbumCollection ac;
 
         try {
+			// Check if the precious json files exist, and delete them
             auto generator = mediaEntry.getMediaJsonPathCo(AppSettingsJson::AppSetting()->OutDirectory);
             while (generator.resume()) {
                 std::error_code ec;
@@ -118,7 +119,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 
             // Load albums in batches
             int count = 0;
-            for (auto albumListPtr : ac.LoadAlbumsCo(mediaEntry.mediaPath, true, AppSettingsJson::AppSetting()->AlbumsSplitThreshold)) {
+            for (auto albumListPtr : ac.LoadAlbumsCo(mediaEntry.mediaPath, bIncludeMetadata, AppSettingsJson::AppSetting()->AlbumsSplitThreshold)) {
                 spdlog::info("Received batch with {} albums", albumListPtr->size());
                 ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } }); // sort - optional
                 ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(AppSettingsJson::AppSetting()->OutDirectory, ++count)); // save to json
@@ -432,7 +433,7 @@ int main()
         break;
 
     case ConvertActionEnum::CreateJSONEnum: //2
-        ScanFolderAndCreateJSON(mediaList);
+        ScanFolderAndCreateJSON(mediaList, true);
         break;
 
 	case ConvertActionEnum::ProcessJSONEnum: //3
