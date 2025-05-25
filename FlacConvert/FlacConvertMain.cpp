@@ -240,21 +240,30 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
 
 			similarAlbumList.push_back(std::make_tuple(mediaAlbum1, mediaAlbum2));
 
-			spdlog::info("Comparing potentially duplicated slbums [{}/{}]:\n\tAlbum1: \"{}\"\n\tAlbum2: \"{}\"", 
-                iCurrent, iCount, CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
-
             bSimilarAudioMetrics = MediaTrack::CompareAudioTracks(mediaAlbum1.trackList, mediaAlbum2.trackList);
 //			spdlog::info("Audio quality matches: {}", bSimilarAudioMetrics ? "Similar metrics" : "Different quality");
 
+            spdlog::info("Comparing potentially duplicated albums [{}/{}]:\n\tAlbum1: \"{}\"\n\tAlbum2: \"{}\"",
+                iCurrent, iCount, CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
+
+
+			//Print album size check
+            bool btime_different = false;
 			std::string albumCheckStr = "Album size check (album1/2): ";
-			for (int i = 0; i < mediaAlbum1.trackList.size(); i++)            
+			for (size_t i = 0; i < mediaAlbum1.trackList.size(); i++)            
 			{
-				auto tSize1 = mediaAlbum1.trackList[i].formatInfo.format.file_size.value_or(-1);
-				auto tSize2 = mediaAlbum2.trackList[i].formatInfo.format.file_size.value_or(-1);
-                albumCheckStr += std::to_string(i + 1) + ": " + std::to_string(tSize1) + "/" + std::to_string(tSize2) + " [" + std::to_string(tSize2 - tSize1) + "]" + " ";
+				const auto tSize1 = mediaAlbum1.trackList[i].formatInfo.format.file_size.value_or(-1);
+				const auto tSize2 = mediaAlbum2.trackList[i].formatInfo.format.file_size.value_or(-1);
+                if (tSize1 != tSize2)
+                {
+                    albumCheckStr += std::to_string(i + 1) + ": " + std::to_string(tSize1) + "/" + std::to_string(tSize2) + " [" + std::to_string(tSize2 - tSize1) + "]" + " ";
+					btime_different = true;
+                }
 			}
-			albumCheckStr += "\n";
-			spdlog::info(albumCheckStr);
+            if (btime_different)
+            {
+                spdlog::info(albumCheckStr);
+            }
 
             if (!bSimilarAudioMetrics)
             {
