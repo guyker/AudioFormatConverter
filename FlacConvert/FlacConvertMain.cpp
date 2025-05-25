@@ -243,31 +243,36 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
             bSimilarAudioMetrics = MediaTrack::CompareAudioTracks(mediaAlbum1.trackList, mediaAlbum2.trackList);
 //			spdlog::info("Audio quality matches: {}", bSimilarAudioMetrics ? "Similar metrics" : "Different quality");
 
-            spdlog::info("Comparing potentially duplicated albums [{}/{}]:\n\tAlbum1: \"{}\"\n\tAlbum2: \"{}\"",
-                iCurrent, iCount, CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
-
-
-			//Print album size check
-            bool btime_different = false;
-			std::string albumCheckStr = "Album size check (album1/2): ";
-			for (size_t i = 0; i < mediaAlbum1.trackList.size(); i++)            
-			{
-				const auto tSize1 = mediaAlbum1.trackList[i].formatInfo.format.file_size.value_or(-1);
-				const auto tSize2 = mediaAlbum2.trackList[i].formatInfo.format.file_size.value_or(-1);
-                if (tSize1 != tSize2)
-                {
-                    albumCheckStr += std::to_string(i + 1) + ": " + std::to_string(tSize1) + "/" + std::to_string(tSize2) + " [" + std::to_string(tSize2 - tSize1) + "]" + " ";
-					btime_different = true;
-                }
-			}
-            if (btime_different)
-            {
-                spdlog::info(albumCheckStr);
-            }
-
             if (!bSimilarAudioMetrics)
             {
                 spdlog::info("Audio Metrics:\n{}", MediaTrack::GenerateComparisonReport(mediaAlbum1.trackList, mediaAlbum2.trackList));
+            }
+
+            spdlog::info("Potentially duplicated albums [{}/{}]:\n\tAlbum1: \"{}\"\n\tAlbum2: \"{}\"",
+                iCurrent, iCount, CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
+
+			//Print album size check
+            bool btime_different = false;
+            std::ostringstream oss;
+            oss << "Album size check (album1/2): ";
+
+            for (size_t i = 0; i < mediaAlbum1.trackList.size(); i++) {
+                const auto tSize1 = mediaAlbum1.trackList[i].formatInfo.format.duration.value_or(-1);
+                const auto tSize2 = mediaAlbum2.trackList[i].formatInfo.format.duration.value_or(-1);
+
+                // Format with 2 decimal places
+                if (tSize1 != tSize2)
+                {
+                    oss << std::fixed << std::setprecision(2);
+                    oss << (i + 1) << ": " << tSize1 << "/" << tSize2
+                        << " [" << (tSize2 - tSize1) << "] ";
+
+                    btime_different = true; // You can re-add the conditional check if needed
+                }
+            }
+
+            if (btime_different) {
+                spdlog::info(oss.str());
             }
 
 
