@@ -245,6 +245,17 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
 
             bSimilarAudioMetrics = MediaTrack::CompareAudioTracks(mediaAlbum1.trackList, mediaAlbum2.trackList);
 //			spdlog::info("Audio quality matches: {}", bSimilarAudioMetrics ? "Similar metrics" : "Different quality");
+
+			std::string albumCheckStr = "Album size check (album1/2): ";
+			for (int i = 0; i < mediaAlbum1.trackList.size(); i++)            
+			{
+				auto tSize1 = mediaAlbum1.trackList[i].formatInfo.format.file_size.value_or(-1);
+				auto tSize2 = mediaAlbum2.trackList[i].formatInfo.format.file_size.value_or(-1);
+                albumCheckStr += std::to_string(i + 1) + ": " + std::to_string(tSize1) + "/" + std::to_string(tSize2) + " [" + std::to_string(tSize2 - tSize1) + "]" + " ";
+			}
+			albumCheckStr += "\n";
+			spdlog::info(albumCheckStr);
+
             if (!bSimilarAudioMetrics)
             {
                 spdlog::info("Audio Metrics:\n{}", MediaTrack::GenerateComparisonReport(mediaAlbum1.trackList, mediaAlbum2.trackList));
