@@ -1,0 +1,93 @@
+{
+    "tasks": [
+        {
+            "label": "Pre-Build: Ensure obj folder exists",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-Command",
+                "if (!(Test-Path -Path '${workspaceFolder}/obj')) { New-Item -ItemType Directory -Path '${workspaceFolder}/obj' }"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "Build FFmpegWrapper",
+            "type": "shell",
+            "dependsOn": ["Pre-Build: Ensure obj folder exists"],
+            "command": "C:/ProgramData/mingw64/mingw64/bin/g++.exe",
+            "args": [
+                "-c",
+                "${workspaceFolder}/FFmpegWrapper.cpp",
+                "-o",
+                "${workspaceFolder}/obj/FFmpegWrapper.o",
+                "-I${workspaceFolder}/../external/ffmpeg/include",
+                "-I${workspaceFolder}/../external/spdlog/include",
+                "-std=c++20",
+                "-DUNICODE",
+                "-D_UNICODE",
+                "-g"
+            ],
+            "problemMatcher": ["$gcc"],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        },
+        {
+            "label": "Build SQLite",
+            "type": "shell",
+            "dependsOn": ["Pre-Build: Ensure obj folder exists"],
+            "command": "C:/ProgramData/mingw64/mingw64/bin/gcc.exe",
+            "args": [
+                "-c",
+                "${workspaceFolder}/sqlite3.c",
+                "-o",
+                "${workspaceFolder}/obj/sqlite3.o"
+            ],
+            "problemMatcher": ["$gcc"],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        },
+        {
+            "label": "Build Main",
+            "type": "shell",
+            "dependsOn": ["Build FFmpegWrapper", "Build SQLite"],
+            "command": "C:/ProgramData/mingw64/mingw64/bin/g++.exe",
+            "args": [
+                "-std=c++20",
+                "-DUNICODE",
+                "-D_UNICODE",
+                "${workspaceFolder}/*.cpp",
+                "${workspaceFolder}/obj/FFmpegWrapper.o",
+                "${workspaceFolder}/obj/sqlite3.o",
+                "-L${workspaceFolder}/../external/ffmpeg/lib",
+                "-lavformat",
+                "-lavcodec",
+                "-lavutil",
+                "-lswresample",
+                "-lswscale",
+                "-lavfilter",
+                "-lwinmm",
+                "-lbcrypt",
+                "-lz",
+                "-lm",
+                "-lpsapi",
+                "-lole32",
+                "-loleaut32",
+                "-luuid",
+                "-lstdc++fs",
+                "-lshell32",
+                "-o",
+                "${fileDirname}/RunMe_FLAC.exe"
+            ],
+            "problemMatcher": ["$gcc"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ],
+    "version": "2.0.0"
+}
