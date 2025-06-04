@@ -16,6 +16,7 @@
 #include <forward_list>
 #include <iterator>
 #include <vector>
+#include <list>
 
 #include <fstream> 
 #include <iostream> 

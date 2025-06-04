@@ -30,7 +30,7 @@
 #include "CommonUtils.h"
 #include "FFmpeg.h"
 
-#include "SQLite/sqlite-amalgamation/sqlite3.h"
+#include "SQLite/libgcc/sqlite3.h"
 
 
 namespace fs = std::filesystem;
@@ -811,7 +811,7 @@ int compareLex(const std::wstring& a, const std::wstring& b) {
 
 //-------------COMPARE
 
-bool CompareTags(std::vector<MediaTrack>& tList1, std::vector<MediaTrack>& tList2, const std::string tagName)
+bool CompareTags(const std::vector<MediaTrack>& tList1, const std::vector<MediaTrack>& tList2, std::string tagName)
 {
     if (!(tList1.size() > 0 && tList2.size() > 0))
     {
@@ -880,9 +880,9 @@ bool CompareTags(std::vector<MediaTrack>& tList1, std::vector<MediaTrack>& tList
 void AlbumCollection::SortAlbums(std::shared_ptr<std::vector<MediaAlbum>> albumListPtr,
                                  const std::vector<std::pair<SortBy, bool>>& criteria)
 {
-    std::ranges::stable_sort(*albumListPtr, [&criteria](auto& a, auto& b) {
-        const auto& [dirEntryA, tracksA] = a;
-        const auto& [dirEntryB, tracksB] = b;
+    std::ranges::stable_sort(*albumListPtr, [&criteria](const MediaAlbum& a, const MediaAlbum& b) {
+        auto& [dirEntryA, tracksA] = a;
+        auto& [dirEntryB, tracksB] = b;
 
         int result = 0;
         for (const auto& [criterion, ascending] : criteria) {

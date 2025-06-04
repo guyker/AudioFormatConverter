@@ -21,7 +21,7 @@
 #include "rapidjson/ostreamwrapper.h"
 
 #include "MediaInformation.h"
-#include "SQLite/sqlite-amalgamation/sqlite3.h"
+#include "SQLite/libgcc/sqlite3.h"
 
 namespace fs = std::filesystem;
 

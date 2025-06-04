@@ -121,8 +121,8 @@ namespace PlatformUtils {
 
         try {
             //   _wsystem(commandW.c_str());
-
-            ShellExecute(NULL, NULL, dirNameConv2.c_str(), NULL, NULL, SW_SHOWNORMAL);
+            LPCWSTR lpWideStr = dirNameConv2.c_str(); // Direct conversion
+            ShellExecuteW(NULL, L"open", lpWideStr, NULL, NULL, SW_SHOWNORMAL);
 
         }
         catch (const std::exception& ex) {

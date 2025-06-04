@@ -11,6 +11,7 @@
 #include <regex>
 #include <cmath>
 
+
 namespace FFmpeg {
 
     // Global log storage (thread-safe)
@@ -163,7 +164,7 @@ namespace FFmpeg {
         ffmpeg_logs.clear();
     }
 
-    std::list<MediaTrack> ffmpeg_LasrErrorList;
+    std::vector<MediaTrack> ffmpeg_LasrErrorList;
 
 
 
@@ -487,7 +488,7 @@ namespace FFmpeg {
         // Calculate results
         info->peak_amplitude = max_amp;
         info->rms_amplitude = total > 0 ? std::sqrt(sum_squares / total) : 0.0f;
-        info->dynamic_range_db = 20.0f * std::log10f((max_amp + 1e-9f) / (min_amp + 1e-9f));
+        info->dynamic_range_db = 20.0f * std::log10((max_amp + 1e-9f) / (min_amp + 1e-9f));
         info->clipped_samples = static_cast<int>(clipped);
         info->total_samples = static_cast<int>(total);
 
