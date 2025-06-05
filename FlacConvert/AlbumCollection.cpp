@@ -30,7 +30,7 @@
 #include "CommonUtils.h"
 #include "FFmpeg.h"
 
-#include "SQLite/libgcc/sqlite3.h"
+#include "sqlite3.h"
 
 
 namespace fs = std::filesystem;
