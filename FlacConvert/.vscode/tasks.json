@@ -1,6 +1,19 @@
 {
     "tasks": [
         {
+            "label": "Download FFmpeg",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+              "-ExecutionPolicy",
+              "Bypass",
+              "-NoProfile",
+              "-Command",
+              "Invoke-WebRequest -Uri 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl-shared.zip' -OutFile \"$env:TEMP\\ffmpeg.zip\"; Expand-Archive -Path \"$env:TEMP\\ffmpeg.zip\" -DestinationPath 'C:\\dev\\POC-DEV\\AudioFormatConverter\\external\\ffmpeg' -Force; Remove-Item \"$env:TEMP\\ffmpeg.zip\""
+            ],
+            "problemMatcher": []
+          },
+        {
             "label": "Pre-Build: Ensure obj folder exists",
             "type": "shell",
             "command": "powershell",
@@ -17,7 +30,7 @@
             "command": "C:/ProgramData/mingw64/mingw64/bin/gcc.exe",
             "args": [
                 "-c",
-                "${workspaceFolder}/../external-modules/sqlite-amalgamation/sqlite3.c",        // Compile root .cpp files
+                "${workspaceFolder}/../external/sqlite-amalgamation/sqlite3.c",        // Compile root .cpp files
                 "-o",
                 "${workspaceFolder}/obj/sqlite3.o"
             ],
@@ -54,12 +67,12 @@
                 "-std=c++20",                
                 "-Iinclude",
                 "-I.",
-                "-I${workspaceFolder}/../external-submodules/spdlog/include",
-                "-I${workspaceFolder}/../external-modules/sqlite-amalgamation",
-                "-I${workspaceFolder}/../external-modules/ffmpeg-master-latest-win64-gpl-shared/include",
+                "-I${workspaceFolder}/../external/spdlog/include",
+                "-I${workspaceFolder}/../external/sqlite-amalgamation",
+                "-I${workspaceFolder}/../external/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/include",
                 "-g",
                 "${workspaceFolder}/*.cpp",        // Compile root .cpp files
-                "-L${workspaceFolder}/../external-modules/ffmpeg-master-latest-win64-gpl-shared/lib",
+                "-L${workspaceFolder}/../external/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/lib",
                 "${workspaceFolder}/obj/sqlite3.o",                
                 "-lavformat",
                 "-lavcodec",
