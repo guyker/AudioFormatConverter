@@ -19,7 +19,7 @@
             "command": "powershell",
             "args": [
                 "-Command",
-                "if (!(Test-Path -Path '${workspaceFolder}/obj')) { New-Item -ItemType Directory -Path '${workspaceFolder}/obj' }"
+                "if (!(Test-Path -Path '${workspaceFolder}/../external/obj')) { New-Item -ItemType Directory -Path '${workspaceFolder}/../external/obj' }"
             ],
             "problemMatcher": []
         },
@@ -32,7 +32,7 @@
                 "-c",
                 "${workspaceFolder}/../external/sqlite-amalgamation/sqlite3.c",        // Compile root .cpp files
                 "-o",
-                "${workspaceFolder}/obj/sqlite3.o"
+                "${workspaceFolder}/../external/obj/sqlite3.o"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"            },
@@ -73,7 +73,7 @@
                 "-g",
                 "${workspaceFolder}/*.cpp",        // Compile root .cpp files
                 "-L${workspaceFolder}/../external/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/lib",
-                "${workspaceFolder}/obj/sqlite3.o",                
+                "${workspaceFolder}/../external/obj/sqlite3.o",                
                 "-lavformat",
                 "-lavcodec",
                 "-lavutil",
@@ -97,7 +97,7 @@
 //                "${workspaceFolder}/*.cpp",        // Compile root .cpp files
                 //"${workspaceFolder}/src/*.cpp",    // Compile all .cpp in src
                 "-o",
-                "${fileDirname}\\RunMe_FLAC.exe"
+                "${workspaceFolder}../RunMe_FLAC_Convert.exe"
 //                "${fileDirname}\\${fileBasenameNoExtension}.exe"
             ],
             "options": {
