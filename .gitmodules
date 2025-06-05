@@ -1,9 +1,3 @@
 [submodule "external/spdlog"]
 	path = external/spdlog
 	url = https://github.com/gabime/spdlog.git
-[submodule "extern/libebur128"]
-	path = extern/libebur128
-	url = https://github.com/jiixyj/libebur128.git
-[submodule "libebur128"]
-	path = libebur128
-	url = C:\\Users\\allke\\source\\AudioFormatConverter\\extern\\libebur128
