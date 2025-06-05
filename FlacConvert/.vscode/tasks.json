@@ -17,7 +17,7 @@
             "command": "C:/ProgramData/mingw64/mingw64/bin/gcc.exe",
             "args": [
                 "-c",
-                "${workspaceFolder}/sqlite3.c",        // Compile root .cpp files
+                "${workspaceFolder}/../external-modules/sqlite-amalgamation/sqlite3.c",        // Compile root .cpp files
                 "-o",
                 "${workspaceFolder}/obj/sqlite3.o"
             ],
@@ -54,12 +54,13 @@
                 "-std=c++20",                
                 "-Iinclude",
                 "-I.",
-                "-I${workspaceFolder}/../external/spdlog/include",     // <-- Add more with -I
-                "-I${workspaceFolder}/../external/ffmpeg/include",     // <-- Add more with -I
+                "-I${workspaceFolder}/../external-submodules/spdlog/include",
+                "-I${workspaceFolder}/../external-modules/sqlite-amalgamation",
+                "-I${workspaceFolder}/../external-modules/ffmpeg-master-latest-win64-gpl-shared/include",
                 "-g",
                 "${workspaceFolder}/*.cpp",        // Compile root .cpp files
-                "-L${workspaceFolder}/../external/ffmpeg/lib",
-    "${workspaceFolder}/obj/sqlite3.o",                
+                "-L${workspaceFolder}/../external-modules/ffmpeg-master-latest-win64-gpl-shared/lib",
+                "${workspaceFolder}/obj/sqlite3.o",                
                 "-lavformat",
                 "-lavcodec",
                 "-lavutil",
