@@ -150,6 +150,118 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 
 
 
+
+
+// Case-insensitive comparator (from your previous context)
+struct CaseInsensitiveCompare {
+    bool operator()(const std::string& lhs, const std::string& rhs) const {
+        return std::lexicographical_compare(
+            lhs.begin(), lhs.end(), rhs.begin(), rhs.end(),
+            [](char a, char b) { return std::tolower(a) < std::tolower(b); }
+        );
+    }
+};
+
+// Lexicographical comparison (adapted from your wstring compareLex)
+int compareLex2(const std::string& a, const std::string& b) {
+    std::size_t n = std::min(a.size(), b.size());
+    for (std::size_t i = 0; i < n; ++i) {
+        unsigned char ca = static_cast<unsigned char>(a[i]);
+        unsigned char cb = static_cast<unsigned char>(b[i]);
+        if (ca < cb) return -1;
+        else if (ca > cb) return 1;
+    }
+    if (a.size() < b.size()) return -1;
+    if (a.size() > b.size()) return 1;
+    return 0;
+}
+
+
+// Function to compare and print two Tags objects in a table
+std::string compareAndPrintTagsTable(const JsonUtils::Tags& tags1, const JsonUtils::Tags& tags2) {
+    std::ostringstream oss;
+
+    // Collect all unique keys
+    std::vector<std::string> allKeys;
+    for (const auto& [key, _] : tags1) allKeys.push_back(key);
+    for (const auto& [key, _] : tags2) {
+        if (!tags1.contains(key)) allKeys.push_back(key);
+    }
+    std::ranges::sort(allKeys, [](const auto& a, const auto& b) { return compareLex2(a, b) < 0; });
+    allKeys.erase(std::unique(allKeys.begin(), allKeys.end()), allKeys.end());
+
+    // Determine column widths
+    constexpr size_t keyWidth = 25;    // Increased for long tag names
+    constexpr size_t valueWidth = 40;  // Increased for long values
+    constexpr size_t statusWidth = 15;
+    const std::string separator = std::string(keyWidth + valueWidth * 2 + statusWidth + 7, '-');
+
+    // Print table header
+    auto printHeader = [&](std::ostream& os) {
+        os << std::left
+            << std::setw(keyWidth) << "Key"
+            << " | " << std::setw(valueWidth) << "Tags 1 Value"
+            << " | " << std::setw(valueWidth) << "Tags 2 Value"
+            << " | " << std::setw(statusWidth) << "Status" << "\n";
+        os << separator << "\n";
+        };
+    printHeader(std::cout);
+    printHeader(oss);
+
+    // Print table rows
+    bool hasDifferences = false;
+    for (const auto& key : allKeys) {
+        auto it1 = tags1.find(key);
+        auto it2 = tags2.find(key);
+
+        std::string value1 = it1 != tags1.end() ? it1->second : "-";
+        std::string value2 = it2 != tags2.end() ? it2->second : "-";
+        std::string status;
+
+        if (it1 != tags1.end() && it2 != tags2.end()) {
+            if (it1->second == it2->second) {
+                status = "Same";
+            }
+            else {
+                status = "Different";
+                hasDifferences = true;
+            }
+        }
+        else if (it1 != tags1.end()) {
+            status = "Only in Tags1";
+            hasDifferences = true;
+        }
+        else {
+            status = "Only in Tags2";
+            hasDifferences = true;
+        }
+
+        // Truncate long values for display
+        if (value1.length() > valueWidth - 2) value1 = value1.substr(0, valueWidth - 5) + "...";
+        if (value2.length() > valueWidth - 2) value2 = value2.substr(0, valueWidth - 5) + "...";
+
+        auto printRow = [&](std::ostream& os) {
+            os << std::left
+                << std::setw(keyWidth) << key
+                << " | " << std::setw(valueWidth) << value1
+                << " | " << std::setw(valueWidth) << value2
+                << " | " << std::setw(statusWidth) << status << "\n";
+            };
+        printRow(std::cout);
+        printRow(oss);
+    }
+
+    // Footer
+    auto printFooter = [&](std::ostream& os) {
+        os << separator << "\n";
+        os << (hasDifferences ? "Differences found\n" : "No differences found\n");
+        };
+    printFooter(std::cout);
+    printFooter(oss);
+
+    return oss.str();
+}
+
 int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> mediaDirectoryList)
 {
 	AlbumCollection albumCollection;
@@ -248,13 +360,16 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
                 spdlog::info("Audio Metrics:\n{}", MediaTrack::GenerateComparisonReport(mediaAlbum1.trackList, mediaAlbum2.trackList));
             }
 
-            spdlog::info("Potentially duplicated albums [{}/{}]:\n\tAlbum1: \"{}\"\n\tAlbum2: \"{}\"",
-                iCurrent, iCount, CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
 
 			//Print album size check
             bool btime_different = false;
             std::ostringstream oss;
             oss << "Album size check (album1/2): ";
+
+
+			auto tagCompareResult = std::string{"N/A"};
+            std::string encoder1{};
+            std::string encoder2{};
 
             for (size_t i = 0; i < mediaAlbum1.trackList.size(); i++) {
                 const auto tSize1 = mediaAlbum1.trackList[i].formatInfo.format.duration.value_or(-1);
@@ -264,8 +379,19 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
                 if (tSize1 != tSize2)
                 {
                     oss << std::fixed << std::setprecision(2);
-                    oss << (i + 1) << ": " << tSize1 << "/" << tSize2
-                        << " [" << (tSize2 - tSize1) << "] ";
+                    oss << (i + 1) << ": " << tSize1 << "/" << tSize2 << " [" << (tSize2 - tSize1) << "] ";
+
+                    auto tags1 = mediaAlbum1.trackList[i].formatInfo.format.tags.value_or(JsonUtils::Tags{});
+                    auto tags2 = mediaAlbum2.trackList[i].formatInfo.format.tags.value_or(JsonUtils::Tags{});
+
+					tagCompareResult = compareAndPrintTagsTable(tags1, tags2);
+
+                    if (encoder1.empty() && tags1.contains("encoder")) {
+                        encoder1 = tags1.at("encoder");
+                    }
+                    if (encoder2.empty() && tags2.contains("encoder")) {
+                        encoder2 = tags2.at("encoder");
+                    }
 
                     btime_different = true; // You can re-add the conditional check if needed
                 }
@@ -274,7 +400,13 @@ int ScanFolderProcessJSONAndFindDuplicates(std::vector<MediaDirectoryElement> me
             if (btime_different) {
                 spdlog::info(oss.str());
             }
+            
+            spdlog::info("encoder1: {} encoder1: {}", encoder1.c_str(), encoder2.c_str());
 
+            spdlog::info("Potentially duplicated albums [{}/{}]:\n\tAlbum1: \"{}\"\n\tAlbum2: \"{}\"",
+                iCurrent, dupList.size(), CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
+
+		//	spdlog::info("{}", tagCompareResult.c_str());
 
           //  if (!bSimilarAudioMetrics)
             {

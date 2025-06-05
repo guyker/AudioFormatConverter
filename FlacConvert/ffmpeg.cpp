@@ -87,7 +87,7 @@ namespace FFmpeg {
 
             try
             {
-                if (fmt_ctx->streams == 0x0000000000000000 || fmt_ctx->iformat == nullptr || fmt_ctx->url == (char*)0x0000000100000000) // this is a workaround for the ffmpeg crash when accessing fmt_ctx->url or other null value
+                if (fmt_ctx->streams == 0x0000000000000000 || fmt_ctx->iformat == nullptr || fmt_ctx->url == (char*)0x0000000100000000 || (long)fmt_ctx->url < 0x0000000000009275) // this is a workaround for the ffmpeg crash when accessing fmt_ctx->url or other null value
                 {
                     context = "N/A - 0x0000000100000000";
                 }
