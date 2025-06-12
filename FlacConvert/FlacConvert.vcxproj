@@ -163,6 +163,7 @@
     </CopyFileToFolders>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\external\sqlite-amalgamation\sqlite3.c" />
     <ClCompile Include="src\AlbumCollection.cpp" />
     <ClCompile Include="src\AppSettings.cpp" />
     <ClCompile Include="src\CommonUtils.cpp" />

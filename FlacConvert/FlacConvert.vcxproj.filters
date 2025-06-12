@@ -16,6 +16,12 @@
     <Filter Include="Resources">
       <UniqueIdentifier>{438d22aa-84e6-40dc-84cc-40b034c2db7b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\external">
+      <UniqueIdentifier>{75611283-78fb-438a-b0d5-c53ca3c43309}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\external\sqlite">
+      <UniqueIdentifier>{6792c884-8d57-4a43-8dfc-c319ec84067b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="config.json">
@@ -58,6 +64,9 @@
     </ClCompile>
     <ClCompile Include="src\PlatformUtils.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\external\sqlite-amalgamation\sqlite3.c">
+      <Filter>Source Files\external\sqlite</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
