@@ -120,14 +120,14 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>..\external\spdlog\include;..\..\ffmpeg-master-latest-win64-gpl-shared\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\external\sqlite-amalgamation;$(ProjectDir)include;$(ProjectDir)..\external\spdlog\include;$(ProjectDir)..\external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>..\..\ffmpeg-master-latest-win64-gpl-shared\lib;SQLite\lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>sqlite3.lib;avformat.lib;avcodec.lib;avfilter.lib;avutil.lib;swresample.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\dev\POC-DEV\AudioFormatConverter\external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\lib;$(ProjectDir)..\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>avformat.lib;avcodec.lib;avfilter.lib;avutil.lib;swresample.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -138,7 +138,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>..\external\spdlog\include;..\..\ffmpeg-master-latest-win64-gpl-shared\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\external\sqlite-amalgamation;$(ProjectDir)include;$(ProjectDir)..\external\spdlog\include;$(ProjectDir)..\external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 </AdditionalOptions>
     </ClCompile>
@@ -147,39 +147,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>sqlite3.lib;avformat.lib;avcodec.lib;avfilter.lib;avutil.lib;swresample.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>..\..\ffmpeg-master-latest-win64-gpl-shared\lib;SQLite\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>avformat.lib;avcodec.lib;avfilter.lib;avutil.lib;swresample.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\dev\POC-DEV\AudioFormatConverter\external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\lib;$(ProjectDir)..\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\lib</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClCompile Include="AlbumCollection.cpp" />
-    <ClCompile Include="AppSettings.cpp" />
-    <ClCompile Include="CommonUtils.cpp" />
-    <ClCompile Include="FFmpeg.cpp" />
-    <ClCompile Include="FlacConvertMain.cpp" />
-    <ClCompile Include="FolderConvert.cpp" />
-    <ClCompile Include="JsonUtils.cpp" />
-    <ClCompile Include="MediaAlbum.cpp" />
-    <ClCompile Include="MediaConvertionAsyncTask.cpp" />
-    <ClCompile Include="MediaConvertionTask.cpp" />
-    <ClCompile Include="MediaTrack.cpp" />
-    <ClCompile Include="PlatformUtils.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="AlbumCollection.h" />
-    <ClInclude Include="AppSettings.h" />
-    <ClInclude Include="CommonUtils.h" />
-    <ClInclude Include="FFmpeg.h" />
-    <ClInclude Include="FFmpegWrapper.h" />
-    <ClInclude Include="FolderConvert.h" />
-    <ClInclude Include="JsonUtils.h" />
-    <ClInclude Include="MediaAlbum.h" />
-    <ClInclude Include="MediaConvertionAsyncTask.h" />
-    <ClInclude Include="MediaConvertionTask.h" />
-    <ClInclude Include="MediaInformation.h" />
-    <ClInclude Include="MediaTrack.h" />
-    <ClInclude Include="PlatformUtils.h" />
-  </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="config.json">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -190,6 +161,35 @@
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</DeploymentContent>
       <FileType>Document</FileType>
     </CopyFileToFolders>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\AlbumCollection.cpp" />
+    <ClCompile Include="src\AppSettings.cpp" />
+    <ClCompile Include="src\CommonUtils.cpp" />
+    <ClCompile Include="src\ffmpeg.cpp" />
+    <ClCompile Include="src\FlacConvertMain.cpp" />
+    <ClCompile Include="src\FolderConvert.cpp" />
+    <ClCompile Include="src\JsonUtils.cpp" />
+    <ClCompile Include="src\MediaAlbum.cpp" />
+    <ClCompile Include="src\MediaConvertionAsyncTask.cpp" />
+    <ClCompile Include="src\MediaConvertionTask.cpp" />
+    <ClCompile Include="src\MediaTrack.cpp" />
+    <ClCompile Include="src\PlatformUtils.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\AlbumCollection.h" />
+    <ClInclude Include="include\AppSettings.h" />
+    <ClInclude Include="include\CommonUtils.h" />
+    <ClInclude Include="include\ffmpeg.h" />
+    <ClInclude Include="include\FFmpegWrapper.h" />
+    <ClInclude Include="include\FolderConvert.h" />
+    <ClInclude Include="include\JsonUtils.h" />
+    <ClInclude Include="include\MediaAlbum.h" />
+    <ClInclude Include="include\MediaConvertionAsyncTask.h" />
+    <ClInclude Include="include\MediaConvertionTask.h" />
+    <ClInclude Include="include\MediaInformation.h" />
+    <ClInclude Include="include\MediaTrack.h" />
+    <ClInclude Include="include\PlatformUtils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
