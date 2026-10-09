@@ -213,9 +213,10 @@ namespace CommonUtils {
         std::error_code ec;
 
         // Derive prefix from the filename
-        std::string prefix = filePath.filename().string();
+        const std::string prefix = CommonUtils::path_to_utf8(filePath.filename());
         if (prefix.empty()) {
-            std::cerr << "Error: filePath has no filename component: " << filePath << "\n";
+            std::cerr << "Error: filePath has no filename component: "
+                << CommonUtils::path_to_utf8(filePath) << "\n";
             return 0;
         }
 
@@ -236,14 +237,14 @@ namespace CommonUtils {
             if (!entry.is_regular_file(ec) || ec)
                 continue;
 
-            const std::string fname = entry.path().filename().string();
+            const std::string fname = CommonUtils::path_to_utf8(entry.path().filename());
             // If filename starts with our prefix, delete it
             if (fname.rfind(prefix, 0) == 0) {
                 if (fs::remove(entry.path(), ec)) {
                     ++removedCount;
                 }
                 else {
-                    std::cerr << "Failed to remove " << entry.path()
+                    std::cerr << "Failed to remove " << CommonUtils::path_to_utf8(entry.path())
                         << ": " << ec.message() << "\n";
                 }
             }

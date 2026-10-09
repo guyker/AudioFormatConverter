@@ -1,11 +1,14 @@
 ﻿#pragma once
 
 #include <string>
+#include <string_view>
 #include <iostream>
 #include <array>
 #include <vector>
 #include <utility>
 #include <cstring>
+#include <codecvt>
+#include <locale>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -20,6 +23,16 @@ namespace fs = std::filesystem;
 
 namespace CommonUtils
 {
+
+    static std::string path_to_utf8(const std::filesystem::path& path) {
+        const auto utf8Path = path.u8string();
+        return std::string(reinterpret_cast<const char*>(utf8Path.data()), utf8Path.size());
+    }
+
+    static std::filesystem::path path_from_utf8(std::string_view utf8Path) {
+        const auto* utf8Data = reinterpret_cast<const char8_t*>(utf8Path.data());
+        return std::filesystem::path(std::u8string_view(utf8Data, utf8Path.size()));
+    }
 
     // Generator type
     template<typename T>
@@ -304,14 +317,22 @@ namespace CommonUtils
     static std::string wstring_to_utf8(const std::wstring& wstr) {
         if (wstr.empty()) return {};
 
+#ifdef _WIN32
         int size_needed = WideCharToMultiByte(CP_UTF8, 0,
-            wstr.c_str(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
+            wstr.data(), static_cast<int>(wstr.size()), nullptr, 0, nullptr, nullptr);
+        if (size_needed == 0) {
+            throw std::runtime_error("Failed to convert UTF-16 string to UTF-8.");
+        }
 
         std::string result(size_needed, 0);
         WideCharToMultiByte(CP_UTF8, 0,
-            wstr.c_str(), (int)wstr.size(), &result[0], size_needed, nullptr, nullptr);
+            wstr.data(), static_cast<int>(wstr.size()), result.data(), size_needed, nullptr, nullptr);
 
         return result;
+#else
+        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+        return converter.to_bytes(wstr);
+#endif
     }
 
 
@@ -320,9 +341,17 @@ namespace CommonUtils
 #ifdef _WIN32
         if (str.empty()) return {};
 
-        int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
-        std::wstring wstr(size_needed - 1, 0);
-        MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &wstr[0], size_needed);
+        const int size_needed = MultiByteToWideChar(
+            CP_UTF8, MB_ERR_INVALID_CHARS, str.data(), static_cast<int>(str.size()), nullptr, 0);
+        if (size_needed == 0) {
+            throw std::runtime_error("Failed to convert UTF-8 string to UTF-16.");
+        }
+        std::wstring wstr(size_needed, 0);
+        if (MultiByteToWideChar(
+                CP_UTF8, MB_ERR_INVALID_CHARS, str.data(), static_cast<int>(str.size()),
+                wstr.data(), size_needed) == 0) {
+            throw std::runtime_error("Failed to convert UTF-8 string to UTF-16.");
+        }
 
         return wstr;
 #else
@@ -334,52 +363,7 @@ namespace CommonUtils
 
     // Convert UTF-8 to wstring (cross-platform)
     static std::wstring utf8ToWstring2_XXXXX(const std::string& utf8Str) {
-        if (utf8Str.empty()) {
-            return std::wstring();
-        }
-
-#ifdef _WIN32
-        // Windows: UTF-8 to UTF-16
-        int size_needed = MultiByteToWideChar(CP_UTF8, 0, utf8Str.c_str(),
-            static_cast<int>(utf8Str.length()),
-            nullptr, 0);
-        if (size_needed == 0) {
-            //  throw std::runtime_error("MultiByteToWideChar failed to determine size");
-        }
-
-        std::wstring wstr(size_needed, 0);
-        MultiByteToWideChar(CP_UTF8, 0, utf8Str.c_str(),
-            static_cast<int>(utf8Str.length()),
-            &wstr[0], size_needed);
-        return wstr;
-
-#else
-        // Linux: UTF-8 to UTF-32 (assuming wstring is UTF-32)
-        iconv_t cd = iconv_open("WCHAR_T", "UTF-8");
-        if (cd == (iconv_t)-1) {
-            throw std::runtime_error("iconv_open failed");
-        }
-
-        size_t inBytes = utf8Str.length();
-        size_t outBytes = inBytes * sizeof(wchar_t);
-        std::wstring wstr(outBytes / sizeof(wchar_t), 0);
-
-        char* inBuf = const_cast<char*>(utf8Str.c_str());
-        char* outBuf = reinterpret_cast<char*>(&wstr[0]);
-        size_t outBytesLeft = outBytes;
-
-        size_t result = iconv(cd, &inBuf, &inBytes, &outBuf, &outBytesLeft);
-        iconv_close(cd);
-
-        if (result == (size_t)-1) {
-            throw std::runtime_error("iconv conversion failed");
-        }
-
-        wstr.resize((outBytes - outBytesLeft) / sizeof(wchar_t));
-        return wstr;
-#endif
+        return utf8ToWstring(utf8Str);
     }
 
 }
-
-

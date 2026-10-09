@@ -51,7 +51,7 @@ namespace JsonUtils {
                 else
                 {
                     auto typeName = JsonUtils::TypeToString(itr->value.GetType());
-                    spdlog::error("Error: could not parse tag (GetKeyValueMap), Key name: ", key, ", type: ", typeName);
+                    spdlog::error("Error: could not parse tag (GetKeyValueMap), Key name: {}, type: {}", key, typeName);
                 }
                 // Add more conversions if needed (e.g., bool, null)
             }

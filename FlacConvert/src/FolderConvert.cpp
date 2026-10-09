@@ -4,6 +4,18 @@
 
 #include <iostream>
 #include <algorithm>
+#include <atomic>
+#include <cstdint>
+#include <chrono>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifdef _WIN32
+#include <process.h>
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 #include <set>
 #include "CommonUtils.h"
 #include "MediaInformation.h"
@@ -14,19 +26,78 @@ using namespace std;
 
 namespace fs = std::filesystem;
 
+namespace
+{
+bool samePathComponent(const fs::path& left, const fs::path& right)
+{
+#ifdef _WIN32
+    const auto& leftValue = left.native();
+    const auto& rightValue = right.native();
+    return CompareStringOrdinal(
+        leftValue.c_str(), static_cast<int>(leftValue.size()),
+        rightValue.c_str(), static_cast<int>(rightValue.size()), TRUE) == CSTR_EQUAL;
+#else
+    return left == right;
+#endif
+}
+
+bool isSameOrChildPath(const fs::path& candidate, const fs::path& base)
+{
+    auto candidatePart = candidate.begin();
+    auto basePart = base.begin();
+    for (; basePart != base.end(); ++basePart, ++candidatePart) {
+        if (candidatePart == candidate.end()) {
+            return false;
+        }
+        if (!samePathComponent(*candidatePart, *basePart)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+struct CaseInsensitivePathLess
+{
+    bool operator()(const fs::path& left, const fs::path& right) const
+    {
+#ifdef _WIN32
+        const auto& leftValue = left.native();
+        const auto& rightValue = right.native();
+        return CompareStringOrdinal(
+            leftValue.c_str(), static_cast<int>(leftValue.size()),
+            rightValue.c_str(), static_cast<int>(rightValue.size()), TRUE) == CSTR_LESS_THAN;
+#else
+        return left < right;
+#endif
+    }
+};
+
+fs::path makeTemporaryOutputPath(const fs::path& targetPath, std::uint64_t sequence)
+{
+    const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+#ifdef _WIN32
+    const auto processId = _getpid();
+#else
+    const auto processId = getpid();
+#endif
+    fs::path filename = fs::path(".afc-convert-" + std::to_string(processId) + "-" +
+        std::to_string(timestamp) + "-" + std::to_string(sequence));
+    filename += targetPath.extension();
+    return targetPath.parent_path() / filename;
+}
+}
+
 
 
 
 int FolderConvert::ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::path& directory, bool bAsync)
 {
-    std::wstring entryPath{ directory.wstring() };
-    //std::wcout << std::endl << L"Scanning Dictionary: " << entryPath << std::endl;
-
     // Recursively process all subdirectories within the specified directory
     std::filesystem::directory_iterator directoryIT;
     try {
         if (!fs::exists(directory) || !fs::is_directory(directory)) {
-            spdlog::error("Error: Directory does not exist or is not valid: ", directory.generic_string());
+            spdlog::error("Error: Directory does not exist or is not valid: {}",
+                CommonUtils::path_to_utf8(directory));
             return -1;
         }
 
@@ -53,9 +124,107 @@ int FolderConvert::ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::pat
         }
     }
     catch (const fs::filesystem_error& e) {
-        spdlog::error("ScanAudioFiles: Filesystem error: ", e.what());
+        spdlog::error("ScanAudioFiles: Filesystem error: {}", e.what());
 
         return -1;
+    }
+
+    return 0;
+}
+
+int FolderConvert::ConvertAudioFolderToOutput(
+    const fs::path& inputDirectory,
+    const fs::path& outputDirectory,
+    bool overwrite)
+{
+    std::error_code ec;
+    const fs::path input = fs::weakly_canonical(inputDirectory, ec);
+    if (ec || !fs::is_directory(input, ec) || ec) {
+        spdlog::error("Input is not a readable directory: {}", CommonUtils::path_to_utf8(inputDirectory));
+        return -1;
+    }
+
+    const fs::path output = fs::weakly_canonical(outputDirectory, ec);
+    if (ec) {
+        spdlog::error("Cannot resolve output directory '{}': {}", CommonUtils::path_to_utf8(outputDirectory), ec.message());
+        return -1;
+    }
+    if (isSameOrChildPath(output, input)) {
+        spdlog::error("Output directory must not be the input directory or one of its descendants.");
+        return -1;
+    }
+
+    ScanInfo scanInfo{};
+    if (ScanAudioFiles(scanInfo, input) != 0) {
+        return -1;
+    }
+    if (scanInfo.mediaList.empty()) {
+        spdlog::warn("No convertible audio files found under '{}'.", CommonUtils::path_to_utf8(input));
+        return 0;
+    }
+
+    struct Conversion {
+        fs::path source;
+        fs::path target;
+        fs::path temporary;
+    };
+    std::vector<Conversion> conversions;
+    conversions.reserve(scanInfo.mediaList.size());
+    std::set<fs::path, CaseInsensitivePathLess> plannedTargets;
+    static std::atomic_uint64_t nextTemporaryId{ 0 };
+
+    for (const auto& entry : scanInfo.mediaList) {
+        const fs::path source = entry.path();
+        const fs::path relativePath = fs::relative(source, input, ec);
+        if (ec) {
+            spdlog::error("Cannot resolve path relative to input directory: {}", CommonUtils::path_to_utf8(source));
+            return -1;
+        }
+
+        fs::path target = output / relativePath;
+        target.replace_extension(GetTargetFileType());
+        const fs::path canonicalSource = fs::weakly_canonical(source, ec);
+        if (ec) {
+            spdlog::error("Cannot resolve source path '{}': {}", CommonUtils::path_to_utf8(source), ec.message());
+            return -1;
+        }
+        const fs::path canonicalTarget = fs::weakly_canonical(target, ec);
+        if (ec) {
+            spdlog::error("Cannot resolve destination path '{}': {}", CommonUtils::path_to_utf8(target), ec.message());
+            return -1;
+        }
+        if (canonicalSource == canonicalTarget) {
+            spdlog::error("Refusing to overwrite a source file: {}", CommonUtils::path_to_utf8(source));
+            return -1;
+        }
+        if (!plannedTargets.insert(canonicalTarget).second) {
+            spdlog::error("Multiple source files map to the same destination: {}", CommonUtils::path_to_utf8(target));
+            return -1;
+        }
+        if (!overwrite && fs::exists(target, ec)) {
+            spdlog::error("Destination already exists: {}", CommonUtils::path_to_utf8(target));
+            return -1;
+        }
+        if (ec) {
+            spdlog::error("Cannot inspect destination '{}': {}", CommonUtils::path_to_utf8(target), ec.message());
+            return -1;
+        }
+
+        fs::create_directories(target.parent_path(), ec);
+        if (ec) {
+            spdlog::error("Cannot create output directory '{}': {}", CommonUtils::path_to_utf8(target.parent_path()), ec.message());
+            return -1;
+        }
+
+        conversions.push_back({ source, target, makeTemporaryOutputPath(target, ++nextTemporaryId) });
+    }
+
+    for (const auto& conversion : conversions) {
+        auto task = std::make_shared<MediaConvertionTask>(
+            conversion.source, conversion.target, conversion.temporary, overwrite);
+        if (task->Run() != 0 || task->PostRun() != 0) {
+            return -1;
+        }
     }
 
     return 0;
@@ -199,22 +368,22 @@ int FolderConvert::ConverAudioFolder2(const std::filesystem::path& directory, co
 	for (auto& task : tasksVector) {
 		task->Run();
 		if (task->GetStatus() == -1) {
-            spdlog::error("***ERROR*** Media convert error: ", task->GetStatus());
+			spdlog::error("***ERROR*** Media convert error: {}", task->GetStatus());
 		}
 	}
-    for (auto& task : tasksVector) {
+	for (auto& task : tasksVector) {
 		task->PostRun();
-        if (task->GetStatus() != 0)
-        {
-            spdlog::error("***STOP*** error found: ", task->GetStatus());
-        }
-    }
+		if (task->GetStatus() != 0)
+		{
+			spdlog::error("***STOP*** error found: {}", task->GetStatus());
+		}
+	}
 
     for (auto& item : tasksVector)
     {
         if (item->GetStatus() != 0)
         {
-            spdlog::error("***STOP***2 error found: ", item->GetStatus());
+            spdlog::error("***STOP***2 error found: {}", item->GetStatus());
             return -1;
 
         }
@@ -230,6 +399,3 @@ int FolderConvert::ConverAudioFolder2(const std::filesystem::path& directory, co
 
     return 0;
 }
-
-
-

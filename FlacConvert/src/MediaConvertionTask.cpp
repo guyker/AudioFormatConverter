@@ -2,47 +2,126 @@
 #include "MediaConvertionTask.h"
 
 #include <string>
+#include <cerrno>
+#include <filesystem>
+#include <utility>
+#include <vector>
+#include <system_error>
+
+#ifdef _WIN32
+#include <process.h>
+#include <windows.h>
+#else
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
 #include <spdlog/spdlog.h>
+
+#include "AppSettings.h"
 #include "CommonUtils.h"
+#include "PlatformUtils.h"
 
 namespace fs = std::filesystem;
 
-constexpr std::wstring_view FFMPEG_EXE_NAME{ L"ffmpeg" };
-constexpr std::wstring_view FFMPEG_ARGUMENTS{ L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats" };
+namespace
+{
+int runFFmpeg(const std::wstring& executable, const fs::path& source, const fs::path& destination, bool overwrite)
+{
+#ifdef _WIN32
+    const std::wstring overwriteOption = overwrite ? L"-y" : L"-n";
+    const std::vector<std::wstring> arguments{
+        executable, L"-i", PlatformUtils::WindowsLongPath(source), L"-c:v", L"copy", L"-sample_fmt", L"s16",
+        L"-ar", L"44100", overwriteOption, L"-v", L"warning", L"-stats",
+        PlatformUtils::WindowsLongPath(destination)
+    };
+    std::vector<const wchar_t*> pointers;
+    pointers.reserve(arguments.size() + 1);
+    for (const auto& argument : arguments) {
+        pointers.push_back(argument.c_str());
+    }
+    pointers.push_back(nullptr);
+    const intptr_t result = _wspawnvp(_P_WAIT, executable.c_str(), pointers.data());
+    if (result == -1) {
+        spdlog::error("Failed to launch FFmpeg: {}", std::system_category().message(errno));
+        return -1;
+    }
+    return static_cast<int>(result);
+#else
+    const std::string executableUtf8 = PlatformUtils::wstringToUtf8_ver2(executable);
+    const std::vector<std::string> arguments{
+        executableUtf8, "-i", source.string(), "-c:v", "copy", "-sample_fmt", "s16",
+        "-ar", "44100", overwrite ? "-y" : "-n", "-v", "warning", "-stats", destination.string()
+    };
+    std::vector<char*> pointers;
+    pointers.reserve(arguments.size() + 1);
+    for (const auto& argument : arguments) {
+        pointers.push_back(const_cast<char*>(argument.c_str()));
+    }
+    pointers.push_back(nullptr);
+
+    const pid_t child = fork();
+    if (child == -1) {
+        spdlog::error("Failed to launch FFmpeg: {}", std::system_category().message(errno));
+        return -1;
+    }
+    if (child == 0) {
+        execvp(executableUtf8.c_str(), pointers.data());
+        _exit(errno == ENOENT ? 127 : 126);
+    }
+
+    int status = 0;
+    while (waitpid(child, &status, 0) == -1) {
+        if (errno != EINTR) {
+            spdlog::error("Failed while waiting for FFmpeg: {}", std::system_category().message(errno));
+            return -1;
+        }
+    }
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    return 128 + (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
+#endif
+}
+}
 
 
 int MediaConvertionTask::ConvertFile()
 {
-    if (_status != -1) {
-        using namespace std::string_literals;
-        //COMMAND
-        //std::string convertParams{ "-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats" };
-        //std::string cmdExecName{ "ffmpeg" };
-        //std::string command{ cmdExecName + R"( -i ")"s + _sourcePath.generic_string() + R"(" )"s + convertParams + R"( ")"s + _targetPath.generic_string() + R"(")"s };
-
-        std::wstring cmdExecNameW{ FFMPEG_EXE_NAME };
-        std::wstring convertParamsW{ FFMPEG_ARGUMENTS };
-        std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + LR"( ")"s + _targetTMPPath.generic_wstring() + LR"(")"s };
-        //std::wstring commandW{ cmdExecNameW + LR"( -i ")"s + _sourcePath.generic_wstring() + LR"(" )"s + convertParamsW + L"'" + _targetTMPPath.generic_wstring() + L"'" };
-
-
-        try {
-            spdlog::info("Processing: {}", CommonUtils::utf8string_to_string(_sourcePath.u8string()));
-            _status = _wsystem(commandW.c_str());
-
-        }
-        catch (const std::exception& ex) {
-            _status = -1;
-            spdlog::error(" ### COMMAND EXCEOTION :{} - {}", CommonUtils::utf8string_to_string(_sourcePath.u8string()), ex.what());
-        }
-
-        if (_status == -1) {
-            spdlog::error(" ### Error processing: {}", CommonUtils::utf8string_to_string(_sourcePath.u8string()));
-        }
+    std::error_code ec;
+    const bool destinationExists = fs::exists(_targetPath, ec);
+    if (ec) {
+        spdlog::error("Cannot inspect destination '{}': {}",
+            CommonUtils::utf8string_to_string(_targetPath.u8string()), ec.message());
+        _status = -1;
+        return _status;
+    }
+    if (!_overwriteTarget && destinationExists) {
+        spdlog::error("Destination already exists: {}", CommonUtils::utf8string_to_string(_targetPath.u8string()));
+        _status = -1;
+        return _status;
     }
 
-    int* saasdasd = nullptr;
-     
+    std::wstring executable{ L"ffmpeg" };
+    const auto settings = AppSettingsJson::AppSetting();
+    if (settings && !settings->FLACSettings.ffmpeg_exe_name.empty()) {
+        executable = settings->FLACSettings.ffmpeg_exe_name;
+    }
+
+    spdlog::info("Processing: {}", CommonUtils::utf8string_to_string(_sourcePath.u8string()));
+    const int result = runFFmpeg(executable, _sourcePath, _targetTMPPath, _overwriteTarget);
+    if (result != 0) {
+        if (result != -1) {
+            spdlog::error("FFmpeg failed with exit code {} for '{}'",
+                result, CommonUtils::utf8string_to_string(_sourcePath.u8string()));
+        }
+        fs::remove(_targetTMPPath, ec);
+        _status = -1;
+        return _status;
+    }
+
+    _status = 0;
     return _status;
 }
 
@@ -58,38 +137,66 @@ int MediaConvertionTask::Run() {
 
 int MediaConvertionTask::PostRun() {
     if (_status != -1) {
-        _status = RenameAndRemoveTMPFile();
+        _status = InstallTemporaryOutput();
     }
 
     return _status;
 }
 
-int MediaConvertionTask::RenameAndRemoveTMPFile()
+int MediaConvertionTask::InstallTemporaryOutput()
 {
-    if (_status != -1) {
-        fs::path sourcePath{ _sourcePath };
-        auto path1Fixed = sourcePath.lexically_normal().native();
-        if (!fs::exists(path1Fixed)) {
-            spdlog::error("***Error rename: source does not exist: ", CommonUtils::utf8string_to_string(_sourcePath.u8string()));
-            _status = -1;
-        }
-        else if (!fs::exists(_targetTMPPath)) {
-            spdlog::error("***Error rename: target(tmp) does not exist: {}", CommonUtils::utf8string_to_string(_targetPath.u8string()));
-            _status = -1;
-        } 
-        else {
-            std::error_code ec;
-            if (fs::remove(_sourcePath, ec)) {
-                fs::rename(_targetTMPPath, _targetPath);
-            }
-            else {
-                auto errormessage { ec.message() };
-                spdlog::error("***Error delete: {} - {}", CommonUtils::utf8string_to_string(_sourcePath.u8string()), ec.message());
-                //fs::remove(completedFiles.second, ec);
-                _status = -1;
-            }
-        }
+    if (_status == -1) {
+        return _status;
     }
 
+    std::error_code ec;
+    if (!fs::is_regular_file(_targetTMPPath, ec) || ec) {
+        spdlog::error("Converted temporary output is missing: {}", CommonUtils::utf8string_to_string(_targetTMPPath.u8string()));
+        _status = -1;
+        return _status;
+    }
+
+    bool installed = false;
+#ifdef _WIN32
+    const DWORD flags = MOVEFILE_WRITE_THROUGH | (_overwriteTarget ? MOVEFILE_REPLACE_EXISTING : 0);
+    installed = MoveFileExW(_targetTMPPath.c_str(), _targetPath.c_str(), flags) != 0;
+    const std::error_code error(static_cast<int>(GetLastError()), std::system_category());
+#else
+    if (_overwriteTarget) {
+        fs::rename(_targetTMPPath, _targetPath, ec);
+        installed = !ec;
+    }
+    else {
+        fs::create_hard_link(_targetTMPPath, _targetPath, ec);
+        installed = !ec;
+        std::error_code error = ec;
+        if (!installed && ec != std::errc::file_exists) {
+            std::error_code copyError;
+            installed = fs::copy_file(
+                _targetTMPPath, _targetPath, fs::copy_options::none, copyError);
+            if (!installed) {
+                error = copyError ? copyError : error;
+            }
+        }
+        if (installed) {
+            std::error_code cleanupError;
+            fs::remove(_targetTMPPath, cleanupError);
+            if (cleanupError) {
+                spdlog::warn("Installed output, but could not remove temporary link '{}': {}",
+                    CommonUtils::path_to_utf8(_targetTMPPath), cleanupError.message());
+            }
+        }
+        ec = installed ? std::error_code{} : error;
+    }
+    const std::error_code error = ec;
+#endif
+    if (!installed) {
+        spdlog::error("Failed to install converted output '{}': {}",
+            CommonUtils::utf8string_to_string(_targetPath.u8string()), error.message());
+        _status = -1;
+        return _status;
+    }
+
+    _status = 0;
     return _status;
 }

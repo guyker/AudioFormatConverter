@@ -292,7 +292,7 @@ std::pair<long long, long long> AlbumCollection::GetNumberOfItemsInFolder(std::f
         }
     }
     catch (const fs::filesystem_error& e) {
-        std::cerr << "Error iterating " << rootPath.string() << ": " << e.what() << '\n';
+        std::cerr << "Error iterating " << CommonUtils::path_to_utf8(rootPath) << ": " << e.what() << '\n';
     }
 
     // Process entries in parallel
@@ -306,7 +306,7 @@ std::pair<long long, long long> AlbumCollection::GetNumberOfItemsInFolder(std::f
             }
         }
         catch (const fs::filesystem_error& e) {
-            std::cerr << "Error accessing " << path.string() << ": " << e.what() << '\n';
+            std::cerr << "Error accessing " << CommonUtils::path_to_utf8(path) << ": " << e.what() << '\n';
         }
         });
 
@@ -337,7 +337,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         }
         else
         {
-			spdlog::error("Error: Album path is not a directory or does not have a filename. " + CommonUtils::utf8string_to_string(albumPath.path().generic_u8string()));
+			spdlog::error("{}", CommonUtils::utf8string_to_string(albumPath.path().generic_u8string()));
         }
         std::shared_ptr<CommonUtils::ProgressBarInfo> subProgressInfoPtr{ nullptr };
         if (AppSettingsJson::AppSetting()->AlbumsSplitThreshold < totalCount)
@@ -429,7 +429,8 @@ void SaveAlbumsToJSON_FFmpegError(std::filesystem::path outPath)
     document.Accept(writer);
 
     // Write the JSON string to a file.
-    std::ofstream outFile(outPath.string() + "_ffmpeg_error.json");
+    outPath += "_ffmpeg_error.json";
+    std::ofstream outFile(outPath);
     if (!outFile) {
         spdlog::error("Error: could not open file for writing.");
         return;
@@ -459,7 +460,7 @@ void AlbumCollection::SaveAlbumsToJSON_LasrError(std::list<MediaTrack>& mediaTra
         rapidjson::Value trackObj(rapidjson::kObjectType);
 
         // 1. Convert and add the file path (std::filesystem::path -> UTF-8 std::string).
-        std::string fileNameStr = track.trackPath.string();
+        std::string fileNameStr = CommonUtils::path_to_utf8(track.trackPath);
         trackObj.AddMember("Track name", rapidjson::Value(fileNameStr.c_str(), allocator), allocator);
 
         std::string trackPathStr = track.formatInfo.format.filename.c_str();
@@ -493,7 +494,8 @@ void AlbumCollection::SaveAlbumsToJSON_LasrError(std::list<MediaTrack>& mediaTra
     document.Accept(writer);
 
     // Write the JSON string to a file.
-    std::ofstream outFile(outPath.string() + "_error.json");
+    outPath += "_error.json";
+    std::ofstream outFile(outPath);
     if (!outFile) {
         spdlog::error("Error: could not open file for writing.");
         return;
@@ -577,7 +579,7 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                     size_t errorOffset = trackDoc.GetErrorOffset();
                     item.LastErroString = errorMsg;
                     ffmpeg_LasrErrorList.push_back(item);
-                    spdlog::error("Error parsing JSON: ", errorMsg);
+                    spdlog::error("Error parsing JSON: {}", errorMsg);
 //                    continue;
                 }
                 else
@@ -603,7 +605,7 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
     if (fs::exists(path)) {
         std::error_code ec;
         if (!fs::remove(path, ec)) {
-            spdlog::error("Failed to remove existing file: ", ec.message());
+            spdlog::error("Failed to remove existing file: {}", ec.message());
         }
     }
 
@@ -678,7 +680,7 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
     // Check for parse errors 
     if (doc.HasParseError()) {
         rapidjson::ParseErrorCode errorCode = doc.GetParseError();
-        spdlog::error("Error parsing JSON: ", rapidjson::GetParseError_En(errorCode));
+        spdlog::error("Error parsing JSON: {}", rapidjson::GetParseError_En(errorCode));
 
         return nullptr;
     }
@@ -1023,19 +1025,23 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
                     }
                 }
                 if (invalid) {
-                    spdlog::warn("Invalid characters in album name: {}", dirEntry.path().string());
+                    spdlog::warn("Invalid characters in album name: {}",
+                        CommonUtils::path_to_utf8(dirEntry.path()));
                     albumName = "sanitized_album_" + std::to_string(std::distance(albumListPtr->cbegin(), it));
                 }
             }
             else {
-                spdlog::warn("Non-existent or invalid directory: {}", dirEntry.path().string());
+                spdlog::warn("Non-existent or invalid directory: {}",
+                    CommonUtils::path_to_utf8(dirEntry.path()));
             }
         }
         catch (const fs::filesystem_error& e) {
-            spdlog::error("Filesystem error accessing path: {} ({})", dirEntry.path().string(), e.what());
+            spdlog::error("Filesystem error accessing path: {} ({})",
+                CommonUtils::path_to_utf8(dirEntry.path()), e.what());
         }
         catch (const std::exception& e) {
-            spdlog::error("Unexpected error accessing filename: {} ({})", dirEntry.path().string(), e.what());
+            spdlog::error("Unexpected error accessing filename: {} ({})",
+                CommonUtils::path_to_utf8(dirEntry.path()), e.what());
         }
         catch (...) {
             spdlog::error("Unknown error accessing filename for iterator index {}", std::distance(albumListPtr->cbegin(), it));
@@ -1073,7 +1079,8 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
             }
         }
         else if (lastError) {
-            spdlog::error("Metadata error for track: {} ({})", (dirEntry.path() / trackName).string(), lastError.value());
+            spdlog::error("Metadata error for track: {} ({})",
+                CommonUtils::path_to_utf8(dirEntry.path() / trackName), lastError.value());
         }
 
         // Collect sorted track durations
@@ -1139,7 +1146,15 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
 bool AlbumCollection::ExportToDatabase(std::shared_ptr<DirectoryContentEntryList> albums, std::filesystem::path databasePath)
 {
     sqlite3* db = nullptr;
-    int rc = sqlite3_open(databasePath.generic_string().c_str(), &db);
+#ifdef _WIN32
+    const auto databasePathUtf8 = CommonUtils::path_to_utf8(databasePath);
+    int rc = sqlite3_open_v2(
+        databasePathUtf8.c_str(), &db,
+        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, "win32-longpath");
+#else
+    const auto databasePathUtf8 = databasePath.u8string();
+    int rc = sqlite3_open(reinterpret_cast<const char*>(databasePathUtf8.c_str()), &db);
+#endif
     if (rc != SQLITE_OK) {
         spdlog::error("Cannot open database: {}", sqlite3_errmsg(db));
         sqlite3_close(db);
@@ -1191,4 +1206,3 @@ bool AlbumCollection::ExportToDatabase(std::shared_ptr<DirectoryContentEntryList
     sqlite3_close(db);
     return true;
 }
-

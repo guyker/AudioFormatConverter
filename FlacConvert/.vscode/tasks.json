@@ -24,7 +24,7 @@
                 "Bypass",
                 "-NoProfile",
                 "-Command",
-                "if (!(Test-Path -Path 'C:\\dev\\POC-DEV\\AudioFormatConverter\\external\\ffmpeg')) { Invoke-WebRequest -Uri 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl-shared.zip' -OutFile \"$env:TEMP\\ffmpeg.zip\"; Expand-Archive -Path \"$env:TEMP\\ffmpeg.zip\" -DestinationPath 'C:\\dev\\POC-DEV\\AudioFormatConverter\\external\\ffmpeg' -Force; Remove-Item \"$env:TEMP\\ffmpeg.zip\" } else { Write-Host 'FFmpeg already exists, skipping download' }"
+                "if (!(Test-Path -Path '${workspaceFolder}/../external/ffmpeg')) { Invoke-WebRequest -Uri 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl-shared.zip' -OutFile \"$env:TEMP\\ffmpeg.zip\"; Expand-Archive -Path \"$env:TEMP\\ffmpeg.zip\" -DestinationPath '${workspaceFolder}/../external/ffmpeg' -Force; Remove-Item \"$env:TEMP\\ffmpeg.zip\" } else { Write-Host 'FFmpeg already exists, skipping download' }"
             ],
             "problemMatcher": [],
             "presentation": {
@@ -61,7 +61,8 @@
         },
         {
             "label": "Build Debug",
-            "dependsOn": ["Pre-Build: Ensure obj folder exists"],
+            "dependsOn": ["Download FFmpeg", "Pre-Build: Ensure obj folder exists"],
+            "dependsOrder": "sequence",
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -124,7 +125,8 @@
         },
         {
             "label": "Build Release",
-            "dependsOn": ["Pre-Build: Ensure obj folder exists"],
+            "dependsOn": ["Download FFmpeg", "Pre-Build: Ensure obj folder exists"],
+            "dependsOrder": "sequence",
             "group": {
                 "kind": "build",
                 "isDefault": false

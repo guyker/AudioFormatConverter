@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 
 #include "CommonUtils.h"
@@ -49,7 +50,22 @@ struct MediaDirectoryElement
 	std::string mediaPath{};
 	std::optional<std::string> mediaName{};
 
-	CommonUtils::Generator<std::string> getMediaJsonPathCo(std::string outDir) const
+	std::string outputName() const
+	{
+		std::string name = mediaName.value_or(std::string("data"));
+		constexpr std::size_t maxUtf8Bytes = 180;
+		if (name.size() > maxUtf8Bytes) {
+			std::size_t length = maxUtf8Bytes;
+			while (length > 0 &&
+				(static_cast<unsigned char>(name[length]) & 0xC0) == 0x80) {
+				--length;
+			}
+			name.resize(length);
+		}
+		return name;
+	}
+
+	CommonUtils::Generator<std::filesystem::path> getMediaJsonPathCo(std::filesystem::path outDir) const
 	{
 		int index = 0;
 		while (++index < 1000) {
@@ -66,25 +82,23 @@ struct MediaDirectoryElement
 		co_return;
 	}
 
-	std::string getMediaJsonPath(std::string outDir, int count) const
+	std::filesystem::path getMediaJsonPath(const std::filesystem::path& outDir, int count) const
 	{
-		std::string fileName = mediaName.value_or(std::string("data"));
+		std::string fileName = outputName();
 		if (count > 0)
 		{
 			fileName += std::string("_") + std::to_string(count);
 		}
 		fileName += ".json";
-		std::filesystem::path path = std::filesystem::path(outDir) / std::filesystem::path(mediaName.value_or("")) / (std::string("media_out_") + fileName);
-
-		return path.string();
+		return outDir / CommonUtils::path_from_utf8(mediaName.value_or("")) /
+			CommonUtils::path_from_utf8(std::string("media_out_") + fileName);
 	}
 
-	std::string getMediaDBPath(std::string outDir) const
+	std::filesystem::path getMediaDBPath(const std::filesystem::path& outDir) const
 	{
-		std::string fileName = mediaName.value_or(std::string("data")) + ".db";
-		std::filesystem::path path = std::filesystem::path(outDir) / std::filesystem::path(mediaName.value_or("")) / (std::string("media_out_") + fileName);
-
-		return path.string();
+		std::string fileName = outputName() + ".db";
+		return outDir / CommonUtils::path_from_utf8(mediaName.value_or("")) /
+			CommonUtils::path_from_utf8(std::string("media_out_") + fileName);
 	}
 };
 
@@ -95,8 +109,14 @@ struct AppSettingsJson
 	static constexpr bool isCustomAppConfigPath = true;
 
 	static constexpr const char* DefaultTMPDirectory = "c:\\tmp" ;
-	static constexpr const char* DefaultOutDirectory = "c:\\tmp";
-//	static constexpr const char* DefaultConfigDirectory = isCustomAppConfigPath ? DefaultOutDirectory : nullptr;
+	static std::string DefaultOutDirectory()
+	{
+#ifdef _WIN32
+		return "C:\\tmp";
+#else
+		return CommonUtils::utf8string_to_string(std::filesystem::temp_directory_path().u8string());
+#endif
+	}
 
 	static constexpr const char* PersistentFileName = "AppSettingsJsonPersistent.txt";
 	static constexpr const char* DefaultConfigFileName = "config.json";
@@ -124,19 +144,22 @@ struct AppSettingsJson
 	//APP Setting properties - END
 
 
-	bool loadFromFile(const std::string& filename);
-	void saveToFile(const std::string& filename) const;
+	bool loadFromFile(const std::filesystem::path& filename);
+	void saveToFile(const std::filesystem::path& filename) const;
 	std::string toJsonString() const;
 
 
 	static std::shared_ptr<AppSettingsJson> AppSetting();
+	static std::shared_ptr<AppSettingsJson> LoadForCommandLine(
+		const std::optional<std::filesystem::path>& explicitConfigPath,
+		std::string& errorMessage);
 
 	static AppSettingsJson GetDefaultSettings()
 	{
 		AppSettingsJson appSettingsJson
 		{	
 			"1.0.0",
-			AppSettingsJson::DefaultOutDirectory,
+			AppSettingsJson::DefaultOutDirectory(),
 			AppSettingsJson::DefaultDatabaseFileName,
 			1,
 			true, //UseAsyncFFmpegCalls
@@ -164,4 +187,3 @@ private:
 	static std::shared_ptr<AppSettingsJson> AppSettingsInstance;
 
 };
-

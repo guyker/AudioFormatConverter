@@ -35,7 +35,7 @@ int MediaConvertionAsyncTask::PostRun()
     if (_status != -1) {
         _status = _asyncResult.get();
         if (_status != -1) {
-            RenameAndRemoveTMPFile();
+            _status = InstallTemporaryOutput();
         }
         else {
             spdlog::error("***Error running aync task: {}", CommonUtils::utf8string_to_string(_sourcePath.u8string()));

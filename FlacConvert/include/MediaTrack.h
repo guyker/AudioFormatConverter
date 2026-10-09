@@ -10,7 +10,6 @@
 #include "CommonUtils.h"
 #include <locale>
 #include <codecvt>
-#include <windows.h>
 #include "AppSettings.h"
 
 #include "rapidjson/rapidjson.h" 
@@ -67,7 +66,7 @@ struct MediaTrack
 		static std::set<std::wstring> fileExtensionList = { L".flac", L".ape", L".dsf", L".dff", L".dsd", L".wv", L".wav", L".m2ts" , L".m4a" };
 		auto fileExtension = CommonUtils::ToLower(filePath.extension().wstring());
 
-		return filePath.has_extension() && (fileExtensionList.find(filePath.extension().wstring()) != fileExtensionList.end());
+		return filePath.has_extension() && (fileExtensionList.find(fileExtension) != fileExtensionList.end());
 	}
 
 	static bool IsFileAcceptedAudioFile(std::filesystem::path filePath)
@@ -75,7 +74,7 @@ struct MediaTrack
 		static std::set<std::wstring> fileExtensionList = { L".flac", L".mp3" };
 		auto fileExtension = CommonUtils::ToLower(filePath.extension().wstring());
 
-		return filePath.has_extension() && (fileExtensionList.find(filePath.extension().wstring()) != fileExtensionList.end());
+		return filePath.has_extension() && (fileExtensionList.find(fileExtension) != fileExtensionList.end());
 	}
 
 	static bool IsValidMedia(const fs::directory_entry& entry)
@@ -128,5 +127,3 @@ struct MediaTrack
 	static FFprobeOutput ParseFFprobeInformation(const Value& formatTag);
 	static FFprobeOutput ParseFFprobeInformation(std::wstring jsonString);
 };
-
-

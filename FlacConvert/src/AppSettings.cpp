@@ -23,10 +23,12 @@ namespace fs = std::filesystem;
 void saveLastDir(const fs::path& lastDir, const fs::path& persistentFile) {
     std::ofstream out(persistentFile, std::ios::trunc);
     if (!out) {
-        spdlog::error("Failed to write persistent file '{}',", persistentFile.string());
+        spdlog::error("Failed to write persistent file '{}',", CommonUtils::path_to_utf8(persistentFile));
     }
     else {
-        out << lastDir.string();
+        const auto utf8Path = lastDir.u8string();
+        out.write("UTF8:", 5);
+        out.write(reinterpret_cast<const char*>(utf8Path.data()), static_cast<std::streamsize>(utf8Path.size()));
     }
 }
 
@@ -36,6 +38,9 @@ std::optional<fs::path> loadLastDir(const fs::path& persistentFile) {
     std::string dir;
     std::getline(in, dir);
     if (dir.empty()) return std::nullopt;
+    if (dir.starts_with("UTF8:")) {
+        return CommonUtils::path_from_utf8(dir.substr(5));
+    }
     return fs::path(dir);
 }
 
@@ -57,7 +62,7 @@ fs::path promptForConfigDir(const fs::path& persistentFile) {
             continue;
         }
 
-        fs::path dir{ input };
+        fs::path dir = CommonUtils::path_from_utf8(input);
         fs::path candidate = dir / AppSettingsJson::DefaultConfigFileName;
 
         std::error_code ec;
@@ -67,7 +72,7 @@ fs::path promptForConfigDir(const fs::path& persistentFile) {
             return dir;
         }
 
-        spdlog::error("Config file not found at '{}'; please retry.", candidate.string());
+        spdlog::error("Config file not found at '{}'; please retry.", CommonUtils::path_to_utf8(candidate));
     }
 }
 
@@ -83,12 +88,12 @@ fs::path findConfigDir() {
         fs::path candidate = *last / AppSettingsJson::DefaultConfigFileName;
         std::error_code ec;
         if (fs::exists(candidate, ec) && !ec) {
-            spdlog::info("Using Config Path: '{}',", candidate.string());
+            spdlog::info("Using Config Path: '{}',", CommonUtils::path_to_utf8(candidate));
             return *last;
         }
         spdlog::warn(
             "Persisted directory '{}' no longer contains '{}', falling back to prompt",
-            last->string(), AppSettingsJson::DefaultConfigFileName);
+            CommonUtils::path_to_utf8(*last), AppSettingsJson::DefaultConfigFileName);
     }
 
     // 2) Ask the user until we get a valid one
@@ -116,12 +121,13 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting() {
     bool isAppSettingLoaded = fs::exists(configPath);
     if (isAppSettingLoaded) {
         auto appSettingPtr = std::make_shared<AppSettingsJson>();
-        isAppSettingLoaded = appSettingPtr->loadFromFile(configPath.string());
+        isAppSettingLoaded = appSettingPtr->loadFromFile(configPath);
         if (isAppSettingLoaded) {
             AppSettingsInstance = appSettingPtr;
         }
         else {
-            std::cerr << "Error: Failed to parse configuration file: " << configPath << std::endl;
+            std::cerr << "Error: Failed to parse configuration file: "
+                << CommonUtils::path_to_utf8(configPath) << std::endl;
         }
     }
     else {
@@ -129,24 +135,84 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting() {
     }
 
     if (!isAppSettingLoaded) {
-        std::cout << std::endl << std::format("Would you like to create a new configuration file with defaults under {}? Y/N ", configPath.generic_string()) << std::endl;
+        std::cout << std::endl << std::format(
+            "Would you like to create a new configuration file with defaults under {}? Y/N ",
+            CommonUtils::path_to_utf8(configPath)) << std::endl;
         char input = std::toupper(getchar());
         if (input == 'Y') {
             auto defaultSettings = AppSettingsJson::GetDefaultSettings();
-            defaultSettings.saveToFile(configPath.string());
+            defaultSettings.saveToFile(configPath);
             AppSettingsInstance = std::make_shared<AppSettingsJson>(defaultSettings);
         }
         else {
-            std::cout << "Ignored, please edit and fix " << configPath << std::endl;
+            std::cout << "Ignored, please edit and fix "
+                << CommonUtils::path_to_utf8(configPath) << std::endl;
         }
     }
 
     return AppSettingsInstance;
 }
 
+std::shared_ptr<AppSettingsJson> AppSettingsJson::LoadForCommandLine(
+    const std::optional<fs::path>& explicitConfigPath,
+    std::string& errorMessage)
+{
+    fs::path configPath;
+    if (explicitConfigPath.has_value()) {
+        configPath = explicitConfigPath.value();
+        std::error_code ec;
+        if (!fs::is_regular_file(configPath, ec) || ec) {
+            errorMessage = "Specified configuration file is not readable: " + CommonUtils::path_to_utf8(configPath);
+            return nullptr;
+        }
+    }
+    else {
+        const fs::path persistentFile = fs::current_path() / PersistentFileName;
+        if (const auto lastDirectory = loadLastDir(persistentFile)) {
+            const fs::path persistedConfig = *lastDirectory / DefaultConfigFileName;
+            std::error_code ec;
+            if (fs::is_regular_file(persistedConfig, ec) && !ec) {
+                configPath = persistedConfig;
+            }
+        }
+
+        if (configPath.empty()) {
+            const fs::path currentConfig = fs::current_path() / DefaultConfigFileName;
+            std::error_code ec;
+            if (fs::is_regular_file(currentConfig, ec) && !ec) {
+                configPath = currentConfig;
+            }
+        }
+    }
+
+    auto settings = std::make_shared<AppSettingsJson>(GetDefaultSettings());
+    if (!configPath.empty() && !settings->loadFromFile(configPath)) {
+        errorMessage = "Failed to load configuration file: " + CommonUtils::path_to_utf8(configPath);
+        return nullptr;
+    }
+    if (configPath.empty()) {
+        settings->MediaDirectoryList.clear();
+    }
+
+    if (settings->OutDirectory.empty()) {
+        settings->OutDirectory = DefaultOutDirectory();
+    }
+    if (settings->LogLevel < 0 || settings->LogLevel > 6) {
+        errorMessage = "LogLevel must be an integer from 0 through 6.";
+        return nullptr;
+    }
+    if (settings->AlbumsSplitThreshold <= 0) {
+        errorMessage = "AlbumsSplitThreshold must be greater than zero.";
+        return nullptr;
+    }
+
+    AppSettingsInstance = settings;
+    return settings;
+}
+
 // Convert UTF-8 string to wide string
 std::wstring UTF8ToWide(const std::string& str) {
-    return std::wstring(str.begin(), str.end());
+    return CommonUtils::path_from_utf8(str).wstring();
 }
 
 // Convert object to JSON string
@@ -198,7 +264,7 @@ std::string AppSettingsJson::toJsonString() const {
 }
 
 // Save JSON to a file
-void AppSettingsJson::saveToFile(const std::string& filename) const {
+void AppSettingsJson::saveToFile(const std::filesystem::path& filename) const {
     std::ofstream ofs(filename);
     if (!ofs) {
         std::cerr << "Error: Cannot open file for writing: " << filename << std::endl;
@@ -214,7 +280,7 @@ void AppSettingsJson::saveToFile(const std::string& filename) const {
 }
 
 // Load JSON from a file
-bool AppSettingsJson::loadFromFile(const std::string& filename) {
+bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
     std::ifstream ifs(filename);
     if (!ifs) {
         std::cerr << "Error: Cannot open file for reading: " << filename << std::endl;
@@ -225,8 +291,8 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
     rapidjson::Document doc;
     doc.ParseStream(isw);
 
-    if (doc.HasParseError()) {
-        std::cerr << "Error: Failed to parse JSON file." << std::endl;
+    if (doc.HasParseError() || !doc.IsObject()) {
+        std::cerr << "Error: Configuration must be a valid JSON object." << std::endl;
         return false;
     }
 
@@ -269,11 +335,11 @@ bool AppSettingsJson::loadFromFile(const std::string& filename) {
 			else {
                 try
                 {
-                    std::filesystem::path path(media.mediaPath);
+                    std::filesystem::path path = CommonUtils::path_from_utf8(media.mediaPath);
                     if (std::filesystem::is_regular_file(path)) {
                         path = path.parent_path();
                     }
-                    media.mediaName = path.filename().string();
+                    media.mediaName = CommonUtils::path_to_utf8(path.filename());
                 }
                 catch (const std::filesystem::filesystem_error& e)
                 {

@@ -1,6 +1,7 @@
 #include "FFmpeg.h"
 
 #include <cstdarg>
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -87,7 +88,9 @@ namespace FFmpeg {
 
             try
             {
-                if (fmt_ctx->streams == 0x0000000000000000 || fmt_ctx->iformat == nullptr || fmt_ctx->url == (char*)0x0000000100000000 || (long)fmt_ctx->url < 0x0000000000009275) // this is a workaround for the ffmpeg crash when accessing fmt_ctx->url or other null value
+                const auto urlAddress = reinterpret_cast<std::uintptr_t>(fmt_ctx->url);
+                if (fmt_ctx->streams == nullptr || fmt_ctx->iformat == nullptr ||
+                    urlAddress == 0x0000000100000000ULL || urlAddress < 0x9275)
                 {
                     context = "N/A - 0x0000000100000000";
                 }
@@ -174,7 +177,11 @@ namespace FFmpeg {
     {
         try
         {
+#ifdef _WIN32
+            std::wstring f = PlatformUtils::WindowsLongPath(mediaFilePath);
+#else
             std::wstring f = mediaFilePath.generic_wstring();
+#endif
             std::wstring command = L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"" + f + L"\"";
 
 #ifdef _WIN32
@@ -211,7 +218,7 @@ namespace FFmpeg {
         }
         catch (const std::exception& e) {
             //std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << e.what() << std::endl;
-            spdlog::error("Error (GetJsonMetadataShell): ", e.what());
+            spdlog::error("Error (GetJsonMetadataShell): {}", e.what());
         }
 
         return L"**ERROR***";
@@ -240,7 +247,11 @@ namespace FFmpeg {
 
         // Get the UTF-8 encoded string. Depending on your implementation,
         // u8string() might return std::string or std::u8string.
+#ifdef _WIN32
+        std::wstring widePath = PlatformUtils::WindowsLongPath(filePath);
+#else
         std::wstring widePath = filePath.wstring();
+#endif
         //std::string utf8Path = WideStringToUTF8(widePath);
         std::string utf8Path = PlatformUtils::WideToUTF8(widePath);
 
@@ -288,10 +299,10 @@ namespace FFmpeg {
 
 
     void log_warning(const char* message) {
-        spdlog::warn(message);
+        spdlog::warn("{}", message);
     }
     void log_info(const char* message) {
-        spdlog::info(message);
+        spdlog::info("{}", message);
     }
 
     std::shared_ptr<AudioAnalysisInfo> analyze_audio_recording(AVFormatContext* fmt_ctx)

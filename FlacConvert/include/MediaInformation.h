@@ -17,7 +17,6 @@
 
 #include <locale>
 #include <codecvt>
-#include <windows.h>
 #include "AppSettings.h"
 
 #include "rapidjson/rapidjson.h" 
@@ -232,7 +231,6 @@ struct FFprobeOutput {
     std::optional<AudioMetrics> audio_metrics;
     std::optional<AudioAnalysisInfo> audio_quality;
 };
-
 
 
 

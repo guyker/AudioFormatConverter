@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <filesystem>
 #include <vector>
 
@@ -24,6 +25,10 @@ class FolderConvert
 public:
 
     static int ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::path& directory, bool bAsync = false);
+    static int ConvertAudioFolderToOutput(
+        const std::filesystem::path& inputDirectory,
+        const std::filesystem::path& outputDirectory,
+        bool overwrite);
     
     static int ConverAudioFolder(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync);
     //static int ConverAudioFolder(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync = false);

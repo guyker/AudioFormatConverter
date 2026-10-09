@@ -3,7 +3,8 @@ id: K-002
 kind: defect
 title: "Conversion passes file paths through an unescaped shell command"
 area: [FlacConvert]
-status: active
+status: fixed
+fixed_by: K-004
 created: 2026-10-09
 reviewed: 2026-10-09
 cites:

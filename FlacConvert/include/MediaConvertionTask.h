@@ -17,8 +17,8 @@ namespace fs = std::filesystem;
 class MediaConvertionTask {
 public:
     MediaConvertionTask() = delete;
-    MediaConvertionTask(const fs::path sourcePath, const fs::path targetPath, const fs::path targetTMPPath, bool bAsync = false) :
-        _sourcePath(sourcePath), _targetPath(targetPath), _targetTMPPath(targetTMPPath), _status(0) {}
+    MediaConvertionTask(const fs::path sourcePath, const fs::path targetPath, const fs::path targetTMPPath, bool overwriteTarget = true) :
+        _sourcePath(sourcePath), _targetPath(targetPath), _targetTMPPath(targetTMPPath), _overwriteTarget(overwriteTarget), _status(0) {}
 
     virtual int Run();
     virtual int PostRun();
@@ -30,11 +30,12 @@ public:
 protected:
 
     virtual int ConvertFile();
-    virtual int RenameAndRemoveTMPFile();
+    virtual int InstallTemporaryOutput();
 
     const fs::path _sourcePath;
     const fs::path _targetPath;
     const fs::path _targetTMPPath;
+    const bool _overwriteTarget;
 
     int _status;
 };

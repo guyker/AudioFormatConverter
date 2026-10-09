@@ -8,6 +8,10 @@ AudioFormatConverter is a Windows C++ audio conversion and library-management ut
 `FlacConvert`, currently runs conversions through the FFmpeg executable; metadata and audio analysis also use FFmpeg
 libraries. See `README.md` for the feature overview.
 
+The core C++ sources must remain portable across Windows, Linux and macOS. Visual Studio solution/project files are a
+Windows development/build wrapper, not a requirement that the application logic use Windows APIs. Isolate
+platform-specific code behind narrow platform abstractions or conditional implementations.
+
 ## Map
 
 | Folder / file | What it is | Read first |
