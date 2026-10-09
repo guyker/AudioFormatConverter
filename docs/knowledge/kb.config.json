@@ -1,0 +1,13 @@
+{
+  "idPrefix": "K-",
+  "idWidth": 3,
+  "scope": [
+    "FlacConvert",
+    "Repository"
+  ],
+  "areas": [
+    "FlacConvert",
+    "External Dependencies",
+    "Repository"
+  ]
+}
