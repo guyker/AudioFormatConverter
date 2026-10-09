@@ -50,8 +50,10 @@ FlacConvert duplicates "E:\Catalog\Music"
 FlacConvert db import "E:\Catalog\Music" --output-dir "E:\Databases"
 ```
 
-`convert` writes FLAC files to a separate output tree and preserves source files. Existing destinations cause an error
-unless `--overwrite` is specified. `scan` replaces the generated JSON output for that library only after a new scan
+`convert` writes FLAC files to a separate output tree and preserves source files. Sources below 16-bit or 44.1 kHz, or
+whose properties cannot be verified, are rejected and fail the command. Accepted audio is converted to 16-bit, 44.1 kHz
+FLAC with triangular dithering. Existing destinations cause an error unless `--overwrite` is specified. `scan` replaces
+the generated JSON output for that library only after a new scan
 completes. `duplicates` reports matches without opening folders; pass `--open` to open matched folders in Explorer.
 `db import` creates or updates a library-named SQLite database.
 

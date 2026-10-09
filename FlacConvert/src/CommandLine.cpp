@@ -78,7 +78,7 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
         "Replace existing destination files only after each conversion succeeds.");
     add_config_option(convert, options);
     convert->footer(command_footer(
-        "Inputs: a directory containing supported audio files. Conversion writes .flac files under output-dir, preserving relative directories and filenames. Source files are never replaced. Existing destination files are skipped with an error unless --overwrite is supplied. The output directory is created when needed.",
+        "Inputs: a directory containing supported audio files. Sources below 16-bit or 44.1 kHz, or whose properties cannot be verified, are rejected and fail the command. Accepted audio is converted to 16-bit, 44.1 kHz FLAC with triangular dithering. Conversion writes .flac files under output-dir, preserving relative directories and filenames. Source files are never replaced. Existing destination files are skipped with an error unless --overwrite is supplied. The output directory is created when needed.",
         "  FlacConvert convert \"D:\\Music\" --output-dir \"E:\\Converted\"\n"
         "  FlacConvert convert \"D:\\Music\" --config \"D:\\settings\\config.json\""));
     convert->callback([&options] { options.action = CommandAction::Convert; });

@@ -1,9 +1,13 @@
 
 #include "MediaConvertionTask.h"
 
+#include <algorithm>
 #include <string>
 #include <cerrno>
+#include <charconv>
 #include <filesystem>
+#include <optional>
+#include <sstream>
 #include <utility>
 #include <vector>
 #include <system_error>
@@ -21,19 +25,80 @@
 
 #include "AppSettings.h"
 #include "CommonUtils.h"
+#include "FFmpeg.h"
 #include "PlatformUtils.h"
 
 namespace fs = std::filesystem;
 
 namespace
 {
+std::optional<int> parseInteger(const std::optional<std::string>& value)
+{
+    if (!value || value->empty()) {
+        return std::nullopt;
+    }
+
+    int parsed = 0;
+    const auto result = std::from_chars(value->data(), value->data() + value->size(), parsed);
+    if (result.ec != std::errc{} || result.ptr != value->data() + value->size()) {
+        return std::nullopt;
+    }
+    return parsed;
+}
+
+bool isAtLeastCDQuality(const fs::path& source)
+{
+    const auto metadata = FFmpeg::GetFFprobeMetadataAPI(source);
+    const auto audioStream = std::find_if(metadata.streams.begin(), metadata.streams.end(),
+        [](const Stream& stream) {
+            return stream.codec_type && *stream.codec_type == "audio";
+        });
+    if (audioStream == metadata.streams.end()) {
+        spdlog::error("Cannot convert '{}': no readable audio stream was found.",
+            CommonUtils::path_to_utf8(source));
+        return false;
+    }
+
+    const auto sampleRate = parseInteger(audioStream->sample_rate);
+    const auto bitDepth = audioStream->bits_per_sample;
+    std::vector<std::string> issues;
+    if (!sampleRate) {
+        issues.emplace_back("sample rate could not be verified");
+    }
+    else if (*sampleRate < 44100) {
+        issues.emplace_back("sample rate " + std::to_string(*sampleRate) + " Hz is below 44100 Hz");
+    }
+    if (!bitDepth) {
+        issues.emplace_back("bit depth could not be verified");
+    }
+    else if (*bitDepth < 16) {
+        issues.emplace_back("bit depth " + std::to_string(*bitDepth) + " is below 16-bit");
+    }
+
+    if (issues.empty()) {
+        return true;
+    }
+
+    std::ostringstream reason;
+    for (std::size_t i = 0; i < issues.size(); ++i) {
+        if (i > 0) {
+            reason << "; ";
+        }
+        reason << issues[i];
+    }
+    spdlog::error("Rejecting source '{}': {}. Conversion requires at least 16-bit audio at 44100 Hz.",
+        CommonUtils::path_to_utf8(source), reason.str());
+    return false;
+}
+
 int runFFmpeg(const std::wstring& executable, const fs::path& source, const fs::path& destination, bool overwrite)
 {
 #ifdef _WIN32
     const std::wstring overwriteOption = overwrite ? L"-y" : L"-n";
     const std::vector<std::wstring> arguments{
-        executable, L"-i", PlatformUtils::WindowsLongPath(source), L"-c:v", L"copy", L"-sample_fmt", L"s16",
-        L"-ar", L"44100", overwriteOption, L"-v", L"warning", L"-stats",
+        executable, L"-i", PlatformUtils::WindowsLongPath(source), L"-map", L"0:a:0",
+        L"-af", L"aresample=osf=s16:osr=44100:dither_method=triangular", L"-c:a", L"flac",
+        overwriteOption, L"-v", L"warning", L"-stats",
         PlatformUtils::WindowsLongPath(destination)
     };
     std::vector<const wchar_t*> pointers;
@@ -51,8 +116,9 @@ int runFFmpeg(const std::wstring& executable, const fs::path& source, const fs::
 #else
     const std::string executableUtf8 = PlatformUtils::wstringToUtf8_ver2(executable);
     const std::vector<std::string> arguments{
-        executableUtf8, "-i", source.string(), "-c:v", "copy", "-sample_fmt", "s16",
-        "-ar", "44100", overwrite ? "-y" : "-n", "-v", "warning", "-stats", destination.string()
+        executableUtf8, "-i", source.string(), "-map", "0:a:0",
+        "-af", "aresample=osf=s16:osr=44100:dither_method=triangular", "-c:a", "flac",
+        overwrite ? "-y" : "-n", "-v", "warning", "-stats", destination.string()
     };
     std::vector<char*> pointers;
     pointers.reserve(arguments.size() + 1);
@@ -89,6 +155,11 @@ int runFFmpeg(const std::wstring& executable, const fs::path& source, const fs::
 
 int MediaConvertionTask::ConvertFile()
 {
+    if (!isAtLeastCDQuality(_sourcePath)) {
+        _status = -1;
+        return _status;
+    }
+
     std::error_code ec;
     const bool destinationExists = fs::exists(_targetPath, ec);
     if (ec) {

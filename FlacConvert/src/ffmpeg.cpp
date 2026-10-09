@@ -707,6 +707,12 @@ namespace FFmpeg {
                 if (codecpar->bits_per_raw_sample > 0) {
                     s.bits_per_sample = codecpar->bits_per_raw_sample;
                 }
+                else {
+                    const int bitsPerSample = av_get_bits_per_sample(codecpar->codec_id);
+                    if (bitsPerSample > 0) {
+                        s.bits_per_sample = bitsPerSample;
+                    }
+                }
                 if (codecpar->frame_size > 0) {
                     s.frame_size = codecpar->frame_size;
                 }
