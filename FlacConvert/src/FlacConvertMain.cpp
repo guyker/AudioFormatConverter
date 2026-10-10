@@ -59,7 +59,7 @@
 namespace fs = std::filesystem;
 
 
-enum class ConvertActionEnum { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum };
+enum class ConvertActionEnum { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum, ConvertMp3Enum };
 
 
 int ConvertFLACToFLAC(std::vector<MediaDirectoryElement> mediaDirectoryList)
@@ -346,6 +346,62 @@ std::vector<fs::path> findConfiguredJsonFiles(
     }
     return files;
 }
+}
+
+int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryList, const fs::path& outputRoot)
+{
+    if (mediaDirectoryList.empty()) {
+        spdlog::error("No active media libraries configured for FLAC to MP3 conversion.");
+        return 1;
+    }
+    struct LibraryConversion {
+        fs::path source;
+        fs::path target;
+    };
+    std::vector<LibraryConversion> conversions;
+    for (const auto& mediaEntry : mediaDirectoryList) {
+        const fs::path source = pathFromUtf8(mediaEntry.mediaPath);
+        const fs::path name = pathFromUtf8(
+            mediaEntry.mediaName && !mediaEntry.mediaName->empty()
+                ? *mediaEntry.mediaName : directoryNameUtf8(source));
+        if (name.empty() || name == "." || name == ".." || name.has_root_path() || name.has_parent_path()) {
+            spdlog::error("Library name must be a single directory name: '{}'.", pathToUtf8(name));
+            return 1;
+        }
+        std::error_code ec;
+        const fs::path canonicalSource = fs::weakly_canonical(source, ec);
+        if (ec || !fs::is_directory(canonicalSource, ec) || ec) {
+            spdlog::error("Library path is not a readable directory: '{}'.", pathToUtf8(source));
+            return 1;
+        }
+        const fs::path target = fs::weakly_canonical(outputRoot / "MP3" / name, ec);
+        if (ec) {
+            spdlog::error("Cannot resolve MP3 output directory: {}", ec.message());
+            return 1;
+        }
+        conversions.push_back({ canonicalSource, target });
+    }
+    for (std::size_t i = 0; i < conversions.size(); ++i) {
+        for (std::size_t j = 0; j < conversions.size(); ++j) {
+            if (isSameOrChildPath(conversions[i].target, conversions[j].source) ||
+                isSameOrChildPath(conversions[j].source, conversions[i].target) ||
+                (i != j && isSameOrChildPath(conversions[i].target, conversions[j].target))) {
+                spdlog::error("MP3 output overlaps a source library or another output: '{}'.",
+                    pathToUtf8(conversions[i].target));
+                return 1;
+            }
+        }
+    }
+    const ConversionOptions options{ AudioTarget::Mp3, 0, false };
+    spdlog::info("FLAC to MP3: VBR quality 0, no overwrite, no multichannel downmix. "
+        "Use the convert subcommand for quality, overwrite or downmix options.");
+    for (const auto& conversion : conversions) {
+        spdlog::info("Converting '{}' to '{}'.", pathToUtf8(conversion.source), pathToUtf8(conversion.target));
+        if (FolderConvert::ConvertAudioFolderToOutput(conversion.source, conversion.target, false, options) != 0) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryList, bool bIncludeMetadata, const fs::path& outputRoot)
@@ -783,7 +839,7 @@ ConvertActionEnum GetUserAction()
 {
     ConvertActionEnum action{ ConvertActionEnum::NullEnum };
 
-    spdlog::info("Select run option [1 - Re/Convert FLAC, 2 - Scan directories, 3 - Get Duplicates, 4 - Update DB, XX 5 - Scan DIR to DB, ]");
+    spdlog::info("Select run option [1 - Re/Convert FLAC, 2 - Scan directories, 3 - Get Duplicates, 4 - Update DB, XX 5 - Scan DIR to DB, 6 - Convert FLAC to MP3]");
     char input = getchar();
     switch (input)
     {
@@ -801,6 +857,9 @@ ConvertActionEnum GetUserAction()
         break;
     case '4':
         action = ConvertActionEnum::PopulateJsonToDBEnum;
+        break;
+    case '6':
+        action = ConvertActionEnum::ConvertMp3Enum;
         break;
     default:
         spdlog::error("Selection Error, unknown {}", input);
@@ -913,6 +972,9 @@ int RunLegacyMenu()
     case ConvertActionEnum::CreateDBFromFolderEnum: //5
         return 0;
 
+    case ConvertActionEnum::ConvertMp3Enum: //6
+        return ConvertFLACToMP3(mediaList, pathFromUtf8(appSettingPtr->OutDirectory));
+
     default:
         spdlog::error("Acrtion not found: {}", static_cast<int>(action));
         return 2;
@@ -964,7 +1026,7 @@ int RunWithArguments(const std::vector<const char*>& arguments)
         switch (options.action) {
         case CommandAction::Convert:
             return FolderConvert::ConvertAudioFolderToOutput(
-                inputPath, outputDirectory, options.overwrite) == 0 ? 0 : 1;
+                inputPath, outputDirectory, options.overwrite, options.conversion) == 0 ? 0 : 1;
 
         case CommandAction::Scan: {
             std::error_code ec;

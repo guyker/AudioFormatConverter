@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include "ConversionOptions.h"
 
 enum class CommandAction
 {
@@ -21,6 +22,7 @@ struct CommandLineOptions
     bool configPathSpecified{ false };
     bool overwrite{ false };
     bool openDuplicateFolders{ false };
+    ConversionOptions conversion;
 };
 
 int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& options);

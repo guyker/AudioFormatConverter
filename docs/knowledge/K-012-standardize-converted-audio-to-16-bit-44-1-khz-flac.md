@@ -3,7 +3,8 @@ id: K-012
 kind: decision
 title: "Standardize converted audio to 16-bit 44.1 kHz FLAC"
 area: [FlacConvert]
-status: active
+status: superseded
+superseded_by: K-017
 created: 2026-10-10
 reviewed: 2026-10-10
 cites:

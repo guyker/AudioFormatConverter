@@ -249,11 +249,10 @@ namespace FFmpeg {
         // u8string() might return std::string or std::u8string.
 #ifdef _WIN32
         std::wstring widePath = PlatformUtils::WindowsLongPath(filePath);
-#else
-        std::wstring widePath = filePath.wstring();
-#endif
-        //std::string utf8Path = WideStringToUTF8(widePath);
         std::string utf8Path = PlatformUtils::WideToUTF8(widePath);
+#else
+        std::string utf8Path = filePath.string();
+#endif
 
         //AVFormatContext* fmt_ctx = nullptr;
         AVFormatContext* fmt_ctx = avformat_alloc_context();
@@ -630,7 +629,7 @@ namespace FFmpeg {
 
         fmt.nb_stream_groups = fmt_ctx->nb_stream_groups;
 
-        fmt.nb_chapters = fmt_ctx->nb_stream_groups;
+        fmt.nb_chapters = fmt_ctx->nb_chapters;
 
 
         if (fmt_ctx->start_time != AV_NOPTS_VALUE) {
@@ -682,6 +681,14 @@ namespace FFmpeg {
             AVStream* stream = fmt_ctx->streams[i];
             Stream s;
             s.index = stream->index;
+            const auto flag = [stream](int value) { return (stream->disposition & value) != 0 ? 1 : 0; };
+            s.disposition = Disposition{
+                flag(AV_DISPOSITION_DEFAULT), flag(AV_DISPOSITION_DUB), flag(AV_DISPOSITION_ORIGINAL),
+                flag(AV_DISPOSITION_COMMENT), flag(AV_DISPOSITION_LYRICS), flag(AV_DISPOSITION_KARAOKE),
+                flag(AV_DISPOSITION_FORCED), flag(AV_DISPOSITION_HEARING_IMPAIRED),
+                flag(AV_DISPOSITION_VISUAL_IMPAIRED), flag(AV_DISPOSITION_CLEAN_EFFECTS),
+                flag(AV_DISPOSITION_ATTACHED_PIC), flag(AV_DISPOSITION_TIMED_THUMBNAILS)
+            };
             AVCodecParameters* codecpar = stream->codecpar;
             s.codec_name = avcodec_get_name(codecpar->codec_id);
             switch (codecpar->codec_type) {

@@ -135,7 +135,8 @@ int FolderConvert::ScanAudioFiles(ScanInfo& scanInfo, const std::filesystem::pat
 int FolderConvert::ConvertAudioFolderToOutput(
     const fs::path& inputDirectory,
     const fs::path& outputDirectory,
-    bool overwrite)
+    bool overwrite,
+    ConversionOptions options)
 {
     std::error_code ec;
     const fs::path input = fs::weakly_canonical(inputDirectory, ec);
@@ -158,6 +159,29 @@ int FolderConvert::ConvertAudioFolderToOutput(
     if (ScanAudioFiles(scanInfo, input) != 0) {
         return -1;
     }
+    std::vector<fs::directory_entry> companions;
+    if (options.target == AudioTarget::Mp3) {
+        std::erase_if(scanInfo.mediaList, [](const fs::directory_entry& entry) {
+            return MediaTrack::FileExtension(entry.path()) != u8".flac";
+        });
+        // Audio files of other formats are not companion documents or artwork.
+        const std::set<std::u8string> audioExtensions{ u8".mp3", u8".aac", u8".ogg", u8".oga",
+            u8".opus", u8".wma", u8".aif", u8".aiff", u8".alac", u8".mp4", u8".mka", u8".ac3",
+            u8".m4b", u8".m4p", u8".mp2", u8".mp1", u8".au", u8".snd", u8".aifc", u8".caf",
+            u8".tak", u8".tta", u8".shn", u8".amr" };
+        try {
+            for (const auto& entry : fs::recursive_directory_iterator(input)) {
+                if (entry.is_regular_file() && !MediaTrack::IsFileConvertable(entry.path()) &&
+                    !audioExtensions.contains(MediaTrack::FileExtension(entry.path()))) {
+                    companions.push_back(entry);
+                }
+            }
+        }
+        catch (const fs::filesystem_error& error) {
+            spdlog::error("Cannot enumerate companion files: {}", error.what());
+            return -1;
+        }
+    }
     if (scanInfo.mediaList.empty()) {
         spdlog::warn("No convertible audio files found under '{}'.", CommonUtils::path_to_utf8(input));
         return 0;
@@ -169,9 +193,32 @@ int FolderConvert::ConvertAudioFolderToOutput(
         fs::path temporary;
     };
     std::vector<Conversion> conversions;
+    std::vector<Conversion> copies;
     conversions.reserve(scanInfo.mediaList.size());
     std::set<fs::path, CaseInsensitivePathLess> plannedTargets;
     static std::atomic_uint64_t nextTemporaryId{ 0 };
+    const auto preflight = [&](const fs::path& target, const fs::path& source) {
+        const fs::path canonicalTarget = fs::weakly_canonical(target, ec);
+        if (ec || !plannedTargets.insert(canonicalTarget).second) {
+            spdlog::error("Cannot use destination (unresolvable or colliding): {}", CommonUtils::path_to_utf8(target));
+            return false;
+        }
+        const bool exists = fs::exists(target, ec);
+        if (ec || (!overwrite && exists) || (exists && !fs::is_regular_file(target, ec))) {
+            spdlog::error("Cannot use destination (existing, non-file or unreadable): {}", CommonUtils::path_to_utf8(target));
+            return false;
+        }
+        if (exists && fs::equivalent(source, target, ec)) {
+            spdlog::error("Refusing to overwrite a source file: {}", CommonUtils::path_to_utf8(target));
+            return false;
+        }
+        if (ec || !isSameOrChildPath(canonicalTarget, output) ||
+            isSameOrChildPath(canonicalTarget, input)) {
+            spdlog::error("Unsafe destination: {}", CommonUtils::path_to_utf8(target));
+            return false;
+        }
+        return true;
+    };
 
     for (const auto& entry : scanInfo.mediaList) {
         const fs::path source = entry.path();
@@ -182,7 +229,7 @@ int FolderConvert::ConvertAudioFolderToOutput(
         }
 
         fs::path target = output / relativePath;
-        target.replace_extension(GetTargetFileType());
+        target.replace_extension(options.target == AudioTarget::Mp3 ? ".mp3" : ".flac");
         const fs::path canonicalSource = fs::weakly_canonical(source, ec);
         if (ec) {
             spdlog::error("Cannot resolve source path '{}': {}", CommonUtils::path_to_utf8(source), ec.message());
@@ -197,34 +244,58 @@ int FolderConvert::ConvertAudioFolderToOutput(
             spdlog::error("Refusing to overwrite a source file: {}", CommonUtils::path_to_utf8(source));
             return -1;
         }
-        if (!plannedTargets.insert(canonicalTarget).second) {
-            spdlog::error("Multiple source files map to the same destination: {}", CommonUtils::path_to_utf8(target));
-            return -1;
-        }
-        if (!overwrite && fs::exists(target, ec)) {
-            spdlog::error("Destination already exists: {}", CommonUtils::path_to_utf8(target));
-            return -1;
-        }
-        if (ec) {
-            spdlog::error("Cannot inspect destination '{}': {}", CommonUtils::path_to_utf8(target), ec.message());
-            return -1;
-        }
-
-        fs::create_directories(target.parent_path(), ec);
-        if (ec) {
-            spdlog::error("Cannot create output directory '{}': {}", CommonUtils::path_to_utf8(target.parent_path()), ec.message());
+        fs::path sidecar = target;
+        sidecar += ".flac-metadata";
+        if (!preflight(target, source) ||
+            (options.target == AudioTarget::Mp3 && !preflight(sidecar, source))) {
             return -1;
         }
 
         conversions.push_back({ source, target, makeTemporaryOutputPath(target, ++nextTemporaryId) });
     }
+    for (const auto& entry : companions) {
+        const auto relative = fs::relative(entry.path(), input, ec);
+        if (ec) {
+            spdlog::error("Cannot resolve companion path: {}", CommonUtils::path_to_utf8(entry.path()));
+            return -1;
+        }
+        const auto target = output / relative;
+        if (!preflight(target, entry.path())) {
+            return -1;
+        }
+        copies.push_back({ entry.path(), target, makeTemporaryOutputPath(target, ++nextTemporaryId) });
+    }
 
     for (const auto& conversion : conversions) {
+        fs::create_directories(conversion.target.parent_path(), ec);
+        if (ec) {
+            spdlog::error("Cannot create output directory: {}", ec.message());
+            return -1;
+        }
         auto task = std::make_shared<MediaConvertionTask>(
-            conversion.source, conversion.target, conversion.temporary, overwrite);
+            conversion.source, conversion.target, conversion.temporary, overwrite, options);
         if (task->Run() != 0 || task->PostRun() != 0) {
             return -1;
         }
+    }
+
+    for (const auto& copy : copies) {
+        fs::create_directories(copy.target.parent_path(), ec);
+        if (ec || !fs::copy_file(copy.source, copy.temporary, fs::copy_options::none, ec)) {
+            spdlog::error("Cannot copy companion '{}': {}", CommonUtils::path_to_utf8(copy.source), ec.message());
+            std::error_code cleanupError;
+            fs::remove(copy.temporary, cleanupError);
+            if (cleanupError) {
+                spdlog::warn("Cannot clean temporary companion '{}': {}",
+                    CommonUtils::path_to_utf8(copy.temporary), cleanupError.message());
+            }
+            return -1;
+        }
+        if (!MediaConvertionTask::InstallOutputFile(copy.temporary, copy.target, overwrite)) {
+            spdlog::error("Companion copy remains recoverable at '{}'.", CommonUtils::path_to_utf8(copy.temporary));
+            return -1;
+        }
+        spdlog::info("Copied companion file unchanged: {}", CommonUtils::path_to_utf8(copy.target));
     }
 
     return 0;

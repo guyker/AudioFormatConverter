@@ -183,6 +183,7 @@
     <ClCompile Include="src\ffmpeg.cpp" />
     <ClCompile Include="src\FlacConvertMain.cpp" />
     <ClCompile Include="src\FolderConvert.cpp" />
+    <ClCompile Include="src\FlacMetadata.cpp" />
     <ClCompile Include="src\JsonUtils.cpp" />
     <ClCompile Include="src\MediaAlbum.cpp" />
     <ClCompile Include="src\MediaConvertionAsyncTask.cpp" />
@@ -198,6 +199,8 @@
     <ClInclude Include="include\ffmpeg.h" />
     <ClInclude Include="include\FFmpegWrapper.h" />
     <ClInclude Include="include\FolderConvert.h" />
+    <ClInclude Include="include\ConversionOptions.h" />
+    <ClInclude Include="include\FlacMetadata.h" />
     <ClInclude Include="include\JsonUtils.h" />
     <ClInclude Include="include\MediaAlbum.h" />
     <ClInclude Include="include\MediaConvertionAsyncTask.h" />

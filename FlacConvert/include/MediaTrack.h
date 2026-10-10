@@ -63,18 +63,29 @@ struct MediaTrack
 	static bool IsFileConvertable(std::filesystem::path filePath)
 	{
 		//L".mp3", L".wav", L".flac", L".aac", L".ogg", L".wma", L".m4a"
-		static std::set<std::wstring> fileExtensionList = { L".flac", L".ape", L".dsf", L".dff", L".dsd", L".wv", L".wav", L".m2ts" , L".m4a" };
-		auto fileExtension = CommonUtils::ToLower(filePath.extension().wstring());
+		static const std::set<std::u8string> fileExtensionList = { u8".flac", u8".ape", u8".dsf", u8".dff", u8".dsd", u8".wv", u8".wav", u8".m2ts", u8".m4a" };
+		auto fileExtension = FileExtension(filePath);
 
 		return filePath.has_extension() && (fileExtensionList.find(fileExtension) != fileExtensionList.end());
 	}
 
 	static bool IsFileAcceptedAudioFile(std::filesystem::path filePath)
 	{
-		static std::set<std::wstring> fileExtensionList = { L".flac", L".mp3" };
-		auto fileExtension = CommonUtils::ToLower(filePath.extension().wstring());
+		static const std::set<std::u8string> fileExtensionList = { u8".flac", u8".mp3" };
+		auto fileExtension = FileExtension(filePath);
 
 		return filePath.has_extension() && (fileExtensionList.find(fileExtension) != fileExtensionList.end());
+	}
+
+	static std::u8string FileExtension(const fs::path& path)
+	{
+		auto extension = path.extension().u8string();
+		for (auto& character : extension) {
+			if (character >= u8'A' && character <= u8'Z') {
+				character = static_cast<char8_t>(character + (u8'a' - u8'A'));
+			}
+		}
+		return extension;
 	}
 
 	static bool IsValidMedia(const fs::directory_entry& entry)

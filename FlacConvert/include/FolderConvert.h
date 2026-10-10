@@ -4,6 +4,7 @@
 #include <string_view>
 #include <filesystem>
 #include <vector>
+#include "ConversionOptions.h"
 
 namespace fs = std::filesystem;
 
@@ -28,7 +29,8 @@ public:
     static int ConvertAudioFolderToOutput(
         const std::filesystem::path& inputDirectory,
         const std::filesystem::path& outputDirectory,
-        bool overwrite);
+        bool overwrite,
+        ConversionOptions options = {});
     
     static int ConverAudioFolder(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync);
     //static int ConverAudioFolder(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync = false);

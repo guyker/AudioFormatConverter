@@ -61,7 +61,16 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
         "Run a command with --help for its inputs, outputs, applicable settings, and examples.\n\n"
         "Configuration keys:\n" + kConfigurationHelp);
 
-    auto* convert = app.add_subcommand("convert", "Convert supported audio files to FLAC without changing sources.");
+    auto* convert = app.add_subcommand("convert", "Convert audio to FLAC or convert native FLAC to MP3 without changing sources.");
+    std::string targetFormat{ "flac" };
+    auto* target = convert->add_option("--to", targetFormat, "Target: flac (default) or mp3.")
+        ->check(CLI::IsMember({ "flac", "mp3" }));
+    auto* quality = convert->add_option("--mp3-quality", options.conversion.mp3Quality,
+        "LAME VBR quality: 0 (highest, default) through 9 (lowest).")->check(CLI::Range(0, 9));
+    auto* downmix = convert->add_flag("--downmix-to-stereo", options.conversion.downmixToStereo,
+        "Allow multichannel FLAC to be downmixed to stereo for MP3; logs the change.");
+    quality->needs(target);
+    downmix->needs(target);
     convert->add_option("input-dir", options.inputPath,
         "Directory tree to convert (FLAC, APE, DSF, DFF, DSD, WV, WAV, M2TS, and M4A).")
         ->required()
@@ -78,10 +87,16 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
         "Replace existing destination files only after each conversion succeeds.");
     add_config_option(convert, options);
     convert->footer(command_footer(
-        "Inputs: a directory containing supported audio files. Sources below 16-bit or 44.1 kHz, or whose properties cannot be verified, are rejected and fail the command. Accepted audio is converted to 16-bit, 44.1 kHz FLAC with triangular dithering. Conversion writes .flac files under output-dir, preserving relative directories and filenames. Source files are never replaced. Existing destination files are skipped with an error unless --overwrite is supplied. The output directory is created when needed.",
+        "FLAC output: supported inputs become 16-bit/44.1 kHz FLAC with triangular dithering. MP3 output: only native FLAC inputs; libmp3lame VBR quality 0 by default, ID3v2.4 tags/artwork plus an original FLAC metadata sidecar and unchanged non-audio companion files. MP3 retains 44.1/48 kHz; other accepted rates become 48 kHz. Multichannel MP3 requires --downmix-to-stereo. All conversions require verified source depth >=16 and rate >=44100 Hz. Paths are preserved under a separate output directory; sources are never replaced. Existing destinations fail unless --overwrite is supplied.",
         "  FlacConvert convert \"D:\\Music\" --output-dir \"E:\\Converted\"\n"
         "  FlacConvert convert \"D:\\Music\" --config \"D:\\settings\\config.json\""));
-    convert->callback([&options] { options.action = CommandAction::Convert; });
+    convert->callback([&options, &targetFormat, quality, downmix] {
+        options.conversion.target = targetFormat == "mp3" ? AudioTarget::Mp3 : AudioTarget::Flac;
+        if (options.conversion.target != AudioTarget::Mp3 && (quality->count() || downmix->count())) {
+            throw CLI::ValidationError("MP3 options require --to mp3");
+        }
+        options.action = CommandAction::Convert;
+    });
 
     auto* scan = app.add_subcommand("scan", "Scan a library and write split JSON metadata files.");
     scan->add_option("library-dir", options.inputPath, "Audio library directory to scan.")

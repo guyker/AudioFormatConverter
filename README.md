@@ -24,7 +24,7 @@
 4. It can export the collected metadata into a SQLite database for structured storage and querying.
 
 <h3>Audio File Conversion/Processing (Limited Scope):</h3>
-1. The `convert` command uses FFmpeg to write FLAC files into a separate output tree and leaves source files unchanged. The legacy menu remains available without arguments during the CLI transition.
+1. The `convert` command uses FFmpeg to write FLAC or convert FLAC to MP3 into a separate output tree and leaves source files unchanged. The legacy menu remains available without arguments during the CLI transition.
 
 <h3>Duplicate Album Detection and Comparison:</h3>
 1. A key feature is finding "duplicate" albums within the scanned collection. This is done by comparing track counts, and then more thoroughly by comparing sorted track durations and potentially audio quality metrics (if enabled).
@@ -37,6 +37,10 @@
 3. Scan directories and create JSON metadata files.
 4. Process existing JSON files to find duplicate albums.
 5. Populate a SQLite database from JSON files.
+6. Menu selection `6` converts active configured libraries from FLAC to MP3, writing to
+   `OutDirectory\MP3\<mediaName>` (defaults to the source folder name). It uses VBR quality 0,
+   preserves metadata/companions, never changes sources, and fails on existing destinations or
+   multichannel input. Use the `convert` subcommand for quality, overwrite and explicit downmix options.
 
 <h2>Command-line usage</h2>
 
@@ -45,6 +49,8 @@ input, output, configuration, and example information.
 
 ```text
 FlacConvert convert "D:\Music" --output-dir "E:\Converted"
+FlacConvert convert "D:\Music" --to mp3 --output-dir "E:\MP3"
+FlacConvert convert "D:\Music" --to mp3 --mp3-quality 2 --output-dir "E:\MP3"
 FlacConvert scan "D:\Music" --output-dir "E:\Catalog"
 FlacConvert duplicates "E:\Catalog\Music"
 FlacConvert db import "E:\Catalog\Music" --output-dir "E:\Databases"
@@ -56,6 +62,61 @@ FLAC with triangular dithering. Existing destinations cause an error unless `--o
 the generated JSON output for that library only after a new scan
 completes. `duplicates` reports matches without opening folders; pass `--open` to open matched folders in Explorer.
 `db import` creates or updates a library-named SQLite database.
+
+### FLAC to MP3
+
+`--to mp3` converts native FLAC files using **libmp3lame VBR quality 0** (highest-quality VBR).
+`--mp3-quality 0..9` controls the quality/size tradeoff; larger numbers mean lower quality.
+The FFmpeg executable must include the `libmp3lame` encoder. Files recognized as other audio formats are
+not converted or copied in this mode. The default `--to flac` and legacy menu retain their existing FLAC conversion behavior.
+
+MP3 keeps 44.1/48 kHz source rates; other accepted rates are resampled to 48 kHz, without first reducing
+the source to 16-bit. The minimum source-quality rule still applies. Mono/stereo are retained;
+multichannel inputs fail unless `--downmix-to-stereo` explicitly permits a logged stereo downmix.
+
+Standard and custom tags, chapters and supported embedded pictures are mapped to **ID3v2.4**.
+Pictures are copied without image re-encoding, including their types/descriptions. Xing/LAME timing
+information remains enabled for seeking and gapless playback. Unsupported pictures remain in the
+sidecar, rather than being silently discarded. Not every player displays every ID3 field or multiple pictures.
+
+Each MP3 has a required `<filename>.mp3.flac-metadata` binary sidecar: the original FLAC marker and every
+metadata block, byte-for-byte, plus leading ID3 and recognized trailing APE/ID3v1 tags when present.
+It preserves repeated Vorbis comments, vendor data, application blocks, cue sheets, seek tables and
+all picture payloads that ID3 or FFmpeg cannot faithfully represent. This is **not playable audio** or
+a metadata description of the MP3: source checksums, offsets, ReplayGain values and technical fields
+refer to the original FLAC. It cannot restore audio lost through MP3 encoding. Keep it with the MP3;
+no metadata restore command is currently provided. Ogg FLAC and headerless FLAC fail explicitly.
+
+Non-audio companion files (artwork, booklets, cue sheets, etc.) are copied unchanged with relative paths
+preserved. Copied cue sheets/playlists are not rewritten and may still name the original FLAC files.
+Metadata preservation, copying, encoding or output-verification failures fail the command and are logged.
+Existing MP3, sidecar or companion destinations require `--overwrite`. Installation protects existing
+files until conversion succeeds and restores the previous sidecar if MP3 installation fails; a folder
+batch is not an all-or-nothing transaction. Sources are never changed.
+
+Programmatic use reuses the existing task lifecycle:
+
+```cpp
+ConversionOptions options{ AudioTarget::Mp3, 0, false };
+MediaConvertionTask task(sourceFlac, targetMp3, uniqueTemporaryMp3, false, options);
+if (task.Run() != 0 || task.PostRun() != 0) {
+    // Handle the logged conversion/installation failure.
+}
+```
+
+Use distinct source/target paths and an unused temporary filename ending in `.mp3`, in the destination
+directory. `PostRun()` installs the MP3 and sidecar. The folder API accepts the same `ConversionOptions`
+as its fourth argument. Options default to FLAC for existing callers.
+
+Metadata design references: [FLAC format (RFC 9639)](https://www.rfc-editor.org/rfc/rfc9639.html),
+[FFmpeg MP3 muxer](https://ffmpeg.org/ffmpeg-formats.html#mp3), and the official FFmpeg
+[ID3 writer](https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/id3v2enc.c).
+
+Generated-fixture integration checks (Python standard library only):
+
+```text
+python tests\mp3_conversion.py --converter x64\Debug\FlacConvert.exe --ffmpeg external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\bin\ffmpeg.exe --ffprobe external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\bin\ffprobe.exe
+```
 
 Configuration is optional. Pass `--config <file>` to select a JSON settings file; otherwise the command checks the
 persisted config location, then `./config.json`, and finally uses built-in defaults (output goes to the operating

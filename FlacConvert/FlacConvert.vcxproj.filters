@@ -47,6 +47,9 @@
     <ClCompile Include="src\FolderConvert.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\FlacMetadata.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\JsonUtils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -86,6 +89,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\FolderConvert.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ConversionOptions.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\FlacMetadata.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\JsonUtils.h">
