@@ -357,6 +357,8 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryLis
     struct LibraryConversion {
         fs::path source;
         fs::path target;
+        fs::path canonicalSource;
+        fs::path canonicalTarget;
     };
     std::vector<LibraryConversion> conversions;
     for (const auto& mediaEntry : mediaDirectoryList) {
@@ -374,18 +376,20 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryLis
             spdlog::error("Library path is not a readable directory: '{}'.", pathToUtf8(source));
             return 1;
         }
-        const fs::path target = fs::weakly_canonical(outputRoot / "MP3" / name, ec);
+        const fs::path target = outputRoot / "MP3" / name;
+        const fs::path canonicalTarget = fs::weakly_canonical(target, ec);
         if (ec) {
             spdlog::error("Cannot resolve MP3 output directory: {}", ec.message());
             return 1;
         }
-        conversions.push_back({ canonicalSource, target });
+        // Convert via the configured paths; canonical (possibly UNC) paths are only for overlap checks.
+        conversions.push_back({ source, target, canonicalSource, canonicalTarget });
     }
     for (std::size_t i = 0; i < conversions.size(); ++i) {
         for (std::size_t j = 0; j < conversions.size(); ++j) {
-            if (isSameOrChildPath(conversions[i].target, conversions[j].source) ||
-                isSameOrChildPath(conversions[j].source, conversions[i].target) ||
-                (i != j && isSameOrChildPath(conversions[i].target, conversions[j].target))) {
+            if (isSameOrChildPath(conversions[i].canonicalTarget, conversions[j].canonicalSource) ||
+                isSameOrChildPath(conversions[j].canonicalSource, conversions[i].canonicalTarget) ||
+                (i != j && isSameOrChildPath(conversions[i].canonicalTarget, conversions[j].canonicalTarget))) {
                 spdlog::error("MP3 output overlaps a source library or another output: '{}'.",
                     pathToUtf8(conversions[i].target));
                 return 1;

@@ -138,14 +138,18 @@ int FolderConvert::ConvertAudioFolderToOutput(
     bool overwrite,
     ConversionOptions options)
 {
+    // Canonical paths are only for safety checks: on Windows they turn mapped drives into
+    // UNC paths that may not be reachable, so files are read and written via the given paths.
     std::error_code ec;
-    const fs::path input = fs::weakly_canonical(inputDirectory, ec);
-    if (ec || !fs::is_directory(input, ec) || ec) {
+    const fs::path inputRoot = fs::absolute(inputDirectory, ec);
+    const fs::path input = ec ? fs::path{} : fs::weakly_canonical(inputDirectory, ec);
+    if (ec || !fs::is_directory(inputRoot, ec) || ec) {
         spdlog::error("Input is not a readable directory: {}", CommonUtils::path_to_utf8(inputDirectory));
         return -1;
     }
 
-    const fs::path output = fs::weakly_canonical(outputDirectory, ec);
+    const fs::path outputRoot = fs::absolute(outputDirectory, ec);
+    const fs::path output = ec ? fs::path{} : fs::weakly_canonical(outputDirectory, ec);
     if (ec) {
         spdlog::error("Cannot resolve output directory '{}': {}", CommonUtils::path_to_utf8(outputDirectory), ec.message());
         return -1;
@@ -156,7 +160,7 @@ int FolderConvert::ConvertAudioFolderToOutput(
     }
 
     ScanInfo scanInfo{};
-    if (ScanAudioFiles(scanInfo, input) != 0) {
+    if (ScanAudioFiles(scanInfo, inputRoot) != 0) {
         return -1;
     }
     std::vector<fs::directory_entry> companions;
@@ -170,7 +174,7 @@ int FolderConvert::ConvertAudioFolderToOutput(
             u8".m4b", u8".m4p", u8".mp2", u8".mp1", u8".au", u8".snd", u8".aifc", u8".caf",
             u8".tak", u8".tta", u8".shn", u8".amr" };
         try {
-            for (const auto& entry : fs::recursive_directory_iterator(input)) {
+            for (const auto& entry : fs::recursive_directory_iterator(inputRoot)) {
                 if (entry.is_regular_file() && !MediaTrack::IsFileConvertable(entry.path()) &&
                     !audioExtensions.contains(MediaTrack::FileExtension(entry.path()))) {
                     companions.push_back(entry);
@@ -183,7 +187,7 @@ int FolderConvert::ConvertAudioFolderToOutput(
         }
     }
     if (scanInfo.mediaList.empty()) {
-        spdlog::warn("No convertible audio files found under '{}'.", CommonUtils::path_to_utf8(input));
+        spdlog::warn("No convertible audio files found under '{}'.", CommonUtils::path_to_utf8(inputRoot));
         return 0;
     }
 
@@ -222,13 +226,13 @@ int FolderConvert::ConvertAudioFolderToOutput(
 
     for (const auto& entry : scanInfo.mediaList) {
         const fs::path source = entry.path();
-        const fs::path relativePath = fs::relative(source, input, ec);
-        if (ec) {
+        const fs::path relativePath = source.lexically_relative(inputRoot);
+        if (relativePath.empty() || *relativePath.begin() == "..") {
             spdlog::error("Cannot resolve path relative to input directory: {}", CommonUtils::path_to_utf8(source));
             return -1;
         }
 
-        fs::path target = output / relativePath;
+        fs::path target = outputRoot / relativePath;
         target.replace_extension(options.target == AudioTarget::Mp3 ? ".mp3" : ".flac");
         const fs::path canonicalSource = fs::weakly_canonical(source, ec);
         if (ec) {
@@ -254,12 +258,12 @@ int FolderConvert::ConvertAudioFolderToOutput(
         conversions.push_back({ source, target, makeTemporaryOutputPath(target, ++nextTemporaryId) });
     }
     for (const auto& entry : companions) {
-        const auto relative = fs::relative(entry.path(), input, ec);
-        if (ec) {
+        const auto relative = entry.path().lexically_relative(inputRoot);
+        if (relative.empty() || *relative.begin() == "..") {
             spdlog::error("Cannot resolve companion path: {}", CommonUtils::path_to_utf8(entry.path()));
             return -1;
         }
-        const auto target = output / relative;
+        const auto target = outputRoot / relative;
         if (!preflight(target, entry.path())) {
             return -1;
         }
