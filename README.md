@@ -62,6 +62,12 @@ persisted config location, then `./config.json`, and finally uses built-in defau
 system's temporary directory on Linux/macOS or `C:\tmp` on Windows). CLI input and output paths take precedence.
 Launching without arguments temporarily retains the legacy interactive menu.
 
+`FlacConvert/config.json` is a sample configuration with Windows library paths; adjust those paths before use.
+`FLACSettings.ffmpeg_exe_name` selects the conversion executable. The `ffmpeg_convert_24bit_flac` and
+`ffmpeg_get_metadata_tags` strings are compatibility fields, not runtime overrides: conversion and metadata options
+are defined in code. Library output filenames are generated from `mediaName`; old `resultPath` and `dbPath` fields
+are not read.
+
 On Windows, the executable opts into long-path handling. The operating system's
 **Enable Win32 long paths** policy must also be enabled; the filesystem's per-component
 filename limit still applies. Command-line and configuration paths are interpreted as UTF-8,

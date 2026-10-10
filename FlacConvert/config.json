@@ -4,27 +4,24 @@
   "DatabaseFileName": "all_albums.db",
   "FLACSettings": {
     "ffmpeg_exe_name": "ffmpeg",
-    "ffmpeg_convert_24bit_flac": "-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats",
+    "ffmpeg_convert_24bit_flac": "-map 0:a:0 -af aresample=osf=s16:osr=44100:dither_method=triangular -c:a flac -y -v warning -stats",
     "ffmpeg_get_metadata_tags": "-v quiet -print_format json -show_format -show_streams -show_chapters"
   },
   "MediaDirectoryList": [
     {
       "isActive": true,
       "mediaPath": "\\\\?\\R:\\tmp\\24\\flac",
-      "resultPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac_result1.json",
-      "dbPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac.db"
+      "mediaName": "flac"
     },
     {
       "isActive": false,
       "mediaPath": "\\\\?\\R:\\tmp\\24\\mp3",
-      "resultPath": "\\\\?\\R:\\tmp\\24\\MediaResult_mp3_result1.json",
-      "dbPath": "\\\\?\\R:\\tmp\\24\\MediaResult_mp3.db"
+      "mediaName": "mp3"
     },
     {
       "isActive": false,
       "mediaPath": "\\\\?\\R:\\tmp\\24\\flac_tracks2",
-      "resultPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac_result2.json",
-      "dbPath": "\\\\?\\R:\\tmp\\24\\MediaResult_flac2.db"
+      "mediaName": "flac_tracks2"
     }
   ],
   "LogLevel": 1,

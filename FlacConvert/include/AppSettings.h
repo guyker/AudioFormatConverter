@@ -171,8 +171,8 @@ struct AppSettingsJson
 			2000, //AlbumsSplitThreshold
 			{
 				 L"ffmpeg",
-				 L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats",
-				 L"-c:v copy -sample_fmt s16 -ar 44100 -y -v warning -stats",				
+				 L"-map 0:a:0 -af aresample=osf=s16:osr=44100:dither_method=triangular -c:a flac -y -v warning -stats",
+				 L"-v quiet -print_format json -show_format -show_streams -show_chapters",
 			},
 			{
 				{true, "\\\\?\\R:\\tmp\\24\\flac", "flac"},
