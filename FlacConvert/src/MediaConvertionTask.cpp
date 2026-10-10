@@ -91,6 +91,26 @@ bool isAtLeastCDQuality(const fs::path& source)
     return false;
 }
 
+#ifdef _WIN32
+std::wstring quoteWindowsArgument(const std::wstring& argument)
+{
+    std::wstring quoted = L"\"";
+    std::size_t backslashes = 0;
+    for (const wchar_t character : argument) {
+        if (character == L'\\') {
+            ++backslashes;
+            continue;
+        }
+        quoted.append(character == L'"' ? backslashes * 2 + 1 : backslashes, L'\\');
+        quoted += character;
+        backslashes = 0;
+    }
+    quoted.append(backslashes * 2, L'\\');
+    quoted += L'"';
+    return quoted;
+}
+#endif
+
 int runFFmpeg(const std::wstring& executable, const fs::path& source, const fs::path& destination, bool overwrite)
 {
 #ifdef _WIN32
@@ -101,9 +121,15 @@ int runFFmpeg(const std::wstring& executable, const fs::path& source, const fs::
         overwriteOption, L"-v", L"warning", L"-stats",
         PlatformUtils::WindowsLongPath(destination)
     };
-    std::vector<const wchar_t*> pointers;
-    pointers.reserve(arguments.size() + 1);
+    // The Windows CRT joins spawn arguments into a command line without quoting them.
+    std::vector<std::wstring> quotedArguments;
+    quotedArguments.reserve(arguments.size());
     for (const auto& argument : arguments) {
+        quotedArguments.push_back(quoteWindowsArgument(argument));
+    }
+    std::vector<const wchar_t*> pointers;
+    pointers.reserve(quotedArguments.size() + 1);
+    for (const auto& argument : quotedArguments) {
         pointers.push_back(argument.c_str());
     }
     pointers.push_back(nullptr);

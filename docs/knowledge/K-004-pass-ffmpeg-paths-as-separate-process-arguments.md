@@ -3,7 +3,8 @@ id: K-004
 kind: trap
 title: "Pass FFmpeg paths as separate process arguments"
 area: [FlacConvert]
-status: active
+status: superseded
+superseded_by: K-014
 created: 2026-10-09
 reviewed: 2026-10-10
 cites:
