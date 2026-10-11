@@ -74,6 +74,18 @@ to safe defaults when selecting option `6` again; they do not modify config.json
    preserves metadata/companions, never changes sources, and rejects existing destinations or
    multichannel input unless overwrite or stereo downmix is explicitly enabled.
 
+## Windows build
+
+From a Visual Studio Developer Command Prompt with the v145 C++ toolset:
+
+```text
+msbuild .\MediaBoost.sln /m /p:Configuration=Debug /p:Platform=x64
+```
+
+The project enables `/MP4` for Debug and Release builds, allowing up to four compiler workers.
+MSBuild's `/m` controls project-level parallelism separately. The x64 build requires the FFmpeg SDK under
+`external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\` and SQLite sources under `external\sqlite-amalgamation\`.
+
 <h2>Command-line usage</h2>
 
 The executable supports explicit commands. Run `FlacConvert --help` or append `--help` to a command for detailed
