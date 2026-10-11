@@ -12,6 +12,8 @@ import subprocess
 import tempfile
 import unittest
 
+DEFAULT_MP3_SETTINGS = "\n\n\n"
+
 
 def run(*args):
     return subprocess.run([str(arg) for arg in args], capture_output=True, text=True,
@@ -221,7 +223,7 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual((self.output / "album" / "booklet.\u65e5\u672c").read_bytes(), b"unchanged companion")
         self.assertEqual((result.stdout + result.stderr).count("Copied companion file unchanged"), 2)
 
-    def legacy(self, libraries, selection="6\nRUN\n", **extra_settings):
+    def legacy(self, libraries, selection="6\n" + DEFAULT_MP3_SETTINGS + "RUN\n", **extra_settings):
         settings = json.loads(self.config.read_text(encoding="utf-8"))
         settings.update({"OutDirectory": str(self.output), "MediaDirectoryList": libraries})
         settings.update(extra_settings)
@@ -287,7 +289,8 @@ class ConversionTests(unittest.TestCase):
 
     def test_menu_shows_only_selected_action_details_before_preview(self):
         result = self.legacy(
-            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}], "6\nEXIT\n")
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "6\n" + DEFAULT_MP3_SETTINGS + "EXIT\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(".mp3.flac-metadata sidecars", result.stdout)
         self.assertNotIn("opens matching album folders", result.stdout)
@@ -312,7 +315,8 @@ class ConversionTests(unittest.TestCase):
         before = snapshot()
         for option in (1, 2, 3, 4, 6):
             for response in (" \tBACK \t\n0\n", "EXIT\n", "BACK\n"):
-                result = self.legacy(libraries, f"{option}\n{response}")
+                settings = DEFAULT_MP3_SETTINGS if option == 6 else ""
+                result = self.legacy(libraries, f"{option}\n{settings}{response}")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(snapshot(), before)
                 self.assertNotIn("Completion summary:", result.stdout)
@@ -324,7 +328,7 @@ class ConversionTests(unittest.TestCase):
     def test_back_from_source_replacement_can_select_mp3_without_replacing_sources(self):
         result = self.legacy(
             [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
-            "1\nBACK\n?\n6\nRUN\n")
+            "1\nBACK\n?\n6\n" + DEFAULT_MP3_SETTINGS + "RUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.count("Select run option"), 2)
         self.assertTrue((self.output / "MP3" / "Library" / self.mp3().name).exists())
@@ -335,7 +339,7 @@ class ConversionTests(unittest.TestCase):
     def test_menu_retries_then_runs_selected_action(self):
         result = self.legacy(
             [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
-            "16\ninvalid\n5\n \t6 \t\nRUN\n")
+            "16\ninvalid\n5\n \t6 \t\n" + DEFAULT_MP3_SETTINGS + "RUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue((self.output / "MP3" / "Library" / self.mp3().name).exists())
 
@@ -379,7 +383,7 @@ class ConversionTests(unittest.TestCase):
     def test_mp3_preview_cancel_and_cross_library_preflight(self):
         (self.source / "cover.png").write_bytes(self.image)
         libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
-        result = self.legacy(libraries, "6\n\n")
+        result = self.legacy(libraries, "6\n" + DEFAULT_MP3_SETTINGS + "\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Operation preview: FLAC to MP3", result.stdout)
         self.assertIn("Audio files: 1; companions: 1; metadata sidecars: 1", result.stdout)
@@ -521,6 +525,82 @@ class ConversionTests(unittest.TestCase):
         self.assertNotEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
         self.assertEqual(corrupt.read_bytes(), self.fixture.read_bytes()[:50])
         self.assertIn("Failure does not imply rollback", result.stdout)
+
+    def test_manual_mp3_quality_and_explicit_overwrite_reuse_metadata_policy(self):
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
+        (self.source / "cover.png").write_bytes(self.image)
+        result = self.legacy(libraries)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        target = self.output / "MP3" / "Library" / self.mp3().name
+        high_size = target.stat().st_size
+        (self.source / "cover.png").write_bytes(b"updated companion")
+        result = self.legacy(libraries, "6\n9\nNO\nNO\nRUN\n")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(target.stat().st_size, high_size)
+        result = self.legacy(libraries, "6\n9\nno\nyes\nRUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Quality: LAME VBR 9", result.stdout)
+        self.assertIn("Overwrite: enabled", result.stdout)
+        self.assertLess(target.stat().st_size, high_size)
+        self.assertEqual(Path(str(target) + ".flac-metadata").read_bytes(), self.prefix)
+        self.assertEqual((target.parent / "cover.png").read_bytes(), b"updated companion")
+        self.assertEqual(sum(name == b"APIC" for name, _ in id3_frames(target.read_bytes())), 2)
+        self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+        self.assert_summary(result, "Completed", 1, "audio files", copied=1)
+
+    def test_manual_mp3_multichannel_requires_explicit_downmix(self):
+        self.track.unlink()
+        checked(ARGS.ffmpeg, "-v", "error", "-f", "lavfi", "-i",
+                "anullsrc=channel_layout=5.1:sample_rate=48000", "-t", "0.4",
+                "-c:a", "flac", self.track)
+        self.original_hash = hashlib.sha256(self.track.read_bytes()).digest()
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
+        result = self.legacy(libraries)
+        self.assertNotEqual(result.returncode, 0)
+        target = self.output / "MP3" / "Library" / self.mp3().name
+        self.assertFalse(target.exists())
+        result = self.legacy(libraries, "6\n\nYES\n\nRUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("multichannel stereo downmix enabled", result.stdout)
+        self.assertEqual(self.probe(target)["streams"][0]["channels"], 2)
+        self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+
+    def test_manual_mp3_setting_validation_retries_without_silent_defaults(self):
+        result = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "6\n10\n-1\n1x\n \t9 \t\nmaybe\nNO\nmaybe\nNO\nRUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("Invalid quality."), 3)
+        self.assertEqual(result.stdout.count("Invalid selection. Enter YES or NO."), 2)
+        self.assertIn("Quality: LAME VBR 9", result.stdout)
+        self.assertIn("Overwrite: disabled", result.stdout)
+        self.assertEqual(result.stdout.count("Type RUN to run"), 1)
+
+    def test_manual_mp3_overwrite_does_not_allow_duplicate_destinations(self):
+        (self.source / (self.mp3().name + ".flac-metadata")).write_bytes(b"companion collision")
+        result = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "6\n\n\nYES\nRUN\n")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Overwrite: enabled", result.stdout)
+        self.assertIn("COLLISION:", result.stdout)
+        self.assertFalse(self.output.exists())
+        self.assertNotIn("Type RUN to run", result.stdout)
+        self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+
+    def test_manual_mp3_settings_back_exit_eof_never_start_conversion(self):
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
+        for answers in ("", "9\n", "9\nYES\n", "9\nYES\nYES\n"):
+            for response in ("EXIT\n", "", "BACK\n0\n"):
+                result = self.legacy(libraries, "6\n" + answers + response)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(self.output.exists())
+                self.assertNotIn("Completion summary:", result.stdout)
+                self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+        result = self.legacy(libraries, "6\n9\nBACK\n6\n" + DEFAULT_MP3_SETTINGS + "RUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Quality: LAME VBR 0", result.stdout)
+        self.assertIn("Overwrite: disabled", result.stdout)
 
     @unittest.skipUnless(os.name == "nt", "Windows deny-delete scan installation failure")
     def test_scan_partial_completion_counts_installed_json_only(self):

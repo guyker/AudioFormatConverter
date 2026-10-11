@@ -3,7 +3,8 @@ id: K-019
 kind: decision
 title: "Manual MP3 conversion uses separate named library output directories"
 area: [FlacConvert]
-status: active
+status: superseded
+superseded_by: K-025
 created: 2026-10-10
 reviewed: 2026-10-11
 cites:

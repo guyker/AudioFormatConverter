@@ -57,6 +57,12 @@ installed album JSON files (not optional error reports), committed JSON database
 processed duplicate pairs; they are not preview estimates. A failure stops at the first error and
 does not count unattempted work as failed or imply whole-operation rollback. Preflight failures state
 that no action started; cancellation and Back/Exit do not print a success summary.
+Option `6` prompts for MP3 VBR quality `0-9` (default `0`, highest quality), multichannel stereo
+downmix (default `NO`) and overwrite (default `NO`) before preparing the preview. Enter keeps each
+default; invalid values are retried, and `BACK`/`EXIT` or EOF cancels without conversion.
+The final preview shows the selected settings and still requires `RUN`. Overwrite applies to MP3,
+metadata sidecars and copied companions, never to source files. Settings are per operation and reset
+to safe defaults when selecting option `6` again; they do not modify config.json.
 
 1. The main function provides a console-based menu for the user to select different actions:
 2. Re-convert FLAC files.
@@ -64,9 +70,9 @@ that no action started; cancellation and Back/Exit do not print a success summar
 4. Process existing JSON files to find duplicate albums.
 5. Populate a SQLite database from JSON files.
 6. Menu selection `6` converts active configured libraries from FLAC to MP3, writing to
-   `OutDirectory\MP3\<mediaName>` (defaults to the source folder name). It uses VBR quality 0,
-   preserves metadata/companions, never changes sources, and fails on existing destinations or
-   multichannel input. Use the `convert` subcommand for quality, overwrite and explicit downmix options.
+   `OutDirectory\MP3\<mediaName>` (defaults to the source folder name). It defaults to VBR quality 0,
+   preserves metadata/companions, never changes sources, and rejects existing destinations or
+   multichannel input unless overwrite or stereo downmix is explicitly enabled.
 
 <h2>Command-line usage</h2>
 

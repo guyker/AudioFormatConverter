@@ -4,6 +4,7 @@
 #include <iostream>
 #include <atomic>
 #include <cstdint>
+#include <cctype>
 #include <filesystem>
 #include <array>
 #include <algorithm>
@@ -399,6 +400,76 @@ int cancelledMenuResult(MenuConfirmation confirmation)
         confirmation == MenuConfirmation::Error ? 1 : 0;
 }
 
+MenuConfirmation ReadManualSetting(const char* prompt, std::string& response)
+{
+    std::cout << prompt << std::flush;
+    if (!std::getline(std::cin, response)) {
+        if (!std::cin.eof()) {
+            spdlog::error("Cannot read MP3 conversion settings.");
+            return MenuConfirmation::Error;
+        }
+        std::cout << "Cancelled. No action was started.\n";
+        return MenuConfirmation::Exit;
+    }
+    response = trimMenuResponse(response);
+    std::transform(response.begin(), response.end(), response.begin(),
+        [](unsigned char character) { return static_cast<char>(std::toupper(character)); });
+    if (response == "BACK") {
+        std::cout << "Back to menu. No action was started.\n";
+        return MenuConfirmation::Back;
+    }
+    if (response == "EXIT") {
+        std::cout << "Cancelled. No action was started.\n";
+        return MenuConfirmation::Exit;
+    }
+    return MenuConfirmation::Run;
+}
+
+MenuConfirmation ConfigureManualMp3(ConversionOptions& options, bool& overwrite)
+{
+    std::cout << "\nMP3 settings: Enter keeps the defaults; BACK returns to the menu; EXIT quits.\n";
+    for (;;) {
+        std::string response;
+        const auto choice = ReadManualSetting("VBR quality [0] (0 = highest, 9 = smallest): ", response);
+        if (choice != MenuConfirmation::Run) {
+            return choice;
+        }
+        if (response.empty()) {
+            break;
+        }
+        if (response.size() == 1 && response[0] >= '0' && response[0] <= '9') {
+            options.mp3Quality = response[0] - '0';
+            break;
+        }
+        std::cout << "Invalid quality. Enter one number from 0 to 9.\n";
+    }
+    const auto readBoolean = [](const char* prompt, bool& value) {
+        for (;;) {
+            std::string response;
+            const auto choice = ReadManualSetting(prompt, response);
+            if (choice != MenuConfirmation::Run) {
+                return choice;
+            }
+            if (response.empty() || response == "NO") {
+                value = false;
+                return MenuConfirmation::Run;
+            }
+            if (response == "YES") {
+                value = true;
+                return MenuConfirmation::Run;
+            }
+            std::cout << "Invalid selection. Enter YES or NO.\n";
+        }
+    };
+    const auto downmix = readBoolean(
+        "Allow multichannel audio to be downmixed to stereo [NO] (YES/NO): ", options.downmixToStereo);
+    if (downmix != MenuConfirmation::Run) {
+        return downmix;
+    }
+    return readBoolean(
+        "Overwrite existing MP3, metadata sidecars and companions [NO] (YES/NO): ", overwrite);
+}
+
 fs::path absoluteDisplayPath(const fs::path& path)
 {
     return fs::absolute(path).lexically_normal();
@@ -514,6 +585,12 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryLis
         spdlog::error("No active media libraries configured for FLAC to MP3 conversion.");
         return 1;
     }
+    ConversionOptions options{ AudioTarget::Mp3, 0, false };
+    bool overwrite = false;
+    const auto settingsChoice = ConfigureManualMp3(options, overwrite);
+    if (settingsChoice != MenuConfirmation::Run) {
+        return cancelledMenuResult(settingsChoice);
+    }
     struct LibraryConversion {
         fs::path source;
         fs::path target;
@@ -557,25 +634,27 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryLis
             }
         }
     }
-    const ConversionOptions options{ AudioTarget::Mp3, 0, false };
-    spdlog::info("FLAC to MP3: VBR quality 0, no overwrite, no multichannel downmix. "
-        "Use the convert subcommand for quality, overwrite or downmix options.");
+    spdlog::info("FLAC to MP3: VBR quality {}, overwrite {}, multichannel stereo downmix {}.",
+        options.mp3Quality, overwrite ? "enabled" : "disabled",
+        options.downmixToStereo ? "enabled" : "disabled");
     std::vector<FolderConversionPlan> plans;
     bool blocked = false;
     for (const auto& conversion : conversions) {
         FolderConversionPlan plan;
-        if (FolderConvert::PrepareConversion(conversion.source, conversion.target, false, options, plan) != 0) {
+        if (FolderConvert::PrepareConversion(conversion.source, conversion.target, overwrite, options, plan) != 0) {
             return 1;
         }
         ShowConversionPreview(plan);
-        blocked = blocked || !plan.collisions.empty() || !plan.existingTargets.empty();
+        blocked = blocked || !plan.collisions.empty() || (!overwrite && !plan.existingTargets.empty());
         plans.push_back(std::move(plan));
     }
     if (blocked) {
         spdlog::error("MP3 destination conflicts; no conversion was started.");
         return 1;
     }
-    std::cout << "  Quality: LAME VBR 0; mono/stereo only; 44.1/48 kHz retained, other accepted rates -> 48 kHz.\n"
+    std::cout << "  Quality: LAME VBR " << options.mp3Quality << "; "
+        << (options.downmixToStereo ? "multichannel stereo downmix enabled" : "mono/stereo only")
+        << "; 44.1/48 kHz retained, other accepted rates -> 48 kHz.\n"
         "  Source quality/channel properties are verified during conversion.\n";
     const auto confirmation = ConfirmPreview();
     if (confirmation != MenuConfirmation::Run) {
@@ -1243,15 +1322,17 @@ constexpr std::array<MenuEntry, 6> MenuEntries{ {
     { '6', ConvertActionEnum::ConvertMp3Enum, "Convert FLAC to MP3 [sources unchanged]",
         "      Input: native FLAC files in the active source libraries, recursively.\n"
         "      Output: OutDirectory/MP3/<mediaName>/ with relative paths preserved:\n"
-        "              MP3 (LAME VBR quality 0), .mp3.flac-metadata sidecars,\n"
+        "              MP3 (LAME VBR quality 0 by default), .mp3.flac-metadata sidecars,\n"
         "              and unchanged non-audio companion files (artwork, booklets, etc.).\n"
-        "      Changes: writes new files only; existing destinations cause an error.\n"
+        "      Changes: sources unchanged; existing destinations fail unless overwrite is enabled.\n"
         "               Supported tags/pictures/chapters go into ID3v2.4; original metadata\n"
-        "               is retained in sidecars. MP3 audio is lossy. Mono/stereo only;\n"
+        "               is retained in sidecars. MP3 audio is lossy. Multichannel audio\n"
+        "               is rejected unless stereo downmix is explicitly enabled;\n"
         "               44.1/48 kHz retained, other accepted rates become 48 kHz.\n"
         "      Rejects sources below 16-bit / 44.1 kHz or whose depth/rate cannot be verified.\n"
         "      <mediaName> defaults to the source folder name.\n"
-        "      Use 'convert --help' for quality, overwrite and downmix controls.\n" }
+        "      Prompts configure quality (0-9), stereo downmix and overwrite before preview.\n"
+        "      Defaults: VBR 0, no downmix, no overwrite. RUN confirms the selected settings.\n" }
 } };
 
 void ShowActionDetails(const MenuEntry& entry)
