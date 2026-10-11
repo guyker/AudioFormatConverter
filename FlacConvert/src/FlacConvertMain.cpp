@@ -23,6 +23,7 @@
 
 #include <sstream>
 #include <string>
+#include <set>
 #include <system_error>
 #include <any>
 
@@ -60,49 +61,6 @@ namespace fs = std::filesystem;
 
 
 enum class ConvertActionEnum { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum, ConvertMp3Enum, ExitEnum };
-
-
-int ConvertFLACToFLAC(std::vector<MediaDirectoryElement> mediaDirectoryList)
-{
-    spdlog::info("Processing {}  directories", mediaDirectoryList.size());
-
-    for (auto& mediaEntry: mediaDirectoryList)
-    {
-        spdlog::info("Scanning: {}...", mediaEntry.mediaPath.c_str());
-
-        auto startTime = std::chrono::steady_clock::now();
-
-        ScanInfo scanInfo{};
-        int retStatus = FolderConvert::ScanAudioFiles(scanInfo, CommonUtils::path_from_utf8(mediaEntry.mediaPath));
-
-        spdlog::info("Total convertable files: {}, Not regular: {} , No extension : {}, Not convertable: {}, Folders: {}",
-            scanInfo.convertable_file_count,
-            scanInfo.not_regular_file_count,
-            scanInfo.file_with_no_extension_count,
-            scanInfo.not_convertable_file_count,
-            scanInfo.folders_count);
-        spdlog::info("Total Size: {}", scanInfo.convertable_files_size);
-        spdlog::info("======================");
-
-        //std::wcout << std::endl << "Press Enter to Continue..." << std::endl;
-        //std::getchar();
-
-        auto ret = FolderConvert::ConverAudioFolder(CommonUtils::path_from_utf8(mediaEntry.mediaPath), scanInfo, false);
-        if (ret == -1) {
-            spdlog::error("***ERROR*** ConverAudioFiles");
-            return -1;
-        }
-
-        spdlog::info("\nSuccess.");
-
-        //log total execution time (millis)
-        auto endTime = std::chrono::steady_clock::now();
-        spdlog::info("-->### Total processing time(milliseconds): {}ms",
-            std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count());
-    }
-
-    return 0;
-}
 
 
 namespace
@@ -348,6 +306,133 @@ std::vector<fs::path> findConfiguredJsonFiles(
 }
 }
 
+int ConfirmSourceReplacement(const std::vector<MediaDirectoryElement>& libraries);
+
+namespace
+{
+int ConfirmPreview()
+{
+    std::cout << "\nPreview only; no output has been written. File state may change before execution.\n"
+        "Type RUN to proceed, or press Enter to cancel [Cancel]: " << std::flush;
+    std::string response;
+    if (!std::getline(std::cin, response)) {
+        if (!std::cin.eof()) {
+            spdlog::error("Cannot read operation preview confirmation.");
+            return -1;
+        }
+    }
+    else {
+        const auto first = response.find_first_not_of(" \t\r");
+        const auto last = response.find_last_not_of(" \t\r");
+        if (first != std::string::npos && response.substr(first, last - first + 1) == "RUN") {
+            return 1;
+        }
+    }
+    std::cout << "Cancelled. No action was started.\n";
+    return 0;
+}
+
+fs::path absoluteDisplayPath(const fs::path& path)
+{
+    return fs::absolute(path).lexically_normal();
+}
+
+void ShowConversionPreview(const FolderConversionPlan& plan)
+{
+    std::cout << "\nOperation preview: "
+        << (plan.options.target == AudioTarget::Mp3 ? "FLAC to MP3" : "FLAC conversion") << '\n'
+        << "  Input: " << pathToUtf8(plan.input) << '\n'
+        << "  Output: " << pathToUtf8(plan.output) << '\n'
+        << "  Audio files: " << plan.audio.size()
+        << "; companions: " << plan.companions.size()
+        << "; metadata sidecars: " << (plan.options.target == AudioTarget::Mp3 ? plan.audio.size() : 0) << '\n'
+        << "  Existing destinations: " << plan.existingTargets.size()
+        << "; duplicate destinations: " << plan.collisions.size() << '\n'
+        << "  Overwrite: " << (plan.overwrite ? "enabled" : "disabled") << '\n';
+    for (const auto& target : plan.existingTargets) {
+        std::cout << "    Existing: " << pathToUtf8(target) << '\n';
+    }
+    for (const auto& target : plan.collisions) {
+        std::cout << "    COLLISION: " << pathToUtf8(target) << '\n';
+    }
+}
+}
+
+int ConvertFLACToFLAC(const std::vector<MediaDirectoryElement>& libraries)
+{
+    if (libraries.empty()) {
+        spdlog::error("No active media libraries configured for FLAC conversion.");
+        return 1;
+    }
+    std::vector<PlannedFileConversion> files;
+    const auto pathLess = [](const fs::path& left, const fs::path& right) {
+#ifdef _WIN32
+        const auto& a = left.native();
+        const auto& b = right.native();
+        return CompareStringOrdinal(a.c_str(), static_cast<int>(a.size()),
+            b.c_str(), static_cast<int>(b.size()), TRUE) == CSTR_LESS_THAN;
+#else
+        return left < right;
+#endif
+    };
+    std::set<fs::path, decltype(pathLess)> targetKeys(pathLess);
+    std::size_t collisions = 0;
+    std::cout << "\nOperation preview: in-place FLAC conversion\n"
+        "  Quality: 16-bit / 44.1 kHz, triangular dithering; embedded artwork omitted.\n"
+        "  Overwrite: enabled; existing FLAC sources may be replaced.\n";
+    for (const auto& library : libraries) {
+        const auto sourceRoot = absoluteDisplayPath(pathFromUtf8(library.mediaPath));
+        ScanInfo scan{};
+        if (FolderConvert::ScanAudioFiles(scan, sourceRoot) != 0) {
+            return 1;
+        }
+        std::size_t existing = 0;
+        for (const auto& entry : scan.mediaList) {
+            auto target = entry.path();
+            target.replace_extension(".flac");
+            std::error_code ec;
+            const auto key = fs::weakly_canonical(target, ec);
+            if (ec) {
+                spdlog::error("Cannot resolve destination: {}", ec.message());
+                return 1;
+            }
+            const bool targetExists = fs::exists(target, ec);
+            if (ec || (targetExists && !fs::is_regular_file(target, ec)) || ec) {
+                spdlog::error("Cannot use FLAC destination: {}", pathToUtf8(target));
+                return 1;
+            }
+            existing += targetExists ? 1 : 0;
+            if (!targetKeys.insert(key).second) {
+                ++collisions;
+                std::cout << "    COLLISION: " << pathToUtf8(target) << '\n';
+            }
+            auto temporary = uniqueSiblingPath(target, ".convert-");
+            temporary += ".flac";
+            files.push_back({ entry.path(), target, temporary });
+        }
+        std::cout << "  Input/output: " << pathToUtf8(sourceRoot)
+            << "\n  Audio files: " << scan.mediaList.size()
+            << "; existing destinations to replace: " << existing << '\n';
+    }
+    std::cout << "  Total audio files: " << files.size() << "; duplicate destinations: " << collisions
+        << "\n  Source quality is verified during conversion (minimum 16-bit / 44.1 kHz).\n";
+    if (collisions != 0) {
+        spdlog::error("Conflicting FLAC destinations; no conversion was started.");
+        return 1;
+    }
+    const int confirmation = ConfirmSourceReplacement(libraries);
+    if (confirmation <= 0) {
+        return confirmation == 0 ? 0 : 1;
+    }
+    for (const auto& file : files) {
+        MediaConvertionTask task(file.source, file.target, file.temporary, true);
+        if (task.Run() != 0 || task.PostRun() != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryList, const fs::path& outputRoot)
 {
     if (mediaDirectoryList.empty()) {
@@ -399,17 +484,124 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryLis
     const ConversionOptions options{ AudioTarget::Mp3, 0, false };
     spdlog::info("FLAC to MP3: VBR quality 0, no overwrite, no multichannel downmix. "
         "Use the convert subcommand for quality, overwrite or downmix options.");
+    std::vector<FolderConversionPlan> plans;
+    bool blocked = false;
     for (const auto& conversion : conversions) {
-        spdlog::info("Converting '{}' to '{}'.", pathToUtf8(conversion.source), pathToUtf8(conversion.target));
-        if (FolderConvert::ConvertAudioFolderToOutput(conversion.source, conversion.target, false, options) != 0) {
+        FolderConversionPlan plan;
+        if (FolderConvert::PrepareConversion(conversion.source, conversion.target, false, options, plan) != 0) {
+            return 1;
+        }
+        ShowConversionPreview(plan);
+        blocked = blocked || !plan.collisions.empty() || !plan.existingTargets.empty();
+        plans.push_back(std::move(plan));
+    }
+    if (blocked) {
+        spdlog::error("MP3 destination conflicts; no conversion was started.");
+        return 1;
+    }
+    std::cout << "  Quality: LAME VBR 0; mono/stereo only; 44.1/48 kHz retained, other accepted rates -> 48 kHz.\n"
+        "  Source quality/channel properties are verified during conversion.\n";
+    const int confirmation = ConfirmPreview();
+    if (confirmation <= 0) {
+        return confirmation == 0 ? 0 : 1;
+    }
+    for (const auto& plan : plans) {
+        if (FolderConvert::ExecuteConversion(plan) != 0) {
             return 1;
         }
     }
     return 0;
 }
 
-int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryList, bool bIncludeMetadata, const fs::path& outputRoot)
+int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryList, bool bIncludeMetadata,
+    const fs::path& outputRoot, bool preview = false)
 {
+    std::vector<std::vector<MediaAlbumListPtr>> preparedAlbums;
+    if (preview) {
+        if (mediaDirectoryList.empty()) {
+            spdlog::error("No active media libraries configured for scanning.");
+            return 1;
+        }
+        std::vector<fs::path> targets;
+        for (auto& library : mediaDirectoryList) {
+            const auto source = absoluteDisplayPath(pathFromUtf8(library.mediaPath));
+            if (!library.mediaName || library.mediaName->empty()) {
+                library.mediaName = directoryNameUtf8(source);
+            }
+            const auto name = pathFromUtf8(*library.mediaName);
+            if (name.empty() || name == "." || name == ".." || name.has_root_path() || name.has_parent_path()) {
+                spdlog::error("Library name must be a single directory name: '{}'.", *library.mediaName);
+                return 1;
+            }
+            const auto target = absoluteDisplayPath(outputRoot / name);
+            std::error_code ec;
+            const auto key = fs::weakly_canonical(target, ec);
+            if (ec) {
+                spdlog::error("Cannot resolve scan destination: {}", ec.message());
+                return 1;
+            }
+            for (const auto& other : mediaDirectoryList) {
+                const auto sourceKey = fs::weakly_canonical(pathFromUtf8(other.mediaPath), ec);
+                if (ec || isSameOrChildPath(key, sourceKey) || isSameOrChildPath(sourceKey, key)) {
+                    spdlog::error("Scan destination overlaps an active source library: '{}'.", pathToUtf8(target));
+                    return 1;
+                }
+            }
+            if (std::any_of(targets.begin(), targets.end(), [&](const fs::path& other) {
+                    return isSameOrChildPath(key, other) || isSameOrChildPath(other, key);
+                })) {
+                spdlog::error("Scan library output collision: '{}'.", pathToUtf8(target));
+                return 1;
+            }
+            targets.push_back(key);
+            std::size_t previous = 0;
+            const bool targetExists = fs::exists(target, ec);
+            if (ec || (targetExists && !fs::is_directory(target, ec)) || ec) {
+                spdlog::error("Cannot inspect scan destination: '{}'.", pathToUtf8(target));
+                return 1;
+            }
+            if (targetExists) {
+                for (const auto& file : fs::directory_iterator(target)) {
+                    if (isGeneratedJsonOutput(file, ec)) {
+                        ++previous;
+                    }
+                    if (ec) {
+                        spdlog::error("Cannot inspect existing JSON: {}", ec.message());
+                        return 1;
+                    }
+                }
+            }
+            std::vector<MediaAlbumListPtr> batches;
+            std::size_t albumCount = 0;
+            std::size_t tracks = 0;
+            AlbumCollection collection;
+            for (auto albums : collection.LoadAlbumsCo(
+                source, false, AppSettingsJson::AppSetting()->AlbumsSplitThreshold)) {
+                albumCount += albums->size();
+                for (const auto& album : *albums) {
+                    tracks += album.trackList.size();
+                }
+                batches.push_back(albums);
+            }
+            std::cout << "\nOperation preview: scan to JSON\n"
+                << "  Input: " << pathToUtf8(source) << '\n'
+                << "  Output: " << pathToUtf8(target) << '\n'
+                << "  Albums: " << albumCount << "; tracks: " << tracks
+                << "; JSON batches to write: " << batches.size() << '\n'
+                << "  Existing generated JSON files to replace: " << previous << '\n'
+                << "  Overwrite: generated JSON only; databases and sources unchanged.\n";
+            if (batches.empty()) {
+                spdlog::error("No albums found; no output will be replaced.");
+                return 1;
+            }
+            preparedAlbums.push_back(std::move(batches));
+        }
+        const int confirmation = ConfirmPreview();
+        if (confirmation <= 0) {
+            return confirmation == 0 ? 0 : 1;
+        }
+    }
+    std::size_t libraryIndex = 0;
     for (auto& mediaEntry : mediaDirectoryList)
     {
         auto startTime = std::chrono::steady_clock::now();
@@ -451,12 +643,26 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         AlbumCollection ac;
         int count = 0;
         try {
-            for (auto albumListPtr : ac.LoadAlbumsCo(
-                libraryPath, bIncludeMetadata, AppSettingsJson::AppSetting()->AlbumsSplitThreshold)) {
+            const auto writeBatch = [&](const MediaAlbumListPtr& albumListPtr) {
                 spdlog::info("Received batch with {} albums", albumListPtr->size());
                 ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
                 if (!ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(stagingRoot, ++count))) {
                     throw std::runtime_error("Failed to write an album JSON file.");
+                }
+            };
+            if (preview) {
+                for (const auto& albums : preparedAlbums[libraryIndex]) {
+                    if (bIncludeMetadata) {
+                        ac.ImportMetadata(albums, 0, albums->size(), AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+                    }
+                    writeBatch(albums);
+                }
+                preparedAlbums[libraryIndex].clear();
+            }
+            else {
+                for (auto albums : ac.LoadAlbumsCo(
+                    libraryPath, bIncludeMetadata, AppSettingsJson::AppSetting()->AlbumsSplitThreshold)) {
+                    writeBatch(albums);
                 }
             }
         }
@@ -485,6 +691,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             pathToUtf8(targetDirectory),
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - startTime).count());
+        ++libraryIndex;
     }
 
     return 0;
@@ -762,40 +969,77 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
     return 0;
 }
 
-int ExportJSONToDB(std::vector<MediaDirectoryElement>  mediaDirectoryList)
+int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList)
 {
-    //guyguy review after loading changes
-
     auto appSettingPtr = AppSettingsJson::AppSetting();
-    fs::path databasePath = pathFromUtf8(appSettingPtr->OutDirectory) /
-        pathFromUtf8(appSettingPtr->DatabaseFileName);
 
     AlbumCollection albumCollection;
 
-    for (auto& mediaEntry : mediaDirectoryList)
-    {
-        auto mediaDBPath = mediaEntry.getMediaDBPath(pathFromUtf8(AppSettingsJson::AppSetting()->OutDirectory));
-        spdlog::info("Creating Data Base: {}", pathToUtf8(mediaDBPath));
-        spdlog::info("-------------------");
-
-
-        auto generator = mediaEntry.getMediaJsonPathCo(pathFromUtf8(AppSettingsJson::AppSetting()->OutDirectory));
+    struct ImportPlan {
+        fs::path database;
+        std::vector<fs::path> json;
+    };
+    std::vector<ImportPlan> plans;
+    std::vector<fs::path> targets;
+    for (const auto& mediaEntry : mediaDirectoryList) {
+        const auto name = pathFromUtf8(mediaEntry.mediaName.value_or(""));
+        if (name == "." || name == ".." || name.has_root_path() || name.has_parent_path()) {
+            spdlog::error("Library name must be a single directory name for database import.");
+            return 1;
+        }
+        ImportPlan plan{ absoluteDisplayPath(mediaEntry.getMediaDBPath(pathFromUtf8(appSettingPtr->OutDirectory))), {} };
+        auto generator = mediaEntry.getMediaJsonPathCo(pathFromUtf8(appSettingPtr->OutDirectory));
         while (generator.resume()) {
-			auto mediaJsonPartPath = generator.value();
-            if (fs::exists(mediaJsonPartPath)) {
-                spdlog::info("Processing: {}", pathToUtf8(mediaJsonPartPath));
-
-                auto albumListPtr = albumCollection.LoadAlbumsFromJSON(mediaJsonPartPath);
-
-                //    albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
-                albumCollection.SortAlbums(albumListPtr, { { SortBy::AlbumName, true } });
-
-                albumCollection.ExportToDatabase(albumListPtr, mediaDBPath);
+            plan.json.push_back(absoluteDisplayPath(generator.value()));
+        }
+        std::error_code ec;
+        const auto key = fs::weakly_canonical(plan.database, ec);
+        if (ec || std::any_of(targets.begin(), targets.end(), [&](const fs::path& other) {
+                return isSameOrChildPath(key, other) && isSameOrChildPath(other, key);
+            })) {
+            spdlog::error("Unresolvable or colliding database output: '{}'.", pathToUtf8(plan.database));
+            return 1;
+        }
+        targets.push_back(key);
+        const bool exists = fs::exists(plan.database, ec);
+        if (ec || (exists && !fs::is_regular_file(plan.database, ec)) || ec) {
+            spdlog::error("Cannot use database output: '{}'.", pathToUtf8(plan.database));
+            return 1;
+        }
+        std::cout << "\nOperation preview: import JSON into SQLite\n"
+            << "  JSON input files: " << plan.json.size() << '\n';
+        for (const auto& json : plan.json) {
+            std::cout << "    Input: " << pathToUtf8(json) << '\n';
+        }
+        std::cout << "  Output: " << pathToUtf8(plan.database)
+            << "\n  Database: " << (exists ? "existing records will be updated" : "new file")
+            << "\n  Overwrite: imported records; source audio and JSON unchanged.\n";
+        if (plan.json.empty()) {
+            spdlog::error("No generated JSON input for this library; run option 2 first.");
+            return 1;
+        }
+        plans.push_back(std::move(plan));
+    }
+    if (plans.empty()) {
+        spdlog::error("No active libraries configured for database import.");
+        return 1;
+    }
+    const int confirmation = ConfirmPreview();
+    if (confirmation <= 0) {
+        return confirmation == 0 ? 0 : 1;
+    }
+    for (const auto& plan : plans) {
+        for (const auto& json : plan.json) {
+            spdlog::info("Processing: {}", pathToUtf8(json));
+            const auto albums = albumCollection.LoadAlbumsFromJSON(json);
+            if (!albums) {
+                spdlog::error("Failed to read JSON: '{}'.", pathToUtf8(json));
+                return 1;
             }
-            else
-			{
-				spdlog::error("Error Exporting to DB: Json file not found: {}", pathToUtf8(mediaJsonPartPath));
-			}   
+            albumCollection.SortAlbums(albums, { { SortBy::AlbumName, true } });
+            if (!albumCollection.ExportToDatabase(albums, plan.database)) {
+                return 1;
+            }
         }
     }
 
@@ -837,6 +1081,44 @@ int ImportJsonDirectoryToDatabase(const fs::path& jsonDirectory, const fs::path&
 
     spdlog::info("Importing {} JSON file(s) into '{}'.", jsonFiles.size(), pathToUtf8(databasePath));
     return albumCollection.ExportToDatabase(albums, databasePath) ? 0 : 1;
+}
+
+int ConfirmSourceReplacement(const std::vector<MediaDirectoryElement>& libraries)
+{
+    if (libraries.empty()) {
+        spdlog::error("No active media libraries configured for FLAC conversion.");
+        return -1;
+    }
+    std::cout << "\nWARNING: option 1 writes FLAC output into the source libraries.\n"
+        "Existing matching FLAC files will be replaced after successful encoding.\n"
+        "Output is 16-bit / 44.1 kHz with dithering; embedded artwork is omitted.\n"
+        "Non-FLAC sources remain, but matching .flac destinations may be overwritten.\n"
+        "Back up your library before proceeding.\n\nAffected active libraries:\n";
+    for (const auto& library : libraries) {
+        std::cout << "  " << library.mediaPath;
+        if (library.mediaName && !library.mediaName->empty()) {
+            std::cout << " [" << *library.mediaName << "]";
+        }
+        std::cout << '\n';
+    }
+    std::cout << "\nType REPLACE to confirm, or press Enter to cancel [Cancel]: " << std::flush;
+    std::string confirmation;
+    if (!std::getline(std::cin, confirmation)) {
+        if (!std::cin.eof()) {
+            spdlog::error("Cannot read source replacement confirmation from standard input.");
+            return -1;
+        }
+    }
+    else {
+        const auto first = confirmation.find_first_not_of(" \t\r");
+        const auto last = confirmation.find_last_not_of(" \t\r");
+        if (first != std::string::npos &&
+            confirmation.substr(first, last - first + 1) == "REPLACE") {
+            return 1;
+        }
+    }
+    std::cout << "Cancelled. No conversion was started; source files are unchanged.\n";
+    return 0;
 }
 
 ConvertActionEnum GetUserAction()
@@ -1007,11 +1289,28 @@ int RunLegacyMenu()
         return ConvertFLACToFLAC(mediaList) == 0 ? 0 : 1;
 
 	case ConvertActionEnum::CreateJSONEnum: //2
-		return ScanFolderAndCreateJSON(mediaList, true, pathFromUtf8(appSettingPtr->OutDirectory));
+		return ScanFolderAndCreateJSON(mediaList, true, pathFromUtf8(appSettingPtr->OutDirectory), true);
 
 	case ConvertActionEnum::ProcessJSONEnum: //3
-		return ScanFolderProcessJSONAndFindDuplicates(
-			findConfiguredJsonFiles(mediaList, pathFromUtf8(appSettingPtr->OutDirectory)), true);
+    {
+        const auto jsonFiles = findConfiguredJsonFiles(mediaList, pathFromUtf8(appSettingPtr->OutDirectory));
+        std::cout << "\nOperation preview: find duplicate albums\n  JSON input files: " << jsonFiles.size() << '\n';
+        for (const auto& json : jsonFiles) {
+            std::cout << "    Input: " << pathToUtf8(absoluteDisplayPath(json)) << '\n';
+        }
+        std::cout << "  Output: console reports and opened matching album folders.\n"
+            "  Overwrite: none; no files or database records are changed.\n"
+            "  Track metadata is read from source folders during comparisons.\n";
+        if (jsonFiles.empty()) {
+            spdlog::error("No generated JSON input; run option 2 first.");
+            return 1;
+        }
+        const int confirmation = ConfirmPreview();
+        if (confirmation <= 0) {
+            return confirmation == 0 ? 0 : 1;
+        }
+        return ScanFolderProcessJSONAndFindDuplicates(jsonFiles, true);
+    }
 
 	case ConvertActionEnum::PopulateJsonToDBEnum: //4    
         return ExportJSONToDB(mediaList) == 0 ? 0 : 1;
@@ -1040,7 +1339,17 @@ int RunWithArguments(const std::vector<const char*>& arguments)
 #endif
 
     if (arguments.size() == 1) {
-        return RunLegacyMenu();
+        try {
+            return RunLegacyMenu();
+        }
+        catch (const fs::filesystem_error& error) {
+            spdlog::error("Filesystem error: {}", error.what());
+            return 1;
+        }
+        catch (const std::exception& error) {
+            spdlog::error("Menu action failed: {}", error.what());
+            return 1;
+        }
     }
 
     CommandLineOptions options;

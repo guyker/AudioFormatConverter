@@ -36,6 +36,17 @@ The menu explains each action's input, output and file changes before selection.
 press Enter; invalid input is retried, `0` exits, and end-of-input exits without running an action.
 Option `5` is explicitly unavailable: scan with `2`, then import into SQLite with `4`.
 Option `1` warns that existing FLAC sources are replaced and embedded artwork is omitted.
+Before running option `1`, the menu lists the affected active libraries and requires typing `REPLACE`
+to confirm source replacement. Enter, any other response, or end-of-input cancels without starting
+conversion. No active libraries is an error. The explicit `convert` subcommand is unaffected.
+Selected actions show an operation preview with absolute configured input/output paths, input counts,
+conversion quality/overwrite policies, and existing or duplicate destinations. Option `1` retains its
+`REPLACE` confirmation; options `2`, `3`, `4` and `6` require `RUN` after the preview (Enter/EOF cancels).
+No output files/directories are written during preview. All active conversion libraries are planned
+before execution, so a conflict in a later library prevents earlier libraries from being converted.
+The prepared audio/companion lists, scan album batches and JSON input lists are reused for execution.
+Scan previews discover albums without collecting track metadata until confirmed. Source quality/channel
+checks remain part of conversion; counts and destination checks reflect preview-time file state.
 
 1. The main function provides a console-based menu for the user to select different actions:
 2. Re-convert FLAC files.

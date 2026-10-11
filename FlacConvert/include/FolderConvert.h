@@ -21,6 +21,23 @@ struct ScanInfo {
     std::vector<fs::directory_entry> mediaList;
 };
 
+struct PlannedFileConversion {
+    fs::path source;
+    fs::path target;
+    fs::path temporary;
+};
+
+struct FolderConversionPlan {
+    fs::path input;
+    fs::path output;
+    bool overwrite{ false };
+    ConversionOptions options;
+    std::vector<PlannedFileConversion> audio;
+    std::vector<PlannedFileConversion> companions;
+    std::vector<fs::path> existingTargets;
+    std::vector<fs::path> collisions;
+};
+
 class FolderConvert
 {
 public:
@@ -31,6 +48,10 @@ public:
         const std::filesystem::path& outputDirectory,
         bool overwrite,
         ConversionOptions options = {});
+    static int PrepareConversion(
+        const fs::path& input, const fs::path& output, bool overwrite,
+        ConversionOptions options, FolderConversionPlan& plan);
+    static int ExecuteConversion(const FolderConversionPlan& plan);
     
     static int ConverAudioFolder(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync);
     //static int ConverAudioFolder(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync = false);

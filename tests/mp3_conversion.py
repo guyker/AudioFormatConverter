@@ -192,9 +192,10 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual((self.output / "album" / "booklet.\u65e5\u672c").read_bytes(), b"unchanged companion")
         self.assertEqual((result.stdout + result.stderr).count("Copied companion file unchanged"), 2)
 
-    def legacy(self, libraries, selection="6\n"):
+    def legacy(self, libraries, selection="6\nRUN\n", **extra_settings):
         settings = json.loads(self.config.read_text(encoding="utf-8"))
         settings.update({"OutDirectory": str(self.output), "MediaDirectoryList": libraries})
+        settings.update(extra_settings)
         (self.work / "config.json").write_text(json.dumps(settings), encoding="utf-8")
         (self.work / "AppSettingsJsonPersistent.txt").write_text(
             "UTF8:" + str(self.work), encoding="utf-8")
@@ -243,9 +244,195 @@ class ConversionTests(unittest.TestCase):
     def test_menu_retries_then_runs_selected_action(self):
         result = self.legacy(
             [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
-            "16\ninvalid\n5\n \t6 \t\n")
+            "16\ninvalid\n5\n \t6 \t\nRUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue((self.output / "MP3" / "Library" / self.mp3().name).exists())
+
+    def test_source_replacement_defaults_to_cancel(self):
+        libraries = [
+            {"isActive": True, "mediaPath": str(self.source), "mediaName": "Active library"},
+            {"isActive": False, "mediaPath": str(self.work / "inactive"), "mediaName": "Inactive"}]
+        for selection in ("1\n\n", "1\n", "1\nno\n", "1\ny\n", "1\nreplace\n", "1\nREPLACE extra\n"):
+            result = self.legacy(libraries, selection)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Cancelled. No conversion was started", result.stdout)
+            confirmation = result.stdout.split("Affected active libraries:\n", 1)[1]
+            self.assertIn(str(self.source), confirmation)
+            self.assertIn("[Active library]", confirmation)
+            self.assertNotIn(str(self.work / "inactive"), confirmation)
+            self.assertIn("[Cancel]", confirmation)
+            self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+            self.assertEqual(list(self.source.iterdir()), [self.track])
+            self.assertFalse(self.output.exists())
+
+    def test_source_replacement_requires_confirmation(self):
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
+        result = self.legacy(libraries, "1\n \tREPLACE \t\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+        audio = self.probe(self.track)["streams"][0]
+        self.assertEqual((audio["codec_name"], audio["sample_rate"], audio["bits_per_raw_sample"]),
+                         ("flac", "44100", "16"))
+        self.assertEqual(list(self.source.iterdir()), [self.track])
+        self.assertFalse(self.output.exists())
+
+    def test_source_replacement_without_active_libraries_fails(self):
+        result = self.legacy([{"isActive": False, "mediaPath": str(self.source)}], "1\nREPLACE\n")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("No active media libraries", result.stdout + result.stderr)
+        self.assertNotIn("Type REPLACE", result.stdout)
+        self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+
+    def test_mp3_preview_cancel_and_cross_library_preflight(self):
+        (self.source / "cover.png").write_bytes(self.image)
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
+        result = self.legacy(libraries, "6\n\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Operation preview: FLAC to MP3", result.stdout)
+        self.assertIn("Audio files: 1; companions: 1; metadata sidecars: 1", result.stdout)
+        self.assertIn("Existing destinations: 0; duplicate destinations: 0", result.stdout)
+        self.assertIn("Quality: LAME VBR 0", result.stdout)
+        self.assertFalse(self.output.exists())
+        second = self.work / "second"
+        second.mkdir()
+        (second / "two.flac").write_bytes(self.fixture.read_bytes())
+        blocked = self.output / "MP3" / "Second" / "two.mp3"
+        blocked.parent.mkdir(parents=True)
+        blocked.write_bytes(b"existing output")
+        libraries.append({"isActive": True, "mediaPath": str(second), "mediaName": "Second"})
+        result = self.legacy(libraries)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Existing destinations: 1", result.stdout)
+        self.assertIn(str(blocked), result.stdout)
+        self.assertFalse((self.output / "MP3" / "Library").exists())
+        self.assertEqual(blocked.read_bytes(), b"existing output")
+
+    def test_in_place_preview_collision_never_converts(self):
+        checked(ARGS.ffmpeg, "-v", "error", "-i", self.track, "-c:a", "pcm_s16le",
+                self.track.with_suffix(".wav"))
+        result = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "1\nREPLACE\n")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("COLLISION:", result.stdout)
+        self.assertIn("duplicate destinations: 1", result.stdout)
+        self.assertNotIn("Type REPLACE", result.stdout)
+        self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+
+    def test_scan_preview_reuses_discovery_and_cancels_without_writes(self):
+        album = self.source / "album"
+        album.mkdir()
+        (album / "one.flac").write_bytes(self.fixture.read_bytes())
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
+        result = self.legacy(libraries, "2\n\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Albums: 1; tracks: 1; JSON batches to write: 1", result.stdout)
+        self.assertFalse(self.output.exists())
+        result = self.legacy(libraries, "2\nRUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("===Loading album collection from storage==="), 1)
+        json_path = self.output / "Library" / "media_out_Library_1.json"
+        self.assertTrue(json_path.exists())
+        before = json_path.read_bytes()
+        result = self.legacy(libraries, "2\n\n")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("Existing generated JSON files to replace: 1", result.stdout)
+        self.assertEqual(json_path.read_bytes(), before)
+
+        result = self.legacy(libraries, "3\n\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Operation preview: find duplicate albums", result.stdout)
+        self.assertIn("JSON input files: 1", result.stdout)
+        self.assertIn(str(json_path), result.stdout)
+        self.assertNotIn("Finding duplicated albums...", result.stdout)
+        result = self.legacy(libraries, "3\nRUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Finding duplicated albums...", result.stdout)
+        result = self.legacy(libraries, "4\n\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Operation preview: import JSON into SQLite", result.stdout)
+        self.assertIn("Database: new file", result.stdout)
+        db = self.output / "Library" / "media_out_Library.db"
+        self.assertFalse(db.exists())
+        result = self.legacy(libraries, "4\nRUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(db.exists())
+        before_db = db.read_bytes()
+        result = self.legacy(libraries, "4\n\n")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("Database: existing records will be updated", result.stdout)
+        self.assertEqual(db.read_bytes(), before_db)
+
+    def test_missing_json_preview_fails_without_output(self):
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
+        for option in (3, 4):
+            result = self.legacy(libraries, f"{option}\nRUN\n")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(self.output.exists())
+
+    def test_database_import_preserves_legacy_unnamed_library_paths(self):
+        album = self.source / "album"
+        album.mkdir()
+        (album / "one.flac").write_bytes(self.fixture.read_bytes())
+        scanned = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}], "2\nRUN\n")
+        self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
+        albums = (self.output / "Library" / "media_out_Library_1.json").read_bytes()
+        for name, stem in ((None, self.source.name), ("", "")):
+            destination = self.output / stem
+            destination.mkdir(exist_ok=True)
+            json_path = destination / f"media_out_{stem}_1.json"
+            json_path.write_bytes(albums)
+            library = {"isActive": True, "mediaPath": str(self.source)}
+            if name is not None:
+                library["mediaName"] = name
+            result = self.legacy([library], "4\nRUN\n")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue((destination / f"media_out_{stem}.db").exists())
+
+    def test_manual_scan_matches_explicit_scan_across_batches(self):
+        for name in ("a", "b", "c"):
+            album = self.source / name
+            album.mkdir()
+            (album / "one.flac").write_bytes(self.fixture.read_bytes())
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": self.source.name}]
+        for asynchronous in (False, True):
+            result = self.legacy(libraries, "2\nRUN\n", AlbumsSplitThreshold=2,
+                                 UseAsyncFFmpegCalls=asynchronous)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.count("===Loading album collection from storage==="), 1)
+            menu_files = sorted((self.output / self.source.name).glob("media_out_*_[12].json"))
+            self.assertEqual(len(menu_files), 2)
+            expected = [json.loads(path.read_text(encoding="utf-8")) for path in menu_files]
+            explicit_output = self.work / "explicit"
+            result = run(ARGS.converter, "scan", self.source, "--output-dir", explicit_output,
+                         "--config", self.work / "config.json")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            explicit_files = sorted((explicit_output / self.source.name).glob("media_out_*_[12].json"))
+            self.assertEqual([json.loads(path.read_text(encoding="utf-8")) for path in explicit_files], expected)
+
+    def test_in_place_wav_conversion_retains_non_flac_source(self):
+        wav = self.track.with_suffix(".wav")
+        checked(ARGS.ffmpeg, "-v", "error", "-i", self.track, "-c:a", "pcm_s24le", wav)
+        self.track.unlink()
+        original = wav.read_bytes()
+        result = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}], "1\nREPLACE\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(wav.read_bytes(), original)
+        audio = self.probe(self.track)["streams"][0]
+        self.assertEqual((audio["codec_name"], audio["sample_rate"], audio["bits_per_raw_sample"]),
+                         ("flac", "44100", "16"))
+
+    def test_in_place_failure_preserves_original(self):
+        self.track.write_bytes(self.fixture.read_bytes()[:50])
+        before = self.track.read_bytes()
+        result = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}], "1\nREPLACE\n")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.track.read_bytes(), before)
+        self.assertEqual(list(self.source.iterdir()), [self.track])
+        self.assertFalse(self.output.exists())
 
     def test_manual_mp3_rejects_unsafe_names_and_colliding_libraries(self):
         for names in ([".."], ["Same", "Same"]):
