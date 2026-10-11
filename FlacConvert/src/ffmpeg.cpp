@@ -11,6 +11,7 @@
 #include "MediaTrack.h"
 #include <regex>
 #include <cmath>
+#include <stdexcept>
 
 
 namespace FFmpeg {
@@ -289,7 +290,12 @@ namespace FFmpeg {
         if (bIncludeAudioQualityMetrics)
         {
             output.audio_metrics = analyze_audio_metrics(fmt_ctx);
-            output.audio_quality = *analyze_audio_recording(fmt_ctx);
+            const auto audioQuality = analyze_audio_recording(fmt_ctx);
+            if (!audioQuality) {
+                avformat_close_input(&fmt_ctx);
+                throw std::runtime_error("Audio recording analysis failed");
+            }
+            output.audio_quality = *audioQuality;
         }
 
         avformat_close_input(&fmt_ctx);
@@ -385,8 +391,9 @@ namespace FFmpeg {
         double sum_squares = 0.0;
         int64_t clipped = 0;
         int64_t total = 0;
+        const char* analysisError = nullptr;
 
-        while (av_read_frame(fmt_ctx, pkt) >= 0) {
+        while (!analysisError && av_read_frame(fmt_ctx, pkt) >= 0) {
             if (pkt->stream_index != audio_stream_index) {
                 av_packet_unref(pkt);
                 continue;
@@ -394,13 +401,19 @@ namespace FFmpeg {
 
             if (avcodec_send_packet(codec_ctx, pkt) >= 0) {
                 while (avcodec_receive_frame(codec_ctx, frame) == 0) {
-                    auto out_samples = av_rescale_rnd(
-                        swr_get_delay(swr, codec_ctx->sample_rate) + frame->nb_samples,
-                        out_rate, codec_ctx->sample_rate, AV_ROUND_UP
-                    );
+                    const int out_samples = swr_get_out_samples(swr, frame->nb_samples);
+                    if (out_samples < 0) {
+                        analysisError = "Failed to determine resampler output capacity.";
+                        break;
+                    }
 
                     uint8_t* out_buf[1];
-                    out_buf[0] = (uint8_t*)av_malloc(out_samples * sizeof(float));
+                    out_buf[0] = static_cast<uint8_t*>(av_malloc_array(
+                        static_cast<std::size_t>(out_samples), sizeof(float)));
+                    if (!out_buf[0]) {
+                        analysisError = "Failed to allocate resampler output buffer.";
+                        break;
+                    }
 
                     int converted = swr_convert(
                         swr,
@@ -408,9 +421,13 @@ namespace FFmpeg {
                         (const uint8_t**)frame->extended_data,
                         frame->nb_samples
                     );
+                    if (converted < 0) {
+                        av_free(out_buf[0]);
+                        analysisError = "Failed to resample audio recording.";
+                        break;
+                    }
 
                     float* samples = reinterpret_cast<float*>(out_buf[0]);
-                    std::vector<float> sample_vector(samples, samples + converted);
                     for (int i = 0; i < converted; ++i) {
                         float s = samples[i];
                         float abs_s = std::abs(s);
@@ -494,10 +511,14 @@ namespace FFmpeg {
         swr_free(&swr);
         av_channel_layout_uninit(&out_layout);
         avcodec_free_context(&codec_ctx);
+        if (analysisError) {
+            spdlog::error("{}", analysisError);
+            return nullptr;
+        }
 
         // Calculate results
         info->peak_amplitude = max_amp;
-        info->rms_amplitude = total > 0 ? std::sqrt(sum_squares / total) : 0.0f;
+        info->rms_amplitude = total > 0 ? static_cast<float>(std::sqrt(sum_squares / total)) : 0.0f;
         info->dynamic_range_db = 20.0f * std::log10((max_amp + 1e-9f) / (min_amp + 1e-9f));
         info->clipped_samples = static_cast<int>(clipped);
         info->total_samples = static_cast<int>(total);
