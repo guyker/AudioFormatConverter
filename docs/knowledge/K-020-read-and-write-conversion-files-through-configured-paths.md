@@ -5,7 +5,7 @@ title: "Read and write conversion files through configured paths, not canonical 
 area: [FlacConvert]
 status: active
 created: 2026-10-10
-reviewed: 2026-10-10
+reviewed: 2026-10-11
 cites:
   - path: FlacConvert/src/FolderConvert.cpp
     symbol: FolderConvert.ConvertAudioFolderToOutput

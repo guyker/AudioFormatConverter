@@ -192,13 +192,13 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual((self.output / "album" / "booklet.\u65e5\u672c").read_bytes(), b"unchanged companion")
         self.assertEqual((result.stdout + result.stderr).count("Copied companion file unchanged"), 2)
 
-    def legacy(self, libraries):
+    def legacy(self, libraries, selection="6\n"):
         settings = json.loads(self.config.read_text(encoding="utf-8"))
         settings.update({"OutDirectory": str(self.output), "MediaDirectoryList": libraries})
         (self.work / "config.json").write_text(json.dumps(settings), encoding="utf-8")
         (self.work / "AppSettingsJsonPersistent.txt").write_text(
             "UTF8:" + str(self.work), encoding="utf-8")
-        return subprocess.run([str(ARGS.converter)], input="6\n", cwd=self.work,
+        return subprocess.run([str(ARGS.converter)], input=selection, cwd=self.work,
                               capture_output=True, text=True, encoding="utf-8", errors="replace")
 
     def test_manual_mp3_selection(self):
@@ -223,6 +223,29 @@ class ConversionTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(target.read_bytes(), before)
         self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+
+    def test_menu_descriptions_exit_eof_and_invalid_selections(self):
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
+        for selection in ("0\n", "", "\n", "12\nx\n5\n 0 \n"):
+            result = self.legacy(libraries, selection)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse(self.output.exists())
+            self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+            for description in ("WARNING: replaces existing FLAC files", "NOT IMPLEMENTED",
+                                "opens matching album folders", "creates/updates database records",
+                                ".mp3.flac-metadata sidecars", "Exit without running an action",
+                                "Input:", "Output:", "Changes:"):
+                self.assertIn(description, result.stdout)
+            if "5" in selection:
+                self.assertIn("Option 5 is not implemented", result.stdout)
+                self.assertIn("Invalid selection", result.stdout)
+
+    def test_menu_retries_then_runs_selected_action(self):
+        result = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "16\ninvalid\n5\n \t6 \t\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.output / "MP3" / "Library" / self.mp3().name).exists())
 
     def test_manual_mp3_rejects_unsafe_names_and_colliding_libraries(self):
         for names in ([".."], ["Same", "Same"]):

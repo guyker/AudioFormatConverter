@@ -5,7 +5,7 @@ title: "Scan replaces generated JSON files without swapping the library director
 area: [FlacConvert]
 status: active
 created: 2026-10-09
-reviewed: 2026-10-10
+reviewed: 2026-10-11
 cites:
   - path: FlacConvert/src/FlacConvertMain.cpp
     symbol: installGeneratedFiles

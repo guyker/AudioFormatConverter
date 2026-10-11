@@ -59,7 +59,7 @@
 namespace fs = std::filesystem;
 
 
-enum class ConvertActionEnum { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum, ConvertMp3Enum };
+enum class ConvertActionEnum { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum, ConvertMp3Enum, ExitEnum };
 
 
 int ConvertFLACToFLAC(std::vector<MediaDirectoryElement> mediaDirectoryList)
@@ -841,37 +841,80 @@ int ImportJsonDirectoryToDatabase(const fs::path& jsonDirectory, const fs::path&
 
 ConvertActionEnum GetUserAction()
 {
-    ConvertActionEnum action{ ConvertActionEnum::NullEnum };
+    std::cout <<
+        "\nSelect run option\n"
+        "All actions use the active MediaDirectoryList libraries from config.json.\n"
+        "OutDirectory is the configured output root shown above.\n\n"
+        "  1 - Re/Convert to FLAC [WARNING: replaces existing FLAC files]\n"
+        "      Input: supported audio files in the active source libraries, recursively.\n"
+        "      Output: 16-bit / 44.1 kHz .flac files beside the source files, with dithering.\n"
+        "      Changes: overwrites matching FLAC files after successful encoding;\n"
+        "               non-FLAC sources remain. Audio-only mapping omits embedded artwork.\n"
+        "               Back up your library first; resampling/depth reduction loses information.\n\n"
+        "  2 - Scan directories and create metadata JSON\n"
+        "      Input: audio libraries; reads track tags and technical metadata.\n"
+        "      Output: OutDirectory/<mediaName>/media_out_<mediaName>_<part>.json.\n"
+        "      Changes: replaces the previous generated JSON set after a successful scan;\n"
+        "               source audio, existing databases and unrelated files are unchanged.\n\n"
+        "  3 - Find duplicate albums\n"
+        "      Input: generated JSON from option 2; source folders must remain accessible\n"
+        "             for track metadata/quality comparisons.\n"
+        "      Output: duplicate reports in the console; opens matching album folders.\n"
+        "      Changes: does not delete duplicates or change audio, JSON or databases.\n\n"
+        "  4 - Import metadata JSON into SQLite\n"
+        "      Input: generated JSON from option 2 for each active library.\n"
+        "      Output: OutDirectory/<mediaName>/media_out_<mediaName>.db.\n"
+        "      Changes: creates/updates database records; source audio and JSON are unchanged.\n"
+        "               Does not scan audio directly.\n\n"
+        "  5 - Scan directories directly to SQLite [NOT IMPLEMENTED]\n"
+        "      Input/Output/Changes: none; selection 5 runs no action.\n"
+        "      Use option 2, then option 4 instead.\n\n"
+        "  6 - Convert FLAC to MP3 [sources unchanged]\n"
+        "      Input: native FLAC files in the active source libraries, recursively.\n"
+        "      Output: OutDirectory/MP3/<mediaName>/ with relative paths preserved:\n"
+        "              MP3 (LAME VBR quality 0), .mp3.flac-metadata sidecars,\n"
+        "              and unchanged non-audio companion files (artwork, booklets, etc.).\n"
+        "      Changes: writes new files only; existing destinations cause an error.\n"
+        "               Supported tags/pictures/chapters go into ID3v2.4; original metadata\n"
+        "               is retained in sidecars. MP3 audio is lossy. Mono/stereo only;\n"
+        "               44.1/48 kHz retained, other accepted rates become 48 kHz.\n"
+        "               Use 'convert --help' for quality, overwrite and downmix controls.\n\n"
+        "Conversion options 1 and 6 reject sources below 16-bit or 44.1 kHz,\n"
+        "or whose source depth/rate cannot be verified.\n"
+        "<mediaName> defaults to the source folder name; <part> is a numbered JSON batch.\n\n"
+        "  0 - Exit without running an action\n\n";
 
-    spdlog::info("Select run option [1 - Re/Convert FLAC, 2 - Scan directories, 3 - Get Duplicates, 4 - Update DB, XX 5 - Scan DIR to DB, 6 - Convert FLAC to MP3]");
-    char input = getchar();
-    switch (input)
-    {
-    case '1':
-        action = ConvertActionEnum::ConverEnum;
-        break;
-    case '2':
-        action = ConvertActionEnum::CreateJSONEnum;
-        break;
-    case '5':
-        action = ConvertActionEnum::CreateDBFromFolderEnum;
-        break;
-    case '3':
-        action = ConvertActionEnum::ProcessJSONEnum;
-        break;
-    case '4':
-        action = ConvertActionEnum::PopulateJsonToDBEnum;
-        break;
-    case '6':
-        action = ConvertActionEnum::ConvertMp3Enum;
-        break;
-    default:
-        spdlog::error("Selection Error, unknown {}", input);
-        action = ConvertActionEnum::NullEnum;
-        break;
+    for (;;) {
+        std::cout << "Enter option [0-6], then press Enter: " << std::flush;
+        std::string input;
+        if (!std::getline(std::cin, input)) {
+            if (std::cin.eof()) {
+                return ConvertActionEnum::ExitEnum;
+            }
+            spdlog::error("Cannot read menu selection from standard input.");
+            return ConvertActionEnum::NullEnum;
+        }
+        const auto first = input.find_first_not_of(" \t\r");
+        const auto last = input.find_last_not_of(" \t\r");
+        if (first == std::string::npos || first != last) {
+            std::cout << "Invalid selection. Enter one option number.\n";
+            continue;
+        }
+        switch (input[first]) {
+        case '0': return ConvertActionEnum::ExitEnum;
+        case '1': return ConvertActionEnum::ConverEnum;
+        case '2': return ConvertActionEnum::CreateJSONEnum;
+        case '3': return ConvertActionEnum::ProcessJSONEnum;
+        case '4': return ConvertActionEnum::PopulateJsonToDBEnum;
+        case '5':
+            std::cout << "Option 5 is not implemented. Use option 2, then option 4.\n";
+            break;
+        case '6': return ConvertActionEnum::ConvertMp3Enum;
+        default:
+            std::cout << "Invalid selection. Enter a number from 0 to 6.\n";
+            break;
+        }
     }
-
-	return action;
 }
 
 void init_logger(spdlog::level::level_enum level = spdlog::level::debug)
@@ -929,8 +972,8 @@ int RunLegacyMenu()
 	std::vector<MediaDirectoryElement> mediaList;
 
     //std::cout << "App Settings: " << std::filesystem::path(AppSettingsJson::DefaultConfigDirectory) / AppSettingsJson::DefaultConfigFileName << std::endl;
-    spdlog::info("Working directory: {}", appSettingPtr->OutDirectory);
-    spdlog::info("Database file name: {}", appSettingPtr->DatabaseFileName);
+    spdlog::info("Output root (OutDirectory): {}", appSettingPtr->OutDirectory);
+    spdlog::info("Database output: OutDirectory/<mediaName>/media_out_<mediaName>.db");
 
     spdlog::info("----------------");
 
@@ -973,7 +1016,7 @@ int RunLegacyMenu()
 	case ConvertActionEnum::PopulateJsonToDBEnum: //4    
         return ExportJSONToDB(mediaList) == 0 ? 0 : 1;
 
-    case ConvertActionEnum::CreateDBFromFolderEnum: //5
+    case ConvertActionEnum::ExitEnum: //0 or end of input
         return 0;
 
     case ConvertActionEnum::ConvertMp3Enum: //6

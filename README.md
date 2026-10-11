@@ -32,6 +32,11 @@
 3. The legacy menu opens matching album folders; the `duplicates` command only does so when passed `--open`.
 
 <h3>Legacy interactive menu (no arguments):</h3>
+The menu explains each action's input, output and file changes before selection. Enter one number and
+press Enter; invalid input is retried, `0` exits, and end-of-input exits without running an action.
+Option `5` is explicitly unavailable: scan with `2`, then import into SQLite with `4`.
+Option `1` warns that existing FLAC sources are replaced and embedded artwork is omitted.
+
 1. The main function provides a console-based menu for the user to select different actions:
 2. Re-convert FLAC files.
 3. Scan directories and create JSON metadata files.
