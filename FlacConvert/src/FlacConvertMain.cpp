@@ -306,30 +306,53 @@ std::vector<fs::path> findConfiguredJsonFiles(
 }
 }
 
-int ConfirmSourceReplacement(const std::vector<MediaDirectoryElement>& libraries);
-
 namespace
 {
-int ConfirmPreview()
+enum class MenuConfirmation { Run, Back, Exit, Error };
+constexpr int ReturnToMenu = -2;
+
+std::string trimMenuResponse(const std::string& response)
+{
+    const auto first = response.find_first_not_of(" \t\r");
+    const auto last = response.find_last_not_of(" \t\r");
+    return first == std::string::npos ? std::string{} : response.substr(first, last - first + 1);
+}
+
+MenuConfirmation ConfirmManualAction(const char* runToken, const char* cancellationMessage)
 {
     std::cout << "\nPreview only; no output has been written. File state may change before execution.\n"
-        "Type RUN to proceed, or press Enter to cancel [Cancel]: " << std::flush;
+        << "Type " << runToken << " to run, BACK for the menu, EXIT to quit,\n"
+        "or press Enter to cancel [Cancel]: " << std::flush;
     std::string response;
     if (!std::getline(std::cin, response)) {
         if (!std::cin.eof()) {
             spdlog::error("Cannot read operation preview confirmation.");
-            return -1;
+            return MenuConfirmation::Error;
         }
     }
     else {
-        const auto first = response.find_first_not_of(" \t\r");
-        const auto last = response.find_last_not_of(" \t\r");
-        if (first != std::string::npos && response.substr(first, last - first + 1) == "RUN") {
-            return 1;
+        response = trimMenuResponse(response);
+        if (response == runToken) {
+            return MenuConfirmation::Run;
+        }
+        if (response == "BACK") {
+            std::cout << "Back to menu. No action was started.\n";
+            return MenuConfirmation::Back;
         }
     }
-    std::cout << "Cancelled. No action was started.\n";
-    return 0;
+    std::cout << cancellationMessage << '\n';
+    return MenuConfirmation::Exit;
+}
+
+MenuConfirmation ConfirmPreview()
+{
+    return ConfirmManualAction("RUN", "Cancelled. No action was started.");
+}
+
+int cancelledMenuResult(MenuConfirmation confirmation)
+{
+    return confirmation == MenuConfirmation::Back ? ReturnToMenu :
+        confirmation == MenuConfirmation::Error ? 1 : 0;
 }
 
 fs::path absoluteDisplayPath(const fs::path& path)
@@ -357,6 +380,8 @@ void ShowConversionPreview(const FolderConversionPlan& plan)
     }
 }
 }
+
+MenuConfirmation ConfirmSourceReplacement(const std::vector<MediaDirectoryElement>& libraries);
 
 int ConvertFLACToFLAC(const std::vector<MediaDirectoryElement>& libraries)
 {
@@ -420,9 +445,9 @@ int ConvertFLACToFLAC(const std::vector<MediaDirectoryElement>& libraries)
         spdlog::error("Conflicting FLAC destinations; no conversion was started.");
         return 1;
     }
-    const int confirmation = ConfirmSourceReplacement(libraries);
-    if (confirmation <= 0) {
-        return confirmation == 0 ? 0 : 1;
+    const auto confirmation = ConfirmSourceReplacement(libraries);
+    if (confirmation != MenuConfirmation::Run) {
+        return cancelledMenuResult(confirmation);
     }
     for (const auto& file : files) {
         MediaConvertionTask task(file.source, file.target, file.temporary, true);
@@ -501,9 +526,9 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryLis
     }
     std::cout << "  Quality: LAME VBR 0; mono/stereo only; 44.1/48 kHz retained, other accepted rates -> 48 kHz.\n"
         "  Source quality/channel properties are verified during conversion.\n";
-    const int confirmation = ConfirmPreview();
-    if (confirmation <= 0) {
-        return confirmation == 0 ? 0 : 1;
+    const auto confirmation = ConfirmPreview();
+    if (confirmation != MenuConfirmation::Run) {
+        return cancelledMenuResult(confirmation);
     }
     for (const auto& plan : plans) {
         if (FolderConvert::ExecuteConversion(plan) != 0) {
@@ -596,9 +621,9 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             }
             preparedAlbums.push_back(std::move(batches));
         }
-        const int confirmation = ConfirmPreview();
-        if (confirmation <= 0) {
-            return confirmation == 0 ? 0 : 1;
+        const auto confirmation = ConfirmPreview();
+        if (confirmation != MenuConfirmation::Run) {
+            return cancelledMenuResult(confirmation);
         }
     }
     std::size_t libraryIndex = 0;
@@ -1024,9 +1049,9 @@ int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList)
         spdlog::error("No active libraries configured for database import.");
         return 1;
     }
-    const int confirmation = ConfirmPreview();
-    if (confirmation <= 0) {
-        return confirmation == 0 ? 0 : 1;
+    const auto confirmation = ConfirmPreview();
+    if (confirmation != MenuConfirmation::Run) {
+        return cancelledMenuResult(confirmation);
     }
     for (const auto& plan : plans) {
         for (const auto& json : plan.json) {
@@ -1083,11 +1108,11 @@ int ImportJsonDirectoryToDatabase(const fs::path& jsonDirectory, const fs::path&
     return albumCollection.ExportToDatabase(albums, databasePath) ? 0 : 1;
 }
 
-int ConfirmSourceReplacement(const std::vector<MediaDirectoryElement>& libraries)
+MenuConfirmation ConfirmSourceReplacement(const std::vector<MediaDirectoryElement>& libraries)
 {
     if (libraries.empty()) {
         spdlog::error("No active media libraries configured for FLAC conversion.");
-        return -1;
+        return MenuConfirmation::Error;
     }
     std::cout << "\nWARNING: option 1 writes FLAC output into the source libraries.\n"
         "Existing matching FLAC files will be replaced after successful encoding.\n"
@@ -1101,57 +1126,49 @@ int ConfirmSourceReplacement(const std::vector<MediaDirectoryElement>& libraries
         }
         std::cout << '\n';
     }
-    std::cout << "\nType REPLACE to confirm, or press Enter to cancel [Cancel]: " << std::flush;
-    std::string confirmation;
-    if (!std::getline(std::cin, confirmation)) {
-        if (!std::cin.eof()) {
-            spdlog::error("Cannot read source replacement confirmation from standard input.");
-            return -1;
-        }
-    }
-    else {
-        const auto first = confirmation.find_first_not_of(" \t\r");
-        const auto last = confirmation.find_last_not_of(" \t\r");
-        if (first != std::string::npos &&
-            confirmation.substr(first, last - first + 1) == "REPLACE") {
-            return 1;
-        }
-    }
-    std::cout << "Cancelled. No conversion was started; source files are unchanged.\n";
-    return 0;
+    return ConfirmManualAction("REPLACE",
+        "Cancelled. No conversion was started; source files are unchanged.");
 }
 
-ConvertActionEnum GetUserAction()
+namespace
 {
-    std::cout <<
-        "\nSelect run option\n"
-        "All actions use the active MediaDirectoryList libraries from config.json.\n"
-        "OutDirectory is the configured output root shown above.\n\n"
-        "  1 - Re/Convert to FLAC [WARNING: replaces existing FLAC files]\n"
+struct MenuEntry {
+    char number;
+    ConvertActionEnum action;
+    const char* label;
+    const char* details;
+};
+
+constexpr std::array<MenuEntry, 6> MenuEntries{ {
+    { '1', ConvertActionEnum::ConverEnum,
+        "Re/Convert to FLAC [WARNING: replaces existing FLAC files]",
         "      Input: supported audio files in the active source libraries, recursively.\n"
         "      Output: 16-bit / 44.1 kHz .flac files beside the source files, with dithering.\n"
         "      Changes: overwrites matching FLAC files after successful encoding;\n"
         "               non-FLAC sources remain. Audio-only mapping omits embedded artwork.\n"
-        "               Back up your library first; resampling/depth reduction loses information.\n\n"
-        "  2 - Scan directories and create metadata JSON\n"
+        "               Back up your library first; resampling/depth reduction loses information.\n"
+        "      Rejects sources below 16-bit / 44.1 kHz or whose depth/rate cannot be verified.\n"
+        "      Running requires REPLACE, not a generic RUN confirmation.\n" },
+    { '2', ConvertActionEnum::CreateJSONEnum, "Scan directories and create metadata JSON",
         "      Input: audio libraries; reads track tags and technical metadata.\n"
         "      Output: OutDirectory/<mediaName>/media_out_<mediaName>_<part>.json.\n"
         "      Changes: replaces the previous generated JSON set after a successful scan;\n"
-        "               source audio, existing databases and unrelated files are unchanged.\n\n"
-        "  3 - Find duplicate albums\n"
+        "               source audio, existing databases and unrelated files are unchanged.\n"
+        "      <mediaName> defaults to the source folder name; <part> is a numbered batch.\n" },
+    { '3', ConvertActionEnum::ProcessJSONEnum, "Find duplicate albums",
         "      Input: generated JSON from option 2; source folders must remain accessible\n"
         "             for track metadata/quality comparisons.\n"
         "      Output: duplicate reports in the console; opens matching album folders.\n"
-        "      Changes: does not delete duplicates or change audio, JSON or databases.\n\n"
-        "  4 - Import metadata JSON into SQLite\n"
+        "      Changes: does not delete duplicates or change audio, JSON or databases.\n" },
+    { '4', ConvertActionEnum::PopulateJsonToDBEnum, "Import metadata JSON into SQLite",
         "      Input: generated JSON from option 2 for each active library.\n"
         "      Output: OutDirectory/<mediaName>/media_out_<mediaName>.db.\n"
         "      Changes: creates/updates database records; source audio and JSON are unchanged.\n"
-        "               Does not scan audio directly.\n\n"
-        "  5 - Scan directories directly to SQLite [NOT IMPLEMENTED]\n"
+        "               Does not scan audio directly; preview shows the configured filenames.\n" },
+    { '5', ConvertActionEnum::CreateDBFromFolderEnum, "Scan directories directly to SQLite [NOT IMPLEMENTED]",
         "      Input/Output/Changes: none; selection 5 runs no action.\n"
-        "      Use option 2, then option 4 instead.\n\n"
-        "  6 - Convert FLAC to MP3 [sources unchanged]\n"
+        "      Use option 2, then option 4 instead.\n" },
+    { '6', ConvertActionEnum::ConvertMp3Enum, "Convert FLAC to MP3 [sources unchanged]",
         "      Input: native FLAC files in the active source libraries, recursively.\n"
         "      Output: OutDirectory/MP3/<mediaName>/ with relative paths preserved:\n"
         "              MP3 (LAME VBR quality 0), .mp3.flac-metadata sidecars,\n"
@@ -1160,14 +1177,28 @@ ConvertActionEnum GetUserAction()
         "               Supported tags/pictures/chapters go into ID3v2.4; original metadata\n"
         "               is retained in sidecars. MP3 audio is lossy. Mono/stereo only;\n"
         "               44.1/48 kHz retained, other accepted rates become 48 kHz.\n"
-        "               Use 'convert --help' for quality, overwrite and downmix controls.\n\n"
-        "Conversion options 1 and 6 reject sources below 16-bit or 44.1 kHz,\n"
-        "or whose source depth/rate cannot be verified.\n"
-        "<mediaName> defaults to the source folder name; <part> is a numbered JSON batch.\n\n"
-        "  0 - Exit without running an action\n\n";
+        "      Rejects sources below 16-bit / 44.1 kHz or whose depth/rate cannot be verified.\n"
+        "      <mediaName> defaults to the source folder name.\n"
+        "      Use 'convert --help' for quality, overwrite and downmix controls.\n" }
+} };
 
+void ShowActionDetails(const MenuEntry& entry)
+{
+    std::cout << "\n" << entry.number << " - " << entry.label << '\n' << entry.details;
+}
+}
+
+ConvertActionEnum GetUserAction()
+{
+    std::cout << "\nSelect run option\n"
+        "Uses active configured libraries. Details and a preview follow selection.\n\n";
+    for (const auto& entry : MenuEntries) {
+        std::cout << "  " << entry.number << " - " << entry.label << '\n';
+    }
+    std::cout << "  0 - Exit without running an action\n"
+        "  ? - Help: input, output and changes for all options\n\n";
     for (;;) {
-        std::cout << "Enter option [0-6], then press Enter: " << std::flush;
+        std::cout << "Enter option [0-6 or ?], then press Enter: " << std::flush;
         std::string input;
         if (!std::getline(std::cin, input)) {
             if (std::cin.eof()) {
@@ -1176,26 +1207,33 @@ ConvertActionEnum GetUserAction()
             spdlog::error("Cannot read menu selection from standard input.");
             return ConvertActionEnum::NullEnum;
         }
-        const auto first = input.find_first_not_of(" \t\r");
-        const auto last = input.find_last_not_of(" \t\r");
-        if (first == std::string::npos || first != last) {
+        input = trimMenuResponse(input);
+        if (input.size() != 1) {
             std::cout << "Invalid selection. Enter one option number.\n";
             continue;
         }
-        switch (input[first]) {
-        case '0': return ConvertActionEnum::ExitEnum;
-        case '1': return ConvertActionEnum::ConverEnum;
-        case '2': return ConvertActionEnum::CreateJSONEnum;
-        case '3': return ConvertActionEnum::ProcessJSONEnum;
-        case '4': return ConvertActionEnum::PopulateJsonToDBEnum;
-        case '5':
-            std::cout << "Option 5 is not implemented. Use option 2, then option 4.\n";
-            break;
-        case '6': return ConvertActionEnum::ConvertMp3Enum;
-        default:
-            std::cout << "Invalid selection. Enter a number from 0 to 6.\n";
-            break;
+        if (input == "0") {
+            return ConvertActionEnum::ExitEnum;
         }
+        if (input == "?") {
+            std::cout << "\nAll actions use active MediaDirectoryList libraries; OutDirectory is the output root.\n";
+            for (const auto& entry : MenuEntries) {
+                ShowActionDetails(entry);
+            }
+            continue;
+        }
+        const auto entry = std::find_if(MenuEntries.begin(), MenuEntries.end(),
+            [&](const MenuEntry& option) { return option.number == input[0]; });
+        if (entry == MenuEntries.end()) {
+            std::cout << "Invalid selection. Enter a number from 0 to 6, or ? for help.\n";
+            continue;
+        }
+        ShowActionDetails(*entry);
+        if (entry->action == ConvertActionEnum::CreateDBFromFolderEnum) {
+            std::cout << "Option 5 is not implemented. Use option 2, then option 4.\n";
+            continue;
+        }
+        return entry->action;
     }
 }
 
@@ -1282,48 +1320,55 @@ int RunLegacyMenu()
 	spdlog::info("");
 
 
-    auto action = GetUserAction();
-    switch (action)
-    {
-    case ConvertActionEnum::ConverEnum: //1
-        return ConvertFLACToFLAC(mediaList) == 0 ? 0 : 1;
+    const auto executeAction = [&](ConvertActionEnum action) {
+        switch (action)
+        {
+        case ConvertActionEnum::ConverEnum: //1
+            return ConvertFLACToFLAC(mediaList);
 
-	case ConvertActionEnum::CreateJSONEnum: //2
-		return ScanFolderAndCreateJSON(mediaList, true, pathFromUtf8(appSettingPtr->OutDirectory), true);
+        case ConvertActionEnum::CreateJSONEnum: //2
+            return ScanFolderAndCreateJSON(mediaList, true, pathFromUtf8(appSettingPtr->OutDirectory), true);
 
-	case ConvertActionEnum::ProcessJSONEnum: //3
-    {
-        const auto jsonFiles = findConfiguredJsonFiles(mediaList, pathFromUtf8(appSettingPtr->OutDirectory));
-        std::cout << "\nOperation preview: find duplicate albums\n  JSON input files: " << jsonFiles.size() << '\n';
-        for (const auto& json : jsonFiles) {
-            std::cout << "    Input: " << pathToUtf8(absoluteDisplayPath(json)) << '\n';
+        case ConvertActionEnum::ProcessJSONEnum: //3
+        {
+            const auto jsonFiles = findConfiguredJsonFiles(mediaList, pathFromUtf8(appSettingPtr->OutDirectory));
+            std::cout << "\nOperation preview: find duplicate albums\n  JSON input files: " << jsonFiles.size() << '\n';
+            for (const auto& json : jsonFiles) {
+                std::cout << "    Input: " << pathToUtf8(absoluteDisplayPath(json)) << '\n';
+            }
+            std::cout << "  Output: console reports and opened matching album folders.\n"
+                "  Overwrite: none; no files or database records are changed.\n"
+                "  Track metadata is read from source folders during comparisons.\n";
+            if (jsonFiles.empty()) {
+                spdlog::error("No generated JSON input; run option 2 first.");
+                return 1;
+            }
+            const auto confirmation = ConfirmPreview();
+            if (confirmation != MenuConfirmation::Run) {
+                return cancelledMenuResult(confirmation);
+            }
+            return ScanFolderProcessJSONAndFindDuplicates(jsonFiles, true);
         }
-        std::cout << "  Output: console reports and opened matching album folders.\n"
-            "  Overwrite: none; no files or database records are changed.\n"
-            "  Track metadata is read from source folders during comparisons.\n";
-        if (jsonFiles.empty()) {
-            spdlog::error("No generated JSON input; run option 2 first.");
-            return 1;
+
+        case ConvertActionEnum::PopulateJsonToDBEnum: //4
+            return ExportJSONToDB(mediaList);
+
+        case ConvertActionEnum::ExitEnum: //0 or end of input
+            return 0;
+
+        case ConvertActionEnum::ConvertMp3Enum: //6
+            return ConvertFLACToMP3(mediaList, pathFromUtf8(appSettingPtr->OutDirectory));
+
+        default:
+            spdlog::error("Action not found: {}", static_cast<int>(action));
+            return 2;
         }
-        const int confirmation = ConfirmPreview();
-        if (confirmation <= 0) {
-            return confirmation == 0 ? 0 : 1;
+    };
+    for (;;) {
+        const int result = executeAction(GetUserAction());
+        if (result != ReturnToMenu) {
+            return result;
         }
-        return ScanFolderProcessJSONAndFindDuplicates(jsonFiles, true);
-    }
-
-	case ConvertActionEnum::PopulateJsonToDBEnum: //4    
-        return ExportJSONToDB(mediaList) == 0 ? 0 : 1;
-
-    case ConvertActionEnum::ExitEnum: //0 or end of input
-        return 0;
-
-    case ConvertActionEnum::ConvertMp3Enum: //6
-        return ConvertFLACToMP3(mediaList, pathFromUtf8(appSettingPtr->OutDirectory));
-
-    default:
-        spdlog::error("Acrtion not found: {}", static_cast<int>(action));
-        return 2;
     }
 }
 

@@ -32,7 +32,7 @@
 3. The legacy menu opens matching album folders; the `duplicates` command only does so when passed `--open`.
 
 <h3>Legacy interactive menu (no arguments):</h3>
-The menu explains each action's input, output and file changes before selection. Enter one number and
+The compact menu shows numbered actions; selecting one displays its input, output and file changes. Enter one number and
 press Enter; invalid input is retried, `0` exits, and end-of-input exits without running an action.
 Option `5` is explicitly unavailable: scan with `2`, then import into SQLite with `4`.
 Option `1` warns that existing FLAC sources are replaced and embedded artwork is omitted.
@@ -47,6 +47,10 @@ before execution, so a conflict in a later library prevents earlier libraries fr
 The prepared audio/companion lists, scan album batches and JSON input lists are reused for execution.
 Scan previews discover albums without collecting track metadata until confirmed. Source quality/channel
 checks remain part of conversion; counts and destination checks reflect preview-time file state.
+Enter `?` at the selection prompt to see all action descriptions without scanning or writing.
+At the preview confirmation, `BACK` returns to the menu and `EXIT` quits without starting the action.
+Running uses the same single confirmation: `REPLACE` for option `1`, `RUN` for other actions.
+Enter, unrecognized confirmation text or EOF still cancels and exits. Option numbers are unchanged.
 
 1. The main function provides a console-based menu for the user to select different actions:
 2. Re-convert FLAC files.

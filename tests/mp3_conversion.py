@@ -233,13 +233,73 @@ class ConversionTests(unittest.TestCase):
             self.assertFalse(self.output.exists())
             self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
             for description in ("WARNING: replaces existing FLAC files", "NOT IMPLEMENTED",
-                                "opens matching album folders", "creates/updates database records",
-                                ".mp3.flac-metadata sidecars", "Exit without running an action",
-                                "Input:", "Output:", "Changes:"):
+                                "Exit without running an action", "? - Help"):
                 self.assertIn(description, result.stdout)
+            if "5" not in selection:
+                self.assertNotIn("      Input:", result.stdout)
+                self.assertNotIn("      Output:", result.stdout)
+                self.assertNotIn("      Changes:", result.stdout)
             if "5" in selection:
                 self.assertIn("Option 5 is not implemented", result.stdout)
                 self.assertIn("Invalid selection", result.stdout)
+
+    def test_menu_help_displays_details_without_preparing_actions(self):
+        result = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.work / "missing"), "mediaName": "Library"}],
+            "?\n0\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for description in ("opens matching album folders", "creates/updates database records",
+                            ".mp3.flac-metadata sidecars", "Input:", "Output:", "Changes:"):
+            self.assertIn(description, result.stdout)
+        self.assertNotIn("Operation preview:", result.stdout)
+        self.assertNotIn("===Loading album collection from storage===", result.stdout)
+        self.assertFalse(self.output.exists())
+
+    def test_menu_shows_only_selected_action_details_before_preview(self):
+        result = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}], "6\nEXIT\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(".mp3.flac-metadata sidecars", result.stdout)
+        self.assertNotIn("opens matching album folders", result.stdout)
+        self.assertNotIn("creates/updates database records", result.stdout)
+        self.assertLess(result.stdout.index("      Input:"), result.stdout.index("Operation preview:"))
+        self.assertEqual(result.stdout.count("Type RUN to run"), 1)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+
+    def test_back_and_exit_from_each_action_leave_files_unchanged(self):
+        album = self.source / "album"
+        album.mkdir()
+        (album / "one.flac").write_bytes(self.fixture.read_bytes())
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
+        result = self.legacy(libraries, "2\nRUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        def snapshot():
+            return {path: path.read_bytes() for root in (self.source, self.output)
+                    for path in root.rglob("*") if path.is_file()}
+
+        before = snapshot()
+        for option in (1, 2, 3, 4, 6):
+            for response in (" \tBACK \t\n0\n", "EXIT\n", "BACK\n"):
+                result = self.legacy(libraries, f"{option}\n{response}")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(snapshot(), before)
+                self.assertIn("BACK for the menu, EXIT to quit", result.stdout)
+                self.assertEqual(result.stdout.count("Select run option"), 2 if "BACK" in response else 1)
+        self.assertFalse((self.output / "MP3").exists())
+        self.assertFalse((self.output / "Library" / "media_out_Library.db").exists())
+
+    def test_back_from_source_replacement_can_select_mp3_without_replacing_sources(self):
+        result = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "1\nBACK\n?\n6\nRUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("Select run option"), 2)
+        self.assertTrue((self.output / "MP3" / "Library" / self.mp3().name).exists())
+        self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+        self.assertEqual(result.stdout.count("Type REPLACE to run"), 1)
+        self.assertEqual(result.stdout.count("Type RUN to run"), 1)
 
     def test_menu_retries_then_runs_selected_action(self):
         result = self.legacy(
