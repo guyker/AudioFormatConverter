@@ -99,10 +99,21 @@ namespace CommonUtils {
         return 0;
     }
 
-	std::string get_raw_progress_bar(int total, int count, int barWidth) {
+    static int progress_filled(std::size_t total, std::size_t count, int width) {
+        if (total == 0 || width <= 0) {
+            return 0;
+        }
+        if (count >= total) {
+            return width;
+        }
+        const auto filled = static_cast<long double>(count) * width / total;
+        return static_cast<int>((std::min)(filled, static_cast<long double>(width - 1)));
+    }
+
+	std::string get_raw_progress_bar(std::size_t total, std::size_t count, int barWidth) {
 		const int bar_width = barWidth; // Width of the progress bar (characters)
-		int filled = (count * bar_width) / total;
-		std::string bar(bar_width, ' ');
+		const int filled = progress_filled(total, count, bar_width);
+		std::string bar(static_cast<std::size_t>((std::max)(bar_width, 0)), ' ');
 		for (int j = 0; j < filled; ++j) {
 			bar[j] = '=';
 		}
@@ -130,8 +141,9 @@ namespace CommonUtils {
 
 
         auto normalized_count = std::min<size_t>(count, size);
-        int i = bar_width * normalized_count / size;
-        int percent = (i * 100) / bar_width;
+        const int i = progress_filled(size, normalized_count, bar_width);
+        const int percent = progress_filled(
+            static_cast<std::size_t>((std::max)(bar_width, 0)), static_cast<std::size_t>(i), 100);
         auto bar = get_raw_progress_bar(size, normalized_count, 20);
         std::string avarageDuration = (size <= count) ? "" :
             " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (size - count))) + ")";
@@ -155,9 +167,10 @@ namespace CommonUtils {
             }
             auto sub_normalized_total_count = std::min<size_t>(sub_currentCount, sub_totalCount);
 
-            auto i2 = sub_bar_width_total * sub_normalized_total_count / sub_totalCount;
+            const int i2 = progress_filled(sub_totalCount, sub_normalized_total_count, sub_bar_width_total);
 
-            int sub_percent_total = (i2 * 100) / sub_bar_width_total;
+            const int sub_percent_total = progress_filled(
+                static_cast<std::size_t>((std::max)(sub_bar_width_total, 0)), static_cast<std::size_t>(i2), 100);
             auto sub_bar_total = get_raw_progress_bar(sub_totalCount, sub_normalized_total_count, progressInfoPtr->subProgressInfoPtr->bar_size);
             std::string sub_avarageDurationTotal = (sub_totalCount <= sub_currentCount) ? "" :
                 " (" + CommonUtils::GetDurationinString(static_cast<long long>(av_duration * (sub_totalCount - sub_currentCount))) + ")";
