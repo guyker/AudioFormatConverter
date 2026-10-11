@@ -287,7 +287,7 @@ int FolderConvert::PrepareConversion(
     return 0;
 }
 
-int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan)
+int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, ConversionProgress* progress)
 {
     if (!plan.collisions.empty() || (!plan.overwrite && !plan.existingTargets.empty())) {
         spdlog::error("Conversion plan has {} duplicate destinations and {} existing destinations; overwrite is {}.",
@@ -306,6 +306,9 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan)
         if (task->Run() != 0 || task->PostRun() != 0) {
             return -1;
         }
+        if (progress) {
+            ++progress->converted;
+        }
     }
 
     for (const auto& copy : plan.companions) {
@@ -323,6 +326,9 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan)
         if (!MediaConvertionTask::InstallOutputFile(copy.temporary, copy.target, plan.overwrite)) {
             spdlog::error("Companion copy remains recoverable at '{}'.", CommonUtils::path_to_utf8(copy.temporary));
             return -1;
+        }
+        if (progress) {
+            ++progress->copied;
         }
         spdlog::info("Copied companion file unchanged: {}", CommonUtils::path_to_utf8(copy.target));
     }

@@ -51,6 +51,12 @@ Enter `?` at the selection prompt to see all action descriptions without scannin
 At the preview confirmation, `BACK` returns to the menu and `EXIT` quits without starting the action.
 Running uses the same single confirmation: `REPLACE` for option `1`, `RUN` for other actions.
 Enter, unrecognized confirmation text or EOF still cancels and exits. Option numbers are unchanged.
+Finished manual actions report `Completed`, `Partially completed` or `Failed`, elapsed execution time,
+output locations, completed work and copied companions. Counts reflect successfully installed audio,
+installed album JSON files (not optional error reports), committed JSON database batches, or fully
+processed duplicate pairs; they are not preview estimates. A failure stops at the first error and
+does not count unattempted work as failed or imply whole-operation rollback. Preflight failures state
+that no action started; cancellation and Back/Exit do not print a success summary.
 
 1. The main function provides a console-based menu for the user to select different actions:
 2. Re-convert FLAC files.

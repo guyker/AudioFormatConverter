@@ -311,6 +311,50 @@ namespace
 enum class MenuConfirmation { Run, Back, Exit, Error };
 constexpr int ReturnToMenu = -2;
 
+struct ManualOperationSummary {
+    const char* unit{ "work items" };
+    std::size_t completed{ 0 };
+    ConversionProgress conversion;
+    std::vector<fs::path> outputs;
+    const char* outputDescription{ nullptr };
+    bool started{ false };
+    std::chrono::steady_clock::time_point startTime;
+
+    void Start()
+    {
+        started = true;
+        startTime = std::chrono::steady_clock::now();
+    }
+
+    void Print(int result) const
+    {
+        const auto totalCompleted = completed + conversion.converted;
+        const char* status = result == 0 ? "Completed" :
+            totalCompleted != 0 || conversion.copied != 0 ? "Partially completed" : "Failed";
+        const auto elapsed = started ? std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - startTime).count() : 0;
+        std::cout << "\nCompletion summary: " << status
+            << "\n  Completed: " << totalCompleted << ' ' << unit
+            << "; copied: " << conversion.copied << " companion files"
+            << "; failed: " << (result == 0 ? 0 : 1)
+            << (started ? " work items" : " preflight checks")
+            << "\n  Elapsed: " << elapsed << " ms\n";
+        for (const auto& output : outputs) {
+            std::cout << "  Output location: " << pathToUtf8(output) << '\n';
+        }
+        if (outputDescription) {
+            std::cout << "  Output: " << outputDescription << '\n';
+        }
+        if (!started) {
+            std::cout << "  No action was started.\n";
+        }
+        else if (result != 0) {
+            std::cout << "  Stopped at the first error; unattempted work is not counted as failed.\n"
+                "  Failure does not imply rollback of the whole operation; inspect outputs and errors above.\n";
+        }
+    }
+};
+
 std::string trimMenuResponse(const std::string& response)
 {
     const auto first = response.find_first_not_of(" \t\r");
@@ -383,8 +427,9 @@ void ShowConversionPreview(const FolderConversionPlan& plan)
 
 MenuConfirmation ConfirmSourceReplacement(const std::vector<MediaDirectoryElement>& libraries);
 
-int ConvertFLACToFLAC(const std::vector<MediaDirectoryElement>& libraries)
+int ConvertFLACToFLAC(const std::vector<MediaDirectoryElement>& libraries, ManualOperationSummary& summary)
 {
+    summary.unit = "audio files";
     if (libraries.empty()) {
         spdlog::error("No active media libraries configured for FLAC conversion.");
         return 1;
@@ -407,6 +452,7 @@ int ConvertFLACToFLAC(const std::vector<MediaDirectoryElement>& libraries)
         "  Overwrite: enabled; existing FLAC sources may be replaced.\n";
     for (const auto& library : libraries) {
         const auto sourceRoot = absoluteDisplayPath(pathFromUtf8(library.mediaPath));
+        summary.outputs.push_back(sourceRoot);
         ScanInfo scan{};
         if (FolderConvert::ScanAudioFiles(scan, sourceRoot) != 0) {
             return 1;
@@ -449,17 +495,21 @@ int ConvertFLACToFLAC(const std::vector<MediaDirectoryElement>& libraries)
     if (confirmation != MenuConfirmation::Run) {
         return cancelledMenuResult(confirmation);
     }
+    summary.Start();
     for (const auto& file : files) {
         MediaConvertionTask task(file.source, file.target, file.temporary, true);
         if (task.Run() != 0 || task.PostRun() != 0) {
             return 1;
         }
+        ++summary.conversion.converted;
     }
     return 0;
 }
 
-int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryList, const fs::path& outputRoot)
+int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryList, const fs::path& outputRoot,
+    ManualOperationSummary& summary)
 {
+    summary.unit = "audio files";
     if (mediaDirectoryList.empty()) {
         spdlog::error("No active media libraries configured for FLAC to MP3 conversion.");
         return 1;
@@ -487,6 +537,7 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryLis
             return 1;
         }
         const fs::path target = outputRoot / "MP3" / name;
+        summary.outputs.push_back(absoluteDisplayPath(target));
         const fs::path canonicalTarget = fs::weakly_canonical(target, ec);
         if (ec) {
             spdlog::error("Cannot resolve MP3 output directory: {}", ec.message());
@@ -530,8 +581,9 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryLis
     if (confirmation != MenuConfirmation::Run) {
         return cancelledMenuResult(confirmation);
     }
+    summary.Start();
     for (const auto& plan : plans) {
-        if (FolderConvert::ExecuteConversion(plan) != 0) {
+        if (FolderConvert::ExecuteConversion(plan, &summary.conversion) != 0) {
             return 1;
         }
     }
@@ -539,8 +591,11 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryLis
 }
 
 int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryList, bool bIncludeMetadata,
-    const fs::path& outputRoot, bool preview = false)
+    const fs::path& outputRoot, bool preview = false, ManualOperationSummary* summary = nullptr)
 {
+    if (summary) {
+        summary->unit = "album JSON files";
+    }
     std::vector<std::vector<MediaAlbumListPtr>> preparedAlbums;
     if (preview) {
         if (mediaDirectoryList.empty()) {
@@ -559,6 +614,9 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                 return 1;
             }
             const auto target = absoluteDisplayPath(outputRoot / name);
+            if (summary) {
+                summary->outputs.push_back(target);
+            }
             std::error_code ec;
             const auto key = fs::weakly_canonical(target, ec);
             if (ec) {
@@ -624,6 +682,9 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         const auto confirmation = ConfirmPreview();
         if (confirmation != MenuConfirmation::Run) {
             return cancelledMenuResult(confirmation);
+        }
+        if (summary) {
+            summary->Start();
         }
     }
     std::size_t libraryIndex = 0;
@@ -709,6 +770,9 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         if (!installGeneratedFiles(stagedDirectory, targetDirectory)) {
             fs::remove_all(stagingRoot, ec);
             return 1;
+        }
+        if (summary) {
+            summary->completed += count;
         }
         fs::remove_all(stagingRoot, ec);
         spdlog::info("Wrote {} JSON part(s) to '{}'; scan took {} ms.",
@@ -836,7 +900,8 @@ std::string compareAndPrintTagsTable(const JsonUtils::Tags& tags1, const JsonUti
     return oss.str();
 }
 
-int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFiles, bool openDuplicateFolders)
+int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFiles, bool openDuplicateFolders,
+    ManualOperationSummary* summary = nullptr)
 {
 	AlbumCollection albumCollection;
 	std::shared_ptr<DirectoryContentEntryList> albumListPtr = std::make_shared<DirectoryContentEntryList>();
@@ -980,6 +1045,9 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
             }
 
             iCount--;
+            if (summary) {
+                ++summary->completed;
+            }
         }
         catch (const fs::filesystem_error& e) {
             spdlog::error("Error getting track information: {}", e.what());
@@ -994,8 +1062,9 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
     return 0;
 }
 
-int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList)
+int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList, ManualOperationSummary& summary)
 {
+    summary.unit = "JSON batches imported";
     auto appSettingPtr = AppSettingsJson::AppSetting();
 
     AlbumCollection albumCollection;
@@ -1013,6 +1082,7 @@ int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList)
             return 1;
         }
         ImportPlan plan{ absoluteDisplayPath(mediaEntry.getMediaDBPath(pathFromUtf8(appSettingPtr->OutDirectory))), {} };
+        summary.outputs.push_back(plan.database);
         auto generator = mediaEntry.getMediaJsonPathCo(pathFromUtf8(appSettingPtr->OutDirectory));
         while (generator.resume()) {
             plan.json.push_back(absoluteDisplayPath(generator.value()));
@@ -1053,6 +1123,7 @@ int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList)
     if (confirmation != MenuConfirmation::Run) {
         return cancelledMenuResult(confirmation);
     }
+    summary.Start();
     for (const auto& plan : plans) {
         for (const auto& json : plan.json) {
             spdlog::info("Processing: {}", pathToUtf8(json));
@@ -1065,6 +1136,7 @@ int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList)
             if (!albumCollection.ExportToDatabase(albums, plan.database)) {
                 return 1;
             }
+            ++summary.completed;
         }
     }
 
@@ -1320,17 +1392,19 @@ int RunLegacyMenu()
 	spdlog::info("");
 
 
-    const auto executeAction = [&](ConvertActionEnum action) {
+    const auto executeAction = [&](ConvertActionEnum action, ManualOperationSummary& summary) {
         switch (action)
         {
         case ConvertActionEnum::ConverEnum: //1
-            return ConvertFLACToFLAC(mediaList);
+            return ConvertFLACToFLAC(mediaList, summary);
 
         case ConvertActionEnum::CreateJSONEnum: //2
-            return ScanFolderAndCreateJSON(mediaList, true, pathFromUtf8(appSettingPtr->OutDirectory), true);
+            return ScanFolderAndCreateJSON(mediaList, true, pathFromUtf8(appSettingPtr->OutDirectory), true, &summary);
 
         case ConvertActionEnum::ProcessJSONEnum: //3
         {
+            summary.unit = "duplicate pairs processed";
+            summary.outputDescription = "console reports and matching album folders (see reports above).";
             const auto jsonFiles = findConfiguredJsonFiles(mediaList, pathFromUtf8(appSettingPtr->OutDirectory));
             std::cout << "\nOperation preview: find duplicate albums\n  JSON input files: " << jsonFiles.size() << '\n';
             for (const auto& json : jsonFiles) {
@@ -1347,17 +1421,18 @@ int RunLegacyMenu()
             if (confirmation != MenuConfirmation::Run) {
                 return cancelledMenuResult(confirmation);
             }
-            return ScanFolderProcessJSONAndFindDuplicates(jsonFiles, true);
+            summary.Start();
+            return ScanFolderProcessJSONAndFindDuplicates(jsonFiles, true, &summary);
         }
 
         case ConvertActionEnum::PopulateJsonToDBEnum: //4
-            return ExportJSONToDB(mediaList);
+            return ExportJSONToDB(mediaList, summary);
 
         case ConvertActionEnum::ExitEnum: //0 or end of input
             return 0;
 
         case ConvertActionEnum::ConvertMp3Enum: //6
-            return ConvertFLACToMP3(mediaList, pathFromUtf8(appSettingPtr->OutDirectory));
+            return ConvertFLACToMP3(mediaList, pathFromUtf8(appSettingPtr->OutDirectory), summary);
 
         default:
             spdlog::error("Action not found: {}", static_cast<int>(action));
@@ -1365,7 +1440,21 @@ int RunLegacyMenu()
         }
     };
     for (;;) {
-        const int result = executeAction(GetUserAction());
+        const auto action = GetUserAction();
+        ManualOperationSummary summary;
+        int result = 1;
+        try {
+            result = executeAction(action, summary);
+        }
+        catch (const fs::filesystem_error& error) {
+            spdlog::error("Filesystem error: {}", error.what());
+        }
+        catch (const std::exception& error) {
+            spdlog::error("Menu action failed: {}", error.what());
+        }
+        if (result != ReturnToMenu && (summary.started || result != 0)) {
+            summary.Print(result);
+        }
         if (result != ReturnToMenu) {
             return result;
         }

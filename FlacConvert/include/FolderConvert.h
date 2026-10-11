@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+#include <cstddef>
 #include <filesystem>
 #include <vector>
 #include "ConversionOptions.h"
@@ -38,6 +39,11 @@ struct FolderConversionPlan {
     std::vector<fs::path> collisions;
 };
 
+struct ConversionProgress {
+    std::size_t converted{ 0 };
+    std::size_t copied{ 0 };
+};
+
 class FolderConvert
 {
 public:
@@ -51,7 +57,8 @@ public:
     static int PrepareConversion(
         const fs::path& input, const fs::path& output, bool overwrite,
         ConversionOptions options, FolderConversionPlan& plan);
-    static int ExecuteConversion(const FolderConversionPlan& plan);
+    // Optional counters accumulate across plans, only after successful installation.
+    static int ExecuteConversion(const FolderConversionPlan& plan, ConversionProgress* progress = nullptr);
     
     static int ConverAudioFolder(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync);
     //static int ConverAudioFolder(const std::filesystem::path& directory, const ScanInfo scanInfo, bool bAsync = false);

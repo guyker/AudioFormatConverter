@@ -1,11 +1,13 @@
 """Generated-fixture integration tests; requires a built converter and FFmpeg/ffprobe."""
 
 import argparse
+from contextlib import closing, contextmanager
 import hashlib
 import json
 import os
 from pathlib import Path
 import struct
+import sqlite3
 import subprocess
 import tempfile
 import unittest
@@ -21,6 +23,25 @@ def checked(*args):
     if result.returncode:
         raise AssertionError(f"{args}\n{result.stdout}\n{result.stderr}")
     return result
+
+
+@contextmanager
+def deny_delete(path):
+    import ctypes
+    from ctypes import wintypes
+    create = ctypes.windll.kernel32.CreateFileW
+    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                       wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    create.restype = wintypes.HANDLE
+    close = ctypes.windll.kernel32.CloseHandle
+    close.argtypes = [wintypes.HANDLE]
+    handle = create(str(path), 0x80000000, 3, None, 3, 0, None)
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError()
+    try:
+        yield
+    finally:
+        close(handle)
 
 
 def blocks(data):
@@ -124,7 +145,15 @@ class ConversionTests(unittest.TestCase):
                      "--config", self.config, "--to", target, *extra)
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
         self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+        self.assertNotIn("Completion summary:", result.stdout)
         return result
+
+    def assert_summary(self, result, status, completed, unit, copied=0, failed=0, started=True):
+        self.assertIn(f"Completion summary: {status}", result.stdout)
+        self.assertIn(f"Completed: {completed} {unit}; copied: {copied} companion files; "
+                      f"failed: {failed} {'work items' if started else 'preflight checks'}", result.stdout)
+        self.assertRegex(result.stdout, r"Elapsed: \d+ ms")
+        self.assertEqual(result.stdout.count("Completion summary:"), 1)
 
     def probe(self, path):
         return json.loads(checked(ARGS.ffprobe, "-v", "error", "-show_format", "-show_streams",
@@ -213,6 +242,7 @@ class ConversionTests(unittest.TestCase):
             {"isActive": False, "mediaPath": str(self.work / "missing"), "mediaName": "Inactive"}]
         result = self.legacy(libraries)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_summary(result, "Completed", 2, "audio files", copied=1)
         target = self.output / "MP3" / "Library \u97f3" / self.mp3().name
         self.assertTrue(target.exists())
         self.assertEqual(Path(str(target) + ".flac-metadata").read_bytes(), self.prefix)
@@ -285,6 +315,7 @@ class ConversionTests(unittest.TestCase):
                 result = self.legacy(libraries, f"{option}\n{response}")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(snapshot(), before)
+                self.assertNotIn("Completion summary:", result.stdout)
                 self.assertIn("BACK for the menu, EXIT to quit", result.stdout)
                 self.assertEqual(result.stdout.count("Select run option"), 2 if "BACK" in response else 1)
         self.assertFalse((self.output / "MP3").exists())
@@ -329,6 +360,8 @@ class ConversionTests(unittest.TestCase):
         libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
         result = self.legacy(libraries, "1\n \tREPLACE \t\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_summary(result, "Completed", 1, "audio files")
+        self.assertIn("Output location: " + str(self.source), result.stdout)
         self.assertNotEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
         audio = self.probe(self.track)["streams"][0]
         self.assertEqual((audio["codec_name"], audio["sample_rate"], audio["bits_per_raw_sample"]),
@@ -390,6 +423,7 @@ class ConversionTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
         result = self.legacy(libraries, "2\nRUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_summary(result, "Completed", 1, "album JSON files")
         self.assertEqual(result.stdout.count("===Loading album collection from storage==="), 1)
         json_path = self.output / "Library" / "media_out_Library_1.json"
         self.assertTrue(json_path.exists())
@@ -407,6 +441,8 @@ class ConversionTests(unittest.TestCase):
         self.assertNotIn("Finding duplicated albums...", result.stdout)
         result = self.legacy(libraries, "3\nRUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_summary(result, "Completed", 0, "duplicate pairs processed")
+        self.assertIn("Output: console reports and matching album folders", result.stdout)
         self.assertIn("Finding duplicated albums...", result.stdout)
         result = self.legacy(libraries, "4\n\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -416,6 +452,8 @@ class ConversionTests(unittest.TestCase):
         self.assertFalse(db.exists())
         result = self.legacy(libraries, "4\nRUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_summary(result, "Completed", 1, "JSON batches imported")
+        self.assertIn("Output location: " + str(db), result.stdout)
         self.assertTrue(db.exists())
         before_db = db.read_bytes()
         result = self.legacy(libraries, "4\n\n")
@@ -429,6 +467,82 @@ class ConversionTests(unittest.TestCase):
             result = self.legacy(libraries, f"{option}\nRUN\n")
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.output.exists())
+            unit = "duplicate pairs processed" if option == 3 else "JSON batches imported"
+            self.assert_summary(result, "Failed", 0, unit, failed=1, started=False)
+            self.assertIn("No action was started.", result.stdout)
+
+    def test_mp3_partial_completion_counts_only_installed_outputs(self):
+        second = self.work / "second"
+        second.mkdir()
+        corrupt = second / "corrupt.flac"
+        corrupt.write_bytes(self.fixture.read_bytes()[:50])
+        (self.source / "cover.png").write_bytes(self.image)
+        libraries = [
+            {"isActive": True, "mediaPath": str(self.source), "mediaName": "First"},
+            {"isActive": True, "mediaPath": str(second), "mediaName": "Second"}]
+        result = self.legacy(libraries)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_summary(result, "Partially completed", 1, "audio files", copied=1, failed=1)
+        first_output = self.output / "MP3" / "First"
+        self.assertTrue((first_output / self.mp3().name).exists())
+        self.assertEqual((first_output / "cover.png").read_bytes(), self.image)
+        self.assertFalse((self.output / "MP3" / "Second" / "corrupt.mp3").exists())
+        self.assertEqual(corrupt.read_bytes(), self.fixture.read_bytes()[:50])
+        self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+        self.assertIn("Output location: " + str(first_output), result.stdout)
+        self.assertIn("Output location: " + str(self.output / "MP3" / "Second"), result.stdout)
+        self.assertIn("unattempted work is not counted as failed", result.stdout)
+
+    def test_database_partial_completion_reports_committed_batches(self):
+        album = self.source / "album"
+        album.mkdir()
+        (album / "one.flac").write_bytes(self.fixture.read_bytes())
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
+        result = self.legacy(libraries, "2\nRUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        (self.output / "Library" / "media_out_Library_2.json").write_bytes(b"{invalid JSON")
+        result = self.legacy(libraries, "4\nRUN\n")
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_summary(result, "Partially completed", 1, "JSON batches imported", failed=1)
+        database = self.output / "Library" / "media_out_Library.db"
+        with closing(sqlite3.connect(database)) as connection:
+            self.assertGreater(connection.execute("SELECT count(*) FROM TracksDB").fetchone()[0], 0)
+
+    def test_source_replacement_partial_completion_is_not_reported_as_success(self):
+        second = self.work / "second"
+        second.mkdir()
+        corrupt = second / "corrupt.flac"
+        corrupt.write_bytes(self.fixture.read_bytes()[:50])
+        result = self.legacy([
+            {"isActive": True, "mediaPath": str(self.source), "mediaName": "First"},
+            {"isActive": True, "mediaPath": str(second), "mediaName": "Second"}], "1\nREPLACE\n")
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_summary(result, "Partially completed", 1, "audio files", failed=1)
+        self.assertNotEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+        self.assertEqual(corrupt.read_bytes(), self.fixture.read_bytes()[:50])
+        self.assertIn("Failure does not imply rollback", result.stdout)
+
+    @unittest.skipUnless(os.name == "nt", "Windows deny-delete scan installation failure")
+    def test_scan_partial_completion_counts_installed_json_only(self):
+        album = self.source / "album"
+        album.mkdir()
+        (album / "one.flac").write_bytes(self.fixture.read_bytes())
+        second = self.work / "second"
+        (second / "album").mkdir(parents=True)
+        (second / "album" / "two.flac").write_bytes(self.fixture.read_bytes())
+        libraries = [
+            {"isActive": True, "mediaPath": str(self.source), "mediaName": "First"},
+            {"isActive": True, "mediaPath": str(second), "mediaName": "Second"}]
+        result = self.legacy(libraries, "2\nRUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        second_json = self.output / "Second" / "media_out_Second_1.json"
+        before = second_json.read_bytes()
+        with deny_delete(second_json):
+            result = self.legacy(libraries, "2\nRUN\n")
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_summary(result, "Partially completed", 1, "album JSON files", failed=1)
+        self.assertEqual(second_json.read_bytes(), before)
+        self.assertTrue((self.output / "First" / "media_out_First_1.json").exists())
 
     def test_database_import_preserves_legacy_unnamed_library_paths(self):
         album = self.source / "album"
@@ -490,6 +604,7 @@ class ConversionTests(unittest.TestCase):
         result = self.legacy(
             [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}], "1\nREPLACE\n")
         self.assertNotEqual(result.returncode, 0)
+        self.assert_summary(result, "Failed", 0, "audio files", failed=1)
         self.assertEqual(self.track.read_bytes(), before)
         self.assertEqual(list(self.source.iterdir()), [self.track])
         self.assertFalse(self.output.exists())
@@ -598,26 +713,14 @@ class ConversionTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "nt", "Windows deny-delete replacement failure")
     def test_failed_replacement_restores_sidecar(self):
-        import ctypes
-        from ctypes import wintypes
         self.output.mkdir()
         self.mp3().write_bytes(b"existing MP3")
         sidecar = Path(str(self.mp3()) + ".flac-metadata")
         sidecar.write_bytes(b"existing sidecar")
-        create = ctypes.windll.kernel32.CreateFileW
-        create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
-                           wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
-        create.restype = wintypes.HANDLE
-        close = ctypes.windll.kernel32.CloseHandle
-        close.argtypes = [wintypes.HANDLE]
-        handle = create(str(self.mp3()), 0x80000000, 3, None, 3, 0, None)
-        self.assertNotEqual(handle, wintypes.HANDLE(-1).value)
-        try:
+        with deny_delete(self.mp3()):
             self.convert("--overwrite", success=False)
             self.assertEqual(self.mp3().read_bytes(), b"existing MP3")
             self.assertEqual(sidecar.read_bytes(), b"existing sidecar")
-        finally:
-            close(handle)
 
 
 if __name__ == "__main__":
