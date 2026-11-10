@@ -16,9 +16,9 @@ import unittest
 DEFAULT_MP3_SETTINGS = "\n\n\n"
 
 
-def run(*args):
+def run(*args, cwd=None, env=None):
     return subprocess.run([str(arg) for arg in args], capture_output=True, text=True,
-                          encoding="utf-8", errors="replace")
+                          encoding="utf-8", errors="replace", cwd=cwd, env=env)
 
 
 def checked(*args):
@@ -902,6 +902,50 @@ class ConversionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             explicit_files = sorted((explicit_output / self.source.name).glob("media_out_*_[12].json"))
             self.assertEqual([json.loads(path.read_text(encoding="utf-8")) for path in explicit_files], expected)
+
+    def test_ffprobe_scan_treats_shell_metacharacters_as_filename_data(self):
+        album = self.source / "album"
+        album.mkdir()
+        marker = self.work / "ffprobe-shell-marker"
+        if os.name == "nt":
+            variable = "AFC_SCAN_REVIEW_MARKER"
+            environment = os.environ.copy()
+            environment[variable] = "expanded"
+            filename = f"track%{variable}%.flac"
+        else:
+            environment = os.environ.copy()
+            filename = "track$(touch ffprobe-shell-marker).flac"
+        (album / filename).write_bytes(self.fixture.read_bytes())
+
+        config = json.loads(self.config.read_text(encoding="utf-8"))
+        config.update({"UseFFmpegLibraryAPI": False, "UseAsyncFFmpegCalls": False})
+        config_path = self.work / "ffprobe-config.json"
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        result = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                     "--config", config_path, cwd=self.work, env=environment)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = self.output / self.source.name / f"media_out_{self.source.name}_1.json"
+        data = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(len(data[0]["Tracks"]), 1)
+        self.assertEqual(data[0]["Tracks"][0]["format"]["tags"]["title"], "Title \u97f3\u697d")
+        if os.name != "nt":
+            self.assertFalse(marker.exists(), "Filename was interpreted as shell syntax")
+
+    def test_scan_sort_uses_album_artist_order(self):
+        for folder, artist in (("a", "Zebra"), ("b", "Alpha"), ("c", "Beta")):
+            album = self.source / folder
+            album.mkdir()
+            track = album / "one.flac"
+            checked(ARGS.ffmpeg, "-y", "-v", "error", "-i", self.fixture, "-c", "copy",
+                    "-metadata", f"album_artist={artist}", track)
+
+        result = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                     "--config", self.config)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = self.output / self.source.name / f"media_out_{self.source.name}_1.json"
+        data = json.loads(output.read_text(encoding="utf-8"))
+        artists = [album["Tracks"][0]["format"]["tags"]["album_artist"] for album in data]
+        self.assertEqual(artists, ["Alpha", "Beta", "Zebra"])
 
     def test_manual_flac_wav_conversion_retains_non_flac_source(self):
         wav = self.track.with_suffix(".wav")

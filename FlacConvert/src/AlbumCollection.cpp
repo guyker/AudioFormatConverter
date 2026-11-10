@@ -813,69 +813,21 @@ int compareLex(const std::wstring& a, const std::wstring& b) {
 
 //-------------COMPARE
 
-bool CompareTags(const std::vector<MediaTrack>& tList1, const std::vector<MediaTrack>& tList2, std::string tagName)
+int CompareTags(const std::vector<MediaTrack>& firstTracks, const std::vector<MediaTrack>& secondTracks,
+                const std::string& tagName)
 {
-    if (!(tList1.size() > 0 && tList2.size() > 0))
-    {
-        return false;
-    }
-
-    //if (tList1.size() != tList2.size())
-    //{
-    //    return false;
-    //}
-
-    auto& tags1 = tList1[0].formatInfo.format.tags;
-    auto& tags2 = tList2[0].formatInfo.format.tags;
-
-    if (!tags1.has_value() || !tags2.has_value())
-    {
-        return false;
-    }
-
-    const std::string* val1 = JsonUtils::getValueByKey(*tags1, tagName);
-    const std::string* val2 = JsonUtils::getValueByKey(*tags2, tagName);
-
-    if (val1 == nullptr || val2 == nullptr)
-    {
-        return false;
-    }
-
-    return compareLex(*val1, *val2) == 0;
-
-
-
-    if (tList1.size() != tList2.size())
-    {
-        return false;
-    }
-
-    for (int i = 0; i < tList1.size(); i++)
-    {
-        auto& tags1 = tList1[i].formatInfo.format.tags;
-        auto& tags2 = tList2[i].formatInfo.format.tags;
-
-        if (!tags1.has_value() || !tags2.has_value())
-        {
-            return false;
+    const auto findTag = [&tagName](const std::vector<MediaTrack>& tracks) -> const std::string* {
+        if (tracks.empty() || !tracks.front().formatInfo.format.tags) {
+            return nullptr;
         }
-        
-        const std::string* val1 = JsonUtils::getValueByKey(*tags1, tagName);
-        const std::string* val2 = JsonUtils::getValueByKey(*tags2, tagName);
-
-        if (val1 == nullptr || val2 == nullptr)
-        {
-            return false;
-        }
-
-        if (*val1 != *val2)
-        {
-            return false;
-        }
+        return JsonUtils::getValueByKey(*tracks.front().formatInfo.format.tags, tagName);
+    };
+    const std::string* first = findTag(firstTracks);
+    const std::string* second = findTag(secondTracks);
+    if (first == nullptr || second == nullptr) {
+        return first == second ? 0 : (first == nullptr ? -1 : 1);
     }
-
-
-    return true;
+    return compareLex(*first, *second);
 }
 
 
@@ -883,16 +835,12 @@ void AlbumCollection::SortAlbums(std::shared_ptr<std::vector<MediaAlbum>> albumL
                                  const std::vector<std::pair<SortBy, bool>>& criteria)
 {
     std::ranges::stable_sort(*albumListPtr, [&criteria](const MediaAlbum& a, const MediaAlbum& b) {
-        auto& [dirEntryA, tracksA] = a;
-        auto& [dirEntryB, tracksB] = b;
-
-        int result = 0;
         for (const auto& [criterion, ascending] : criteria) {
+            int result = 0;
             switch (criterion) {
             case SortBy::AlbumName: {
                 const auto& nameA = a.path.path().filename().wstring();
                 const auto& nameB = b.path.path().filename().wstring();
-                result = nameA.compare(nameB);
                 result = compareLex(nameA, nameB);
                 break;
             }
@@ -910,20 +858,20 @@ void AlbumCollection::SortAlbums(std::shared_ptr<std::vector<MediaAlbum>> albumL
                 break;
 
             case SortBy::TrackCount:
-                result = static_cast<int>(a.trackList.size()) > static_cast<int>(b.trackList.size());
+                result = a.trackList.size() < b.trackList.size() ? -1 :
+                    (a.trackList.size() > b.trackList.size() ? 1 : 0);
                 break;
 
             default:
                 break;
             }
-
-//            return result;
-//            if (result != 0)
-//                return (result < 0) == ascending;
+            if (result != 0) {
+                return ascending ? result < 0 : result > 0;
+            }
         }
 
-        return result; // Considered equal for all criteria
-        });
+        return compareLex(a.path.path().native(), b.path.path().native()) < 0;
+    });
 }
 
 //void AlbumCollection::SortAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr, bool ascending)

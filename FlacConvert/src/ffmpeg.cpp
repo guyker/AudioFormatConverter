@@ -1,17 +1,252 @@
 #include "FFmpeg.h"
 
+#include <array>
+#include <cerrno>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <string>
 #include <vector>
 #include <mutex>
+#include <system_error>
 #include <spdlog/spdlog.h>
 #include "PlatformUtils.h"
 #include "MediaTrack.h"
 #include <regex>
 #include <cmath>
 #include <stdexcept>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
+namespace
+{
+#ifdef _WIN32
+class ScopedHandle
+{
+public:
+    explicit ScopedHandle(HANDLE value = INVALID_HANDLE_VALUE) : _value(value) {}
+    ~ScopedHandle()
+    {
+        if (_value != INVALID_HANDLE_VALUE && _value != nullptr) {
+            CloseHandle(_value);
+        }
+    }
+
+    ScopedHandle(const ScopedHandle&) = delete;
+    ScopedHandle& operator=(const ScopedHandle&) = delete;
+
+    HANDLE get() const { return _value; }
+    HANDLE release()
+    {
+        HANDLE value = _value;
+        _value = INVALID_HANDLE_VALUE;
+        return value;
+    }
+    void reset()
+    {
+        if (_value != INVALID_HANDLE_VALUE && _value != nullptr) {
+            CloseHandle(_value);
+            _value = INVALID_HANDLE_VALUE;
+        }
+    }
+
+private:
+    HANDLE _value;
+};
+
+std::wstring quoteWindowsArgument(const std::wstring& argument)
+{
+    std::wstring quoted = L"\"";
+    std::size_t backslashes = 0;
+    for (const wchar_t character : argument) {
+        if (character == L'\\') {
+            ++backslashes;
+            continue;
+        }
+        quoted.append(character == L'"' ? backslashes * 2 + 1 : backslashes, L'\\');
+        quoted += character;
+        backslashes = 0;
+    }
+    quoted.append(backslashes * 2, L'\\');
+    quoted += L'"';
+    return quoted;
+}
+
+std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath)
+{
+    SECURITY_ATTRIBUTES securityAttributes{};
+    securityAttributes.nLength = sizeof(securityAttributes);
+    securityAttributes.bInheritHandle = TRUE;
+
+    HANDLE readPipeRaw = INVALID_HANDLE_VALUE;
+    HANDLE writePipeRaw = INVALID_HANDLE_VALUE;
+    if (!CreatePipe(&readPipeRaw, &writePipeRaw, &securityAttributes, 0)) {
+        spdlog::error("Failed to create ffprobe output pipe: {}",
+            std::system_category().message(static_cast<int>(GetLastError())));
+        return std::nullopt;
+    }
+    ScopedHandle readPipe(readPipeRaw);
+    ScopedHandle writePipe(writePipeRaw);
+    if (!SetHandleInformation(readPipe.get(), HANDLE_FLAG_INHERIT, 0)) {
+        spdlog::error("Failed to configure ffprobe output pipe: {}",
+            std::system_category().message(static_cast<int>(GetLastError())));
+        return std::nullopt;
+    }
+
+    const std::vector<std::wstring> arguments{
+        L"ffprobe.exe", L"-v", L"quiet", L"-print_format", L"json",
+        L"-show_format", L"-show_streams", L"-show_chapters", L"-i",
+        PlatformUtils::WindowsLongPath(mediaFilePath)
+    };
+    std::wstring commandLine;
+    for (const auto& argument : arguments) {
+        if (!commandLine.empty()) {
+            commandLine += L' ';
+        }
+        commandLine += quoteWindowsArgument(argument);
+    }
+
+    STARTUPINFOW startupInfo{};
+    startupInfo.cb = sizeof(startupInfo);
+    startupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startupInfo.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    startupInfo.hStdOutput = writePipe.get();
+    startupInfo.hStdError = writePipe.get();
+    PROCESS_INFORMATION processInfo{};
+    if (!CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
+        nullptr, nullptr, &startupInfo, &processInfo)) {
+        spdlog::error("Failed to launch ffprobe: {}",
+            std::system_category().message(static_cast<int>(GetLastError())));
+        return std::nullopt;
+    }
+    ScopedHandle process(processInfo.hProcess);
+    ScopedHandle thread(processInfo.hThread);
+    writePipe.reset();
+
+    std::string output;
+    std::array<char, 4096> buffer{};
+    DWORD bytesRead = 0;
+    bool readFailed = false;
+    for (;;) {
+        if (!ReadFile(readPipe.get(), buffer.data(), static_cast<DWORD>(buffer.size()), &bytesRead, nullptr)) {
+            const DWORD error = GetLastError();
+            if (error != ERROR_BROKEN_PIPE) {
+                spdlog::error("Failed to read ffprobe output: {}",
+                    std::system_category().message(static_cast<int>(error)));
+                readFailed = true;
+            }
+            break;
+        }
+        if (bytesRead == 0) {
+            break;
+        }
+        output.append(buffer.data(), bytesRead);
+    }
+
+    if (WaitForSingleObject(process.get(), INFINITE) != WAIT_OBJECT_0) {
+        spdlog::error("Failed while waiting for ffprobe: {}",
+            std::system_category().message(static_cast<int>(GetLastError())));
+        return std::nullopt;
+    }
+    DWORD exitCode = 0;
+    if (!GetExitCodeProcess(process.get(), &exitCode)) {
+        spdlog::error("Failed to get ffprobe exit code: {}",
+            std::system_category().message(static_cast<int>(GetLastError())));
+        return std::nullopt;
+    }
+    if (readFailed) {
+        return std::nullopt;
+    }
+    if (exitCode != 0) {
+        spdlog::error("ffprobe exited with status {}", exitCode);
+        return std::nullopt;
+    }
+    return output;
+}
+#else
+std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath)
+{
+    std::vector<std::string> arguments{
+        "ffprobe", "-v", "quiet", "-print_format", "json",
+        "-show_format", "-show_streams", "-show_chapters", "-i", mediaFilePath.string()
+    };
+    std::vector<char*> pointers;
+    pointers.reserve(arguments.size() + 1);
+    for (auto& argument : arguments) {
+        pointers.push_back(argument.data());
+    }
+    pointers.push_back(nullptr);
+
+    int outputPipe[2];
+    if (pipe(outputPipe) == -1) {
+        spdlog::error("Failed to create ffprobe output pipe: {}", std::system_category().message(errno));
+        return std::nullopt;
+    }
+
+    const pid_t child = fork();
+    if (child == -1) {
+        const int error = errno;
+        close(outputPipe[0]);
+        close(outputPipe[1]);
+        spdlog::error("Failed to launch ffprobe: {}", std::system_category().message(error));
+        return std::nullopt;
+    }
+    if (child == 0) {
+        close(outputPipe[0]);
+        if (dup2(outputPipe[1], STDOUT_FILENO) == -1 ||
+            dup2(outputPipe[1], STDERR_FILENO) == -1) {
+            _exit(126);
+        }
+        close(outputPipe[1]);
+        execvp(arguments.front().c_str(), pointers.data());
+        _exit(errno == ENOENT ? 127 : 126);
+    }
+
+    close(outputPipe[1]);
+    std::string output;
+    std::array<char, 4096> buffer{};
+    bool readFailed = false;
+    for (;;) {
+        const ssize_t bytesRead = read(outputPipe[0], buffer.data(), buffer.size());
+        if (bytesRead > 0) {
+            output.append(buffer.data(), static_cast<std::size_t>(bytesRead));
+        }
+        else if (bytesRead == 0) {
+            break;
+        }
+        else if (errno != EINTR) {
+            spdlog::error("Failed to read ffprobe output: {}", std::system_category().message(errno));
+            readFailed = true;
+            break;
+        }
+    }
+    close(outputPipe[0]);
+
+    int status = 0;
+    while (waitpid(child, &status, 0) == -1) {
+        if (errno != EINTR) {
+            spdlog::error("Failed while waiting for ffprobe: {}", std::system_category().message(errno));
+            return std::nullopt;
+        }
+    }
+    if (readFailed) {
+        return std::nullopt;
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        const int exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+        spdlog::error("ffprobe exited with status {}", exitCode);
+        return std::nullopt;
+    }
+    return output;
+}
+#endif
+}
 
 
 namespace FFmpeg {
@@ -84,41 +319,8 @@ namespace FFmpeg {
         // Get context (e.g., filename)
         std::string context = "N/A";
         if (avcl) {
-            // Assuming AVFormatContext for media files
-            AVFormatContext* fmt_ctx = static_cast<AVFormatContext*>(avcl);
-
-            try
-            {
-                const auto urlAddress = reinterpret_cast<std::uintptr_t>(fmt_ctx->url);
-                if (fmt_ctx->streams == nullptr || fmt_ctx->iformat == nullptr ||
-                    urlAddress == 0x0000000100000000ULL || urlAddress < 0x9275)
-                {
-                    context = "N/A - 0x0000000100000000";
-                }
-                else
-                {
-                    if (fmt_ctx->url) {
-                        context = fmt_ctx->url;
-                    }
-                    else if (fmt_ctx->iformat && fmt_ctx->iformat->name) {
-                        context = fmt_ctx->iformat->name;
-                    }
-                    else
-                    {
-                        if (fmt_ctx->oformat && fmt_ctx->oformat->name) {
-                            context = fmt_ctx->oformat->name;
-                        }
-                        else
-                        {
-                            int i = 0;
-                        }
-                    }
-                }
-            }
-            catch (const std::exception& e)
-            {
-                //this is a workaround for the ffmpeg crash when accessing fmt_ctx->url or other null value
-                context += std::string{ " (error accessing context)" } + e.what();
+            if (const char* itemName = av_default_item_name(avcl)) {
+                context = itemName;
             }
         }
 
@@ -178,43 +380,11 @@ namespace FFmpeg {
     {
         try
         {
-#ifdef _WIN32
-            std::wstring f = PlatformUtils::WindowsLongPath(mediaFilePath);
-#else
-            std::wstring f = mediaFilePath.generic_wstring();
-#endif
-            std::wstring command = L"ffprobe -v quiet -print_format json -show_format -show_streams -show_chapters \"" + f + L"\"";
-
-#ifdef _WIN32
-            command += L" 2>&1"; // Redirect stderr to stdout (Windows)
-            FILE* pipe = _wpopen(command.c_str(), L"r");
-#else
-            command += L" 2>&1"; // Redirect stderr to stdout (Linux/macOS)
-            FILE* pipe = popen(std::string(command.begin(), command.end()).c_str(), "r");
-#endif
-
-            if (!pipe) {
-                std::wcerr << L"Failed to run ffprobe!" << std::endl;
+            const auto result = runFFprobe(mediaFilePath);
+            if (!result) {
                 return L"";
             }
-
-            std::ostringstream result;
-            char buffer[2024];
-
-            while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-                result << buffer;
-            }
-
-#ifdef _WIN32
-            _pclose(pipe);
-#else
-            pclose(pipe);
-#endif
-
-            // Convert UTF-8 JSON output to wstring
-            auto wide_output = CommonUtils::utf8ToWstring(result.str());
-
-            return wide_output;
+            return CommonUtils::utf8ToWstring(*result);
 
         }
         catch (const std::exception& e) {

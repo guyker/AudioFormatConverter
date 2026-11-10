@@ -31,6 +31,24 @@ static std::string render_progress(std::size_t total, std::size_t count, int wid
     return output.str();
 }
 
+static void check_log_callback_context() {
+    static const AVClass testClass = [] {
+        AVClass value{};
+        value.class_name = "WarningRegressionContext";
+        return value;
+    }();
+    struct Context {
+        const AVClass* av_class;
+    } context{ &testClass };
+
+    FFmpeg::initialize_ffmpeg_logging();
+    FFmpeg::clear_ffmpeg_logs();
+    av_log(&context, AV_LOG_WARNING, "opaque context regression\n");
+    const auto& logs = FFmpeg::get_ffmpeg_logs();
+    require(!logs.empty(), "Opaque FFmpeg context was not logged");
+    require(logs.back().url == "WarningRegressionContext", "Opaque FFmpeg context was misidentified");
+}
+
 static void check_recording(const char* filename, bool silent) {
     AVFormatContext* context = nullptr;
     require(avformat_open_input(&context, filename, nullptr, nullptr) >= 0, "Open fixture failed");
@@ -80,6 +98,7 @@ int main(int argc, char** argv) {
         subProgress->count = 0;
         require(render_progress(10, 5, 20, subProgress).find("Current Batch:      [                    ] 0%")
             != std::string::npos, "Empty sub-progress failed");
+        check_log_callback_context();
         check_recording(argv[1], false);
         check_recording(argv[2], true);
         return 0;

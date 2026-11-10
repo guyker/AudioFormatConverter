@@ -26,4 +26,4 @@ written to `*_error.json` / `*_ffmpeg_error.json`.
 
 ## Known limitations
 - Only `.flac` and `.mp3` tracks are recorded.
-- `UseFFmpegLibraryAPI=false` uses the ffprobe executable through a shell (see DESIGN contracts).
+- `UseFFmpegLibraryAPI=false` uses the ffprobe executable with a separate argument vector and captures its output.

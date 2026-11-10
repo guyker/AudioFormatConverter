@@ -137,8 +137,8 @@ The row id is bound as NULL, so each import **appends** rows; re-importing the s
 - **Ownership:** only library folders created by the current execution are renamed on failure (K-030).
 - **Reserved names:** `conversion-audit.json` and `.conversion-in-progress` at a library root; a source containing
   them blocks the run; an existing marker in the output blocks reuse.
-- **FFmpeg is a child process with an argument vector**, never a shell command (K-014). The ffprobe-executable path
-  (`FFmpeg::GetJsonMetadataShell`, used only when `UseFFmpegLibraryAPI` is false) does use a shell.
+- **External FFmpeg tools are child processes with argument vectors**, never shell commands (K-014).
+  `FFmpeg::GetJsonMetadataShell` captures ffprobe output through a pipe when `UseFFmpegLibraryAPI` is false.
 - **Counts reflect confirmed work only** (installed files, installed JSON batches, committed DB batches, processed
   duplicate pairs) (K-024).
 
