@@ -16,7 +16,8 @@ platform-specific code behind narrow platform abstractions or conditional implem
 
 | Folder / file | What it is | Read first |
 |---|---|---|
-| `MediaBoost.sln` | The Visual Studio solution | `README.md`, then `FlacConvert/FlacConvert.vcxproj` |
+| `CMakeLists.txt`, `CMakePresets.json` | Shared Windows/Linux build | `README.md`, then platform CMake files |
+| `MediaBoost.sln` | Retained Windows fallback | `README.md`, then `FlacConvert/FlacConvert.vcxproj` |
 | `FlacConvert/` | The application: components, flows, contracts, schemas | `FlacConvert/DESIGN.md` |
 | `FlacConvert/src/`, `FlacConvert/include/` | Implementation and headers | `FlacConvert/DESIGN.md` component map, then the file |
 | `docs/features/` | User-visible features (F-xxx): behaviour, entry points, acceptance checks | `docs/features/index.md` |
@@ -34,19 +35,24 @@ platform-specific code behind narrow platform abstractions or conditional implem
 
 ## Build and test
 
-From a Visual Studio Developer PowerShell/Command Prompt with the C++ v145 toolset:
+The shared CMake presets use Ninja. Initialize submodules (`git submodule update --init --recursive`) and
+install CMake 3.28+, Ninja, Python 3 and a C++20 toolchain first. Configure, build and run CTest with the
+platform preset (`windows-debug`, `windows-release`, `linux-debug` or `linux-release`):
 
 ```text
-msbuild .\MediaBoost.sln /m /p:Configuration=Debug /p:Platform=x64
+cmake --preset windows-debug
+cmake --build --preset windows-debug --parallel
+ctest --preset windows-debug
 ```
 
-Prefer x64 (C++20, v145); Win32 Debug contains a machine-specific Boost path. The project expects the FFmpeg SDK under
-`external/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/` and SQLite amalgamation sources under
-`external/sqlite-amalgamation/`. Check prerequisites before building; use matching FFmpeg headers, libraries and runtime
-DLLs, and record the exact build/version when changing dependencies rather than relying on the `latest` folder name.
-The solution has no test project. `tests/mp3_conversion.py` is the automated MP3 integration test (command in
-`README.md`); `tests/*.cpp` are built manually against the Debug objects. See `.github/instructions/audio-cpp.instructions.md` for
-audio validation and source-file safety.
+Windows requires a matching shared FFmpeg SDK, selected with `FFmpeg_ROOT` (default:
+`external/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/`). Linux uses pkg-config to find the FFmpeg development
+libraries and requires the `ffmpeg`/`ffprobe` tools. SQLite amalgamation, CLI11 and spdlog are supplied in the
+repository/submodules. Build artifacts live under ignored `out/build/`.
+The existing Visual Studio solution remains a Windows fallback:
+`msbuild .\MediaBoost.sln /m /p:Configuration=Debug /p:Platform=x64`.
+CTest builds and runs the native regression executables and `tests/mp3_conversion.py` against disposable
+generated fixtures. See `.github/instructions/audio-cpp.instructions.md` for audio validation and source safety.
 
 ## Where knowledge lives
 

@@ -30,4 +30,4 @@ targets are never replaced. Exit code 0 only if every planned file was installed
 ## Known limitations
 - Sequential; stops at the first error, earlier outputs remain (K-024).
 - Lossy sources (`.m4a` AAC) are re-encoded to FLAC without quality gain.
-- Linux/macOS build blocked by K-018.
+- Linux builds are not verified until the Ubuntu CI workflow passes; macOS has no build preset yet.

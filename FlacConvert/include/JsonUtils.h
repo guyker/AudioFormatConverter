@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rapidjson/document.h"
+#include <cctype>
 #include <optional>
 #include <string>
 
@@ -15,6 +16,17 @@
 
 
 namespace JsonUtils {
+
+    inline bool caseInsensitiveEquals(const char* left, const char* right) {
+        while (*left != '\0' && *right != '\0') {
+            const auto leftChar = static_cast<unsigned char>(*left++);
+            const auto rightChar = static_cast<unsigned char>(*right++);
+            if (std::tolower(leftChar) != std::tolower(rightChar)) {
+                return false;
+            }
+        }
+        return *left == *right;
+    }
 
     struct CaseInsensitiveCompare {
         bool operator()(const std::string& a, const std::string& b) const {
@@ -78,7 +90,7 @@ namespace JsonUtils {
         else {
             // Try case-insensitive lookup
             for (auto it = obj.MemberBegin(); it != obj.MemberEnd(); ++it) {
-                if (it->name.IsString() && _stricmp(it->name.GetString(), key_) == 0) {
+                if (it->name.IsString() && caseInsensitiveEquals(it->name.GetString(), key_)) {
                     valuePtr = &it->value;
                     break;
                 }

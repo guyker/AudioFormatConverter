@@ -215,17 +215,27 @@ conversion records its class in `MediaConvertionTask::GetFailureType`.
 Portable core with narrow conditional blocks (K-006). Windows-specific code: `wmain`, console code pages,
 `PlatformUtils::WindowsLongPath`, `quoteWindowsArgument` + `_wspawnvp`, `MoveFileExW`, `CompareStringOrdinal`,
 SQLite `win32-longpath` VFS (K-011), default `C:\tmp` (K-007). POSIX branches: `fork`/`execvp`, rename/hard-link
-install, `sqlite3_open`. Known blocker: `JsonUtils::tryParseMember` uses `_stricmp` (K-018).
+install, `sqlite3_open`. `JsonUtils::tryParseMember` uses the portable
+`JsonUtils::caseInsensitiveEquals` helper for case-insensitive keys (K-033).
 
 ## Build and external dependencies
 
-Visual Studio project `FlacConvert/FlacConvert.vcxproj` (C++20, v145, x64). FFmpeg SDK under
-`external/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/` (K-009; DLLs copied by a post-build step, K-010), SQLite
-amalgamation compiled in, CLI11 and spdlog headers under `external/`, rapidjson vendored in `include/rapidjson/`.
-Runtime: `ffmpeg` with `libmp3lame` for MP3.
+CMake is the shared project build (`CMakeLists.txt`, `FlacConvert/CMakeLists.txt`), with Ninja presets for native
+Windows and Linux Debug/Release builds (`CMakePresets.json`). `FlacConvertCore` owns the shared implementation and
+links the SQLite amalgamation, CLI11, header-only spdlog and FFmpeg; `FlacConvert` owns the executable entry point.
+Windows uses MSVC and a matching shared FFmpeg SDK selected by `FFmpeg_ROOT` (default
+`external/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/`); CMake stages the SDK runtime DLLs beside the executable
+(K-010). Linux uses pkg-config imported targets for the system FFmpeg development packages. Both platforms use the
+tracked SQLite amalgamation and initialized CLI11/spdlog submodules. Runtime conversion still requires the `ffmpeg`
+executable with `libmp3lame` for MP3.
 
-Tests (outside the solution): `tests/mp3_conversion.py` (generated-fixture integration, see README),
-`tests/preservation_audit.cpp` and `tests/warning_regressions.cpp` (link against Debug objects).
+`cmake --install` stages the executable; Linux links system FFmpeg libraries, while Windows installs the matched
+runtime DLLs. The Windows Visual Studio solution remains a temporary fallback, not a second Linux build description.
+
+CTest registers the Python integration suite and native preservation/warning regression tests. The native tests link
+`FlacConvertCore` rather than IDE-generated object files; `tests/run_native_regression.py` creates temporary audio
+fixtures using FFmpeg. `tests/mp3_conversion.py` also generates disposable fixtures. See README for presets and
+prerequisites. CI uses Ubuntu 24.04 and Windows runners for Debug and Release.
 
 ## Extension points
 
@@ -248,5 +258,5 @@ prompt, and `ShowConversionPreview`.
 
 ## Knowledge links
 
-Conversion safety: K-003, K-013, K-014, K-029, K-030, K-032. Formats: K-015, K-016, K-017, K-028, K-031. Manual menu: K-024, K-025, K-026, K-027. Catalog/DB: K-005, K-011. Platform/build: K-006, K-007, K-009, K-010, K-018.
+Conversion safety: K-003, K-013, K-014, K-029, K-030, K-032. Formats: K-015, K-016, K-017, K-028, K-031. Manual menu: K-024, K-025, K-026, K-027. Catalog/DB: K-005, K-011. Platform/build: K-006, K-007, K-009, K-010, K-033.
 Only live entries are listed; superseded history is in `docs/knowledge/index.md` under "Closed".

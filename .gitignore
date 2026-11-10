@@ -3,3 +3,5 @@ x64/
 FlacConvert/FlacConvert.vcxproj.user
 external/ffmpeg/
 external/obj/
+/out/
+/CMakeUserPresets.json

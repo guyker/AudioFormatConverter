@@ -75,17 +75,40 @@ to safe defaults when selecting option `6` again; they do not modify config.json
    preserves metadata/companions, never changes sources, and rejects existing destinations or
    multichannel input unless overwrite or stereo downmix is explicitly enabled.
 
-## Windows build
+## Build
 
-From a Visual Studio Developer Command Prompt with the v145 C++ toolset:
+CMake is the shared build system for Windows and Linux; Ninja runs the builds and CTest runs the tests.
+The Visual Studio solution remains available as a Windows fallback during migration.
+
+Initialize submodules (`git submodule update --init --recursive`) and install CMake 3.28+, Ninja, Python 3
+and a C++20 toolchain.
+
+On Windows, use an x64 Visual Studio Developer PowerShell/Command Prompt. Set the `FFmpeg_ROOT` environment
+variable or pass `-DFFmpeg_ROOT=<path>` for a matching shared FFmpeg SDK containing `include`, `lib` and `bin`
+directories; by default CMake checks
+`external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\`. The SDK must include the five FFmpeg import
+libraries and runtime DLLs used by the application.
+
+On Linux, the supported CI reference is Ubuntu 24.04 x86-64 with GCC 13. Install FFmpeg runtime tools and
+development packages for libavformat, libavcodec, libavfilter, libavutil and libswresample, plus pkg-config.
+The FFmpeg executable must include the `libmp3lame` encoder for MP3 integration tests.
+
+Configure, build and test using the matching preset:
 
 ```text
-msbuild .\MediaBoost.sln /m /p:Configuration=Debug /p:Platform=x64
+cmake --preset windows-debug
+cmake --build --preset windows-debug --parallel
+ctest --preset windows-debug
 ```
 
-The project enables `/MP4` for Debug and Release builds, allowing up to four compiler workers.
-MSBuild's `/m` controls project-level parallelism separately. The x64 build requires the FFmpeg SDK under
-`external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\` and SQLite sources under `external\sqlite-amalgamation\`.
+Use `linux-debug` on Linux; `windows-release` and `linux-release` select Release builds. Build output is
+isolated under `out\build\<preset>`. To stage an executable, use
+`cmake --install out\build\<preset>`; choose another location with `--prefix <directory>`. Linux uses
+installed system FFmpeg libraries. Windows stages the matched runtime DLLs beside the executable. Do not copy
+the Windows-path sample `config.json` into an active Linux configuration without editing its library paths.
+
+The retained Visual Studio fallback is:
+`msbuild .\MediaBoost.sln /m /p:Configuration=Debug /p:Platform=x64`.
 
 ## Design and feature documentation
 
@@ -219,10 +242,11 @@ Metadata design references: [FLAC format (RFC 9639)](https://www.rfc-editor.org/
 [FFmpeg MP3 muxer](https://ffmpeg.org/ffmpeg-formats.html#mp3), and the official FFmpeg
 [ID3 writer](https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/id3v2enc.c).
 
-Generated-fixture integration checks (Python standard library only):
+CTest registers the native regression checks and the generated-fixture Python integration suite. To run the
+Python suite directly:
 
 ```text
-python tests\mp3_conversion.py --converter x64\Debug\FlacConvert.exe --ffmpeg external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\bin\ffmpeg.exe --ffprobe external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\bin\ffprobe.exe
+python tests\mp3_conversion.py --converter out\build\windows-debug\FlacConvert\FlacConvert.exe --ffmpeg external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\bin\ffmpeg.exe --ffprobe external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\bin\ffprobe.exe
 ```
 
 Configuration is optional. Pass `--config <file>` to select a JSON settings file; otherwise the command checks the
