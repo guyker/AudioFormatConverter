@@ -483,7 +483,11 @@ void ShowConversionPreview(const FolderConversionPlan& plan)
         << "  Output: " << pathToUtf8(plan.output) << '\n'
         << "  Audio files: " << plan.audio.size()
         << "; companions: " << plan.companions.size()
-        << "; metadata sidecars: " << (plan.options.target == AudioTarget::Mp3 ? plan.audio.size() : 0) << '\n'
+        << "; metadata sidecars: " << std::count_if(plan.audio.begin(), plan.audio.end(),
+            [&](const PlannedFileConversion& file) {
+                return plan.options.target == AudioTarget::Mp3 ||
+                    MediaTrack::FileExtension(file.source) == u8".flac";
+            }) << '\n'
         << "  Existing destinations: " << plan.existingTargets.size()
         << "; duplicate destinations: " << plan.collisions.size() << '\n'
         << "  Overwrite: " << (plan.overwrite ? "enabled" : "disabled") << '\n';
@@ -496,101 +500,15 @@ void ShowConversionPreview(const FolderConversionPlan& plan)
 }
 }
 
-MenuConfirmation ConfirmSourceReplacement(const std::vector<MediaDirectoryElement>& libraries);
-
-int ConvertFLACToFLAC(const std::vector<MediaDirectoryElement>& libraries, ManualOperationSummary& summary)
-{
-    summary.unit = "audio files";
-    if (libraries.empty()) {
-        spdlog::error("No active media libraries configured for FLAC conversion.");
-        return 1;
-    }
-    std::vector<PlannedFileConversion> files;
-    const auto pathLess = [](const fs::path& left, const fs::path& right) {
-#ifdef _WIN32
-        const auto& a = left.native();
-        const auto& b = right.native();
-        return CompareStringOrdinal(a.c_str(), static_cast<int>(a.size()),
-            b.c_str(), static_cast<int>(b.size()), TRUE) == CSTR_LESS_THAN;
-#else
-        return left < right;
-#endif
-    };
-    std::set<fs::path, decltype(pathLess)> targetKeys(pathLess);
-    std::size_t collisions = 0;
-    std::cout << "\nOperation preview: in-place FLAC conversion\n"
-        "  Quality: 16-bit / 44.1 kHz, triangular dithering; embedded artwork omitted.\n"
-        "  Overwrite: enabled; existing FLAC sources may be replaced.\n";
-    for (const auto& library : libraries) {
-        const auto sourceRoot = absoluteDisplayPath(pathFromUtf8(library.mediaPath));
-        summary.outputs.push_back(sourceRoot);
-        ScanInfo scan{};
-        if (FolderConvert::ScanAudioFiles(scan, sourceRoot) != 0) {
-            return 1;
-        }
-        std::size_t existing = 0;
-        for (const auto& entry : scan.mediaList) {
-            auto target = entry.path();
-            target.replace_extension(".flac");
-            std::error_code ec;
-            const auto key = fs::weakly_canonical(target, ec);
-            if (ec) {
-                spdlog::error("Cannot resolve destination: {}", ec.message());
-                return 1;
-            }
-            const bool targetExists = fs::exists(target, ec);
-            if (ec || (targetExists && !fs::is_regular_file(target, ec)) || ec) {
-                spdlog::error("Cannot use FLAC destination: {}", pathToUtf8(target));
-                return 1;
-            }
-            existing += targetExists ? 1 : 0;
-            if (!targetKeys.insert(key).second) {
-                ++collisions;
-                std::cout << "    COLLISION: " << pathToUtf8(target) << '\n';
-            }
-            auto temporary = uniqueSiblingPath(target, ".convert-");
-            temporary += ".flac";
-            files.push_back({ entry.path(), target, temporary });
-        }
-        std::cout << "  Input/output: " << pathToUtf8(sourceRoot)
-            << "\n  Audio files: " << scan.mediaList.size()
-            << "; existing destinations to replace: " << existing << '\n';
-    }
-    std::cout << "  Total audio files: " << files.size() << "; duplicate destinations: " << collisions
-        << "\n  Source quality is verified during conversion (minimum 16-bit / 44.1 kHz).\n";
-    if (collisions != 0) {
-        spdlog::error("Conflicting FLAC destinations; no conversion was started.");
-        return 1;
-    }
-    const auto confirmation = ConfirmSourceReplacement(libraries);
-    if (confirmation != MenuConfirmation::Run) {
-        return cancelledMenuResult(confirmation);
-    }
-    summary.Start();
-    for (const auto& file : files) {
-        MediaConvertionTask task(file.source, file.target, file.temporary, true);
-        if (task.Run() != 0 || task.PostRun() != 0) {
-            return 1;
-        }
-        ++summary.conversion.converted;
-    }
-    return 0;
-}
-
-int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryList, const fs::path& outputRoot,
-    ManualOperationSummary& summary)
+int ConvertConfiguredLibraries(const std::vector<MediaDirectoryElement>& mediaDirectoryList,
+    const fs::path& outputRoot, ManualOperationSummary& summary, ConversionOptions options, bool overwrite)
 {
     summary.unit = "audio files";
     if (mediaDirectoryList.empty()) {
-        spdlog::error("No active media libraries configured for FLAC to MP3 conversion.");
+        spdlog::error("No active media libraries configured for conversion.");
         return 1;
     }
-    ConversionOptions options{ AudioTarget::Mp3, 0, false };
-    bool overwrite = false;
-    const auto settingsChoice = ConfigureManualMp3(options, overwrite);
-    if (settingsChoice != MenuConfirmation::Run) {
-        return cancelledMenuResult(settingsChoice);
-    }
+    const bool mp3 = options.target == AudioTarget::Mp3;
     struct LibraryConversion {
         fs::path source;
         fs::path target;
@@ -613,11 +531,11 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryLis
             spdlog::error("Library path is not a readable directory: '{}'.", pathToUtf8(source));
             return 1;
         }
-        const fs::path target = outputRoot / "MP3" / name;
+        const fs::path target = outputRoot / (mp3 ? "MP3" : "FLAC") / name;
         summary.outputs.push_back(absoluteDisplayPath(target));
         const fs::path canonicalTarget = fs::weakly_canonical(target, ec);
         if (ec) {
-            spdlog::error("Cannot resolve MP3 output directory: {}", ec.message());
+            spdlog::error("Cannot resolve conversion output directory: {}", ec.message());
             return 1;
         }
         // Convert via the configured paths; canonical (possibly UNC) paths are only for overlap checks.
@@ -628,15 +546,14 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryLis
             if (isSameOrChildPath(conversions[i].canonicalTarget, conversions[j].canonicalSource) ||
                 isSameOrChildPath(conversions[j].canonicalSource, conversions[i].canonicalTarget) ||
                 (i != j && isSameOrChildPath(conversions[i].canonicalTarget, conversions[j].canonicalTarget))) {
-                spdlog::error("MP3 output overlaps a source library or another output: '{}'.",
+                spdlog::error("Conversion output overlaps a source library or another output: '{}'.",
                     pathToUtf8(conversions[i].target));
                 return 1;
             }
         }
     }
-    spdlog::info("FLAC to MP3: VBR quality {}, overwrite {}, multichannel stereo downmix {}.",
-        options.mp3Quality, overwrite ? "enabled" : "disabled",
-        options.downmixToStereo ? "enabled" : "disabled");
+    spdlog::info("Conversion target: {}; overwrite {}.", mp3 ? "MP3" : "FLAC",
+        overwrite ? "enabled" : "disabled");
     std::vector<FolderConversionPlan> plans;
     bool blocked = false;
     for (const auto& conversion : conversions) {
@@ -649,24 +566,51 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& mediaDirectoryLis
         plans.push_back(std::move(plan));
     }
     if (blocked) {
-        spdlog::error("MP3 destination conflicts; no conversion was started.");
+        spdlog::error("Conversion destination conflicts; no conversion was started.");
         return 1;
     }
-    std::cout << "  Quality: LAME VBR " << options.mp3Quality << "; "
+    if (mp3) {
+        std::cout << "  Quality: LAME VBR " << options.mp3Quality << "; "
         << (options.downmixToStereo ? "multichannel stereo downmix enabled" : "mono/stereo only")
         << "; 44.1/48 kHz retained, other accepted rates -> 48 kHz.\n"
         "  Source quality/channel properties are verified during conversion.\n";
+    } else {
+        std::cout << "  Quality: 16-bit / 44.1 kHz, triangular dithering; channel count retained.\n"
+            "  Tags and supported pictures mapped; original native FLAC metadata retained in sidecars.\n"
+            "  Sources unchanged. Source quality is verified during conversion.\n";
+    }
     const auto confirmation = ConfirmPreview();
     if (confirmation != MenuConfirmation::Run) {
         return cancelledMenuResult(confirmation);
     }
     summary.Start();
-    for (const auto& plan : plans) {
-        if (FolderConvert::ExecuteConversion(plan, &summary.conversion) != 0) {
+    for (std::size_t index = 0; index < plans.size(); ++index) {
+        const int result = FolderConvert::ExecuteConversion(plans[index], &summary.conversion);
+        if (!summary.conversion.actualOutput.empty())
+            summary.outputs[index] = summary.conversion.actualOutput;
+        if (result != 0) {
             return 1;
         }
     }
     return 0;
+}
+
+int ConvertFLACToFLAC(const std::vector<MediaDirectoryElement>& libraries, const fs::path& outputRoot,
+    ManualOperationSummary& summary)
+{
+    return ConvertConfiguredLibraries(libraries, outputRoot, summary, {}, false);
+}
+
+int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& libraries, const fs::path& outputRoot,
+    ManualOperationSummary& summary)
+{
+    ConversionOptions options{ AudioTarget::Mp3, 0, false };
+    bool overwrite = false;
+    const auto settingsChoice = ConfigureManualMp3(options, overwrite);
+    if (settingsChoice != MenuConfirmation::Run) {
+        return cancelledMenuResult(settingsChoice);
+    }
+    return ConvertConfiguredLibraries(libraries, outputRoot, summary, options, overwrite);
 }
 
 int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryList, bool bIncludeMetadata,
@@ -1259,28 +1203,6 @@ int ImportJsonDirectoryToDatabase(const fs::path& jsonDirectory, const fs::path&
     return albumCollection.ExportToDatabase(albums, databasePath) ? 0 : 1;
 }
 
-MenuConfirmation ConfirmSourceReplacement(const std::vector<MediaDirectoryElement>& libraries)
-{
-    if (libraries.empty()) {
-        spdlog::error("No active media libraries configured for FLAC conversion.");
-        return MenuConfirmation::Error;
-    }
-    std::cout << "\nWARNING: option 1 writes FLAC output into the source libraries.\n"
-        "Existing matching FLAC files will be replaced after successful encoding.\n"
-        "Output is 16-bit / 44.1 kHz with dithering; embedded artwork is omitted.\n"
-        "Non-FLAC sources remain, but matching .flac destinations may be overwritten.\n"
-        "Back up your library before proceeding.\n\nAffected active libraries:\n";
-    for (const auto& library : libraries) {
-        std::cout << "  " << library.mediaPath;
-        if (library.mediaName && !library.mediaName->empty()) {
-            std::cout << " [" << *library.mediaName << "]";
-        }
-        std::cout << '\n';
-    }
-    return ConfirmManualAction("REPLACE",
-        "Cancelled. No conversion was started; source files are unchanged.");
-}
-
 namespace
 {
 struct MenuEntry {
@@ -1292,14 +1214,17 @@ struct MenuEntry {
 
 constexpr std::array<MenuEntry, 6> MenuEntries{ {
     { '1', ConvertActionEnum::ConverEnum,
-        "Re/Convert to FLAC [WARNING: replaces existing FLAC files]",
+        "Convert to FLAC [sources unchanged]",
         "      Input: supported audio files in the active source libraries, recursively.\n"
-        "      Output: 16-bit / 44.1 kHz .flac files beside the source files, with dithering.\n"
-        "      Changes: overwrites matching FLAC files after successful encoding;\n"
-        "               non-FLAC sources remain. Audio-only mapping omits embedded artwork.\n"
-        "               Back up your library first; resampling/depth reduction loses information.\n"
+        "      Output: OutDirectory/FLAC/<mediaName>, retaining relative folder structure.\n"
+        "              16-bit / 44.1 kHz FLAC with dithering, original FLAC metadata sidecars,\n"
+        "              mapped tags/pictures and unchanged non-audio companions.\n"
+        "      Changes: source files are untouched; existing output files are rejected.\n"
+        "               Resampling/depth reduction loses information in the output audio.\n"
+        "      Audit: conversion-audit.json lists preservation differences and installation states.\n"
+        "             Newly created failed library folders receive an error prefix; existing folders stay.\n"
         "      Rejects sources below 16-bit / 44.1 kHz or whose depth/rate cannot be verified.\n"
-        "      Running requires REPLACE, not a generic RUN confirmation.\n" },
+        "      RUN confirms execution; the first error stops processing without whole-batch rollback.\n" },
     { '2', ConvertActionEnum::CreateJSONEnum, "Scan directories and create metadata JSON",
         "      Input: audio libraries; reads track tags and technical metadata.\n"
         "      Output: OutDirectory/<mediaName>/media_out_<mediaName>_<part>.json.\n"
@@ -1331,6 +1256,8 @@ constexpr std::array<MenuEntry, 6> MenuEntries{ {
         "               44.1/48 kHz retained, other accepted rates become 48 kHz.\n"
         "      Rejects sources below 16-bit / 44.1 kHz or whose depth/rate cannot be verified.\n"
         "      <mediaName> defaults to the source folder name.\n"
+        "      Audit: conversion-audit.json lists preservation differences and installation states.\n"
+        "             Newly created failed library folders receive an error prefix; existing folders stay.\n"
         "      Prompts configure quality (0-9), stereo downmix and overwrite before preview.\n"
         "      Defaults: VBR 0, no downmix, no overwrite. RUN confirms the selected settings.\n" }
 } };
@@ -1477,7 +1404,7 @@ int RunLegacyMenu()
         switch (action)
         {
         case ConvertActionEnum::ConverEnum: //1
-            return ConvertFLACToFLAC(mediaList, summary);
+            return ConvertFLACToFLAC(mediaList, pathFromUtf8(appSettingPtr->OutDirectory), summary);
 
         case ConvertActionEnum::CreateJSONEnum: //2
             return ScanFolderAndCreateJSON(mediaList, true, pathFromUtf8(appSettingPtr->OutDirectory), true, &summary);
@@ -1595,9 +1522,19 @@ int RunWithArguments(const std::vector<const char*>& arguments)
             : pathFromUtf8(settings->OutDirectory);
 
         switch (options.action) {
-        case CommandAction::Convert:
+        case CommandAction::Convert: {
+            std::error_code ec;
+            const auto absoluteInput = fs::absolute(inputPath, ec).lexically_normal();
+            const auto name = absoluteInput.filename().empty()
+                ? absoluteInput.parent_path().filename() : absoluteInput.filename();
+            if (ec || name.empty() || name == "." || name == "..") {
+                spdlog::error("Conversion input must have a library folder name.");
+                return 1;
+            }
             return FolderConvert::ConvertAudioFolderToOutput(
-                inputPath, outputDirectory, options.overwrite, options.conversion) == 0 ? 0 : 1;
+                inputPath, outputDirectory / (options.conversion.target == AudioTarget::Mp3 ? "MP3" : "FLAC") / name,
+                options.overwrite, options.conversion) == 0 ? 0 : 1;
+        }
 
         case CommandAction::Scan: {
             std::error_code ec;

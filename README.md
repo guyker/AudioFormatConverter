@@ -35,13 +35,14 @@
 The compact menu shows numbered actions; selecting one displays its input, output and file changes. Enter one number and
 press Enter; invalid input is retried, `0` exits, and end-of-input exits without running an action.
 Option `5` is explicitly unavailable: scan with `2`, then import into SQLite with `4`.
-Option `1` warns that existing FLAC sources are replaced and embedded artwork is omitted.
-Before running option `1`, the menu lists the affected active libraries and requires typing `REPLACE`
-to confirm source replacement. Enter, any other response, or end-of-input cancels without starting
-conversion. No active libraries is an error. The explicit `convert` subcommand is unaffected.
+Option `1` writes to `OutDirectory\FLAC\<mediaName>` and leaves the source tree untouched.
+It keeps the 16-bit / 44.1 kHz profile with triangular dithering, maps tags and supported embedded pictures,
+archives original native FLAC metadata in `<filename>.flac.flac-metadata` sidecars, and copies non-audio
+companions unchanged. Existing outputs are rejected; use explicit `convert --overwrite` to replace outputs.
+No active libraries is an error. `<mediaName>` defaults to the source folder name.
 Selected actions show an operation preview with absolute configured input/output paths, input counts,
-conversion quality/overwrite policies, and existing or duplicate destinations. Option `1` retains its
-`REPLACE` confirmation; options `2`, `3`, `4` and `6` require `RUN` after the preview (Enter/EOF cancels).
+conversion quality/overwrite policies, and existing or duplicate destinations. Options `1`, `2`, `3`, `4`
+and `6` require `RUN` after the preview (Enter/EOF cancels).
 No output files/directories are written during preview. All active conversion libraries are planned
 before execution, so a conflict in a later library prevents earlier libraries from being converted.
 The prepared audio/companion lists, scan album batches and JSON input lists are reused for execution.
@@ -49,7 +50,7 @@ Scan previews discover albums without collecting track metadata until confirmed.
 checks remain part of conversion; counts and destination checks reflect preview-time file state.
 Enter `?` at the selection prompt to see all action descriptions without scanning or writing.
 At the preview confirmation, `BACK` returns to the menu and `EXIT` quits without starting the action.
-Running uses the same single confirmation: `REPLACE` for option `1`, `RUN` for other actions.
+Running uses the same single `RUN` confirmation for every available action.
 Enter, unrecognized confirmation text or EOF still cancels and exits. Option numbers are unchanged.
 Finished manual actions report `Completed`, `Partially completed` or `Failed`, elapsed execution time,
 output locations, completed work and copied companions. Counts reflect successfully installed audio,
@@ -65,7 +66,7 @@ metadata sidecars and copied companions, never to source files. Settings are per
 to safe defaults when selecting option `6` again; they do not modify config.json.
 
 1. The main function provides a console-based menu for the user to select different actions:
-2. Re-convert FLAC files.
+2. Convert audio to FLAC in a separate output tree.
 3. Scan directories and create JSON metadata files.
 4. Process existing JSON files to find duplicate albums.
 5. Populate a SQLite database from JSON files.
@@ -85,6 +86,18 @@ msbuild .\MediaBoost.sln /m /p:Configuration=Debug /p:Platform=x64
 The project enables `/MP4` for Debug and Release builds, allowing up to four compiler workers.
 MSBuild's `/m` controls project-level parallelism separately. The x64 build requires the FFmpeg SDK under
 `external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\` and SQLite sources under `external\sqlite-amalgamation\`.
+
+## Design and feature documentation
+
+`FlacConvert\DESIGN.md` describes the application; `docs\features\index.md` lists its important features and
+`docs\knowledge\index.md` records durable decisions and risks. Keep these current when material behaviour, contracts
+or design change; routine edits do not need a documentation entry or change log.
+
+Install the optional, warn-only reminder for this local repository with `python tools\install_doc_hook.py`. It refuses
+to overwrite an existing hook; Git may share the hook with linked worktrees. Once committed, the pull-request workflow
+also runs an advisory check. Neither reminder changes files or determines whether a change is important. For candidate
+documents and structural warnings, use
+`python tools\doc_impact.py --details` (add `--staged` for a commit or `--base <ref>` for committed changes).
 
 <h2>Command-line usage</h2>
 
@@ -106,6 +119,56 @@ FLAC with triangular dithering. Existing destinations cause an error unless `--o
 the generated JSON output for that library only after a new scan
 completes. `duplicates` reports matches without opening folders; pass `--open` to open matched folders in Explorer.
 `db import` creates or updates a library-named SQLite database.
+
+### FLAC output preservation
+
+`convert --output-dir` is a **base root**, matching the manual menu: output is
+`<root>\<FLAC|MP3>\<input-folder-name>` (manual libraries may use their configured name).
+For example, `convert D:\Music\AlbumA --output-dir E:\Converted --to flac` writes
+`E:\Converted\FLAC\AlbumA`. Relative paths inside the library are retained.
+
+Both manual option `1` and explicit `convert --to flac` use the same folder planning and installation path.
+All libraries are checked before manual execution; source/output overlap, duplicate destinations and existing
+outputs block the run. Files are processed sequentially and stop at the first error. Completed outputs remain;
+the source tree is never modified. Manual overwrite is disabled; explicit `--overwrite` only replaces outputs.
+
+Tags and supported attached pictures are mapped into FLAC without image re-encoding. Native FLAC inputs also
+produce `<filename>.flac.flac-metadata`: the same byte-preserving original metadata archive used by MP3.
+This retains repeated comments, application blocks, cue sheets, original chapters and unsupported pictures
+even if FFmpeg cannot embed them faithfully. Picture dimensions and mapped tags can be normalized.
+Original seek tables, checksums and technical fields in the sidecar describe the source, not the new
+16-bit / 44.1 kHz audio; they must not be inserted blindly into the converted FLAC.
+Non-FLAC inputs rely on FFmpeg tag/picture mapping and do not produce this native-FLAC sidecar.
+Non-audio companion files are copied unchanged with relative paths preserved. Cue sheets/playlists are
+not rewritten, and may still refer to old names or source audio properties. Empty directories are not copied.
+Native metadata sidecars do not contain audio or restore precision lost through resampling/dithering.
+
+### Preservation audit and incomplete output
+
+Before installation, conversions compare observed tags (including native FLAC comment multiplicity),
+attached picture payloads/descriptors, chapters and opaque FLAC metadata. Required metadata archives are
+verified byte-for-byte against the original. Companion files are compared byte-for-byte before installation.
+Each installed audio file logs a compact summary and resource differences, without dumping tag values.
+`conversion-audit.json` in the library output contains per-file installation states, resource classifications,
+counts and the actual output location. Unattempted files are listed explicitly.
+
+`Preserved` means observed fields match; `Normalized` identifies changed representations;
+`SidecarOnly` means the original is retained in a verified archive; `MissingOrChanged` identifies loss;
+`NotVerified` identifies inspection limitations; `SourceOnly` identifies source technical data such as seek
+offsets/checksums that cannot describe transformed audio. ReplayGain/R128 tags may be stale after conversion.
+Normalization and archive-backed metadata omissions warn; supported picture payload loss, missing unarchived
+resources, failed archive verification, copy errors and installation/report errors stop the run.
+Non-FLAC opaque metadata cannot be completely audited; mapped fields are checked but that limitation is reported.
+
+Only library folders **created by the current execution** are renamed on failure, with prefixes
+`ERROR_AUDIO_`, `ERROR_PRESERVATION_`, `ERROR_COPY_`, `ERROR_IO_` or `INCOMPLETE_`.
+Existing folders stay in place; completed libraries stay unchanged. Name collisions receive numbered suffixes.
+Rename failures are logged with the unchanged location. Failure reports and completed outputs are retained.
+The reserved `.conversion-in-progress` marker directory is removed only after all planned output and the final
+report are complete. A crash/power loss cannot run renaming cleanup, so this marker identifies unfinished output.
+Existing markers block reuse: inspect the report/output and move the incomplete tree or explicitly remove the marker
+before retrying. Reports require `--overwrite` when reusing completed output. Source files bearing either reserved
+state filename at the library root block preflight, before any output is created.
 
 ### FLAC to MP3
 

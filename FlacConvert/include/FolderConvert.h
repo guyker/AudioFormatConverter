@@ -35,6 +35,7 @@ struct FolderConversionPlan {
     ConversionOptions options;
     std::vector<PlannedFileConversion> audio;
     std::vector<PlannedFileConversion> companions;
+    std::vector<fs::path> skippedAudio;
     std::vector<fs::path> existingTargets;
     std::vector<fs::path> collisions;
 };
@@ -42,6 +43,7 @@ struct FolderConversionPlan {
 struct ConversionProgress {
     std::size_t converted{ 0 };
     std::size_t copied{ 0 };
+    fs::path actualOutput;
 };
 
 class FolderConvert

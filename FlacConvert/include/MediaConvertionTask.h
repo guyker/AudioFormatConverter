@@ -10,6 +10,7 @@
 #include <chrono>
 #include <thread>
 #include "ConversionOptions.h"
+#include "PreservationAudit.h"
 
 
 namespace fs = std::filesystem;
@@ -28,6 +29,8 @@ public:
 
     virtual int GetStatus() { return _status; }
     static bool InstallOutputFile(const fs::path& temporary, const fs::path& target, bool overwrite);
+    const PreservationAudit::Result& GetPreservationAudit() const { return _audit; }
+    const char* GetFailureType() const { return _failureType; }
 
     virtual ~MediaConvertionTask() {}
 
@@ -41,6 +44,9 @@ protected:
     const fs::path _targetTMPPath;
     const bool _overwriteTarget;
     const ConversionOptions _options;
+    bool _preserveOriginalMetadata{ false };
+    PreservationAudit::Result _audit;
+    const char* _failureType{ "AUDIO" };
 
     int _status;
 };

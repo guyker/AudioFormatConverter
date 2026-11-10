@@ -5,7 +5,7 @@ title: "Report confirmed manual progress and distinguish partial completion from
 area: [FlacConvert]
 status: active
 created: 2026-10-11
-reviewed: 2026-10-11
+reviewed: 2026-11-10
 cites:
   - path: FlacConvert/src/FlacConvertMain.cpp
     symbol: ManualOperationSummary

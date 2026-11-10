@@ -5,7 +5,7 @@ title: "Reject conversion sources below CD audio thresholds"
 area: [FlacConvert]
 status: active
 created: 2026-10-10
-reviewed: 2026-10-10
+reviewed: 2026-11-10
 cites:
   - path: FlacConvert/src/MediaConvertionTask.cpp
     symbol: isAtLeastCDQuality

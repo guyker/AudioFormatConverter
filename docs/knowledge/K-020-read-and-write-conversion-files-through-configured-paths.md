@@ -3,7 +3,8 @@ id: K-020
 kind: trap
 title: "Read and write conversion files through configured paths, not canonical paths"
 area: [FlacConvert]
-status: active
+status: superseded
+superseded_by: K-032
 created: 2026-10-10
 reviewed: 2026-10-11
 cites:
@@ -11,6 +12,10 @@ cites:
     symbol: FolderConvert.ConvertAudioFolderToOutput
   - path: FlacConvert/src/FlacConvertMain.cpp
     symbol: ConvertFLACToMP3
+  - path: FlacConvert/src/FlacConvertMain.cpp
+    symbol: ConvertConfiguredLibraries
+  - path: FlacConvert/src/FolderConvert.cpp
+    symbol: FolderConvert.PrepareConversion
 ---
 
 **Fact:** On Windows, `fs::weakly_canonical` resolves a mapped network drive to its server UNC path (for example,

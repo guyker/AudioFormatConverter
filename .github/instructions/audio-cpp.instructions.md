@@ -24,3 +24,6 @@ applyTo: "FlacConvert/src/**,FlacConvert/include/**"
 - When changing conversion behaviour, cover short/silent audio, representative formats/channels, Unicode paths,
   corrupt input and destination collisions; verify failure leaves originals intact. Build/exit success alone is not
   evidence of correct audio.
+- Before editing, read the relevant `FlacConvert/DESIGN.md` sections and feature entries. After editing, assess whether
+  important behaviour, design, contracts, schemas or risks changed and update those documents only when needed. Do not
+  create a change log for formatting, renames or behaviour-preserving refactors; follow the knowledge protocol.

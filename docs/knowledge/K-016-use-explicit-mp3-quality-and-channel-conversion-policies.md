@@ -5,7 +5,7 @@ title: "Use explicit MP3 quality and channel conversion policies"
 area: [FlacConvert]
 status: active
 created: 2026-10-10
-reviewed: 2026-10-10
+reviewed: 2026-11-10
 cites:
   - path: FlacConvert/src/MediaConvertionTask.cpp
     symbol: conversionArguments

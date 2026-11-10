@@ -29,6 +29,7 @@
 #include "FFmpeg.h"
 #include "PlatformUtils.h"
 #include "FlacMetadata.h"
+#include "MediaTrack.h"
 
 namespace fs = std::filesystem;
 
@@ -179,11 +180,6 @@ std::vector<std::string> conversionArguments(const ConversionOptions& options,
     const FFprobeOutput& metadata)
 {
     std::vector<std::string> arguments{ "-map", "0:a:0" };
-    if (options.target == AudioTarget::Flac) {
-        arguments.insert(arguments.end(), {
-            "-af", "aresample=osf=s16:osr=44100:dither_method=triangular", "-c:a", "flac" });
-        return arguments;
-    }
     for (const auto& stream : metadata.streams) {
         if (!stream.disposition || !stream.disposition->attached_pic) {
             continue;
@@ -194,9 +190,15 @@ std::vector<std::string> conversionArguments(const ConversionOptions& options,
             arguments.insert(arguments.end(), { "-map", "0:" + std::to_string(stream.index) });
         }
         else {
-            spdlog::warn("Picture stream {} cannot be embedded in MP3; retained in FLAC metadata sidecar.",
+            spdlog::warn("Picture stream {} cannot be embedded; original native FLAC pictures remain in the metadata sidecar.",
                 stream.index);
         }
+    }
+    arguments.insert(arguments.end(), { "-map_metadata", "0", "-map_chapters", "0", "-c:v", "copy" });
+    if (options.target == AudioTarget::Flac) {
+        arguments.insert(arguments.end(), {
+            "-af", "aresample=osf=s16:osr=44100:dither_method=triangular", "-c:a", "flac" });
+        return arguments;
     }
     const auto audio = std::find_if(metadata.streams.begin(), metadata.streams.end(),
         [](const Stream& stream) { return stream.codec_type && *stream.codec_type == "audio"; });
@@ -209,9 +211,8 @@ std::vector<std::string> conversionArguments(const ConversionOptions& options,
         arguments.insert(arguments.end(), { "-ac", "2" });
         spdlog::warn("Explicitly downmixing {} channels to stereo for MP3.", *audio->channels);
     }
-    arguments.insert(arguments.end(), { "-map_metadata", "0", "-map_chapters", "0",
-        "-c:a", "libmp3lame", "-q:a", std::to_string(options.mp3Quality),
-        "-c:v", "copy", "-id3v2_version", "4", "-write_id3v1", "0", "-write_xing", "1" });
+    arguments.insert(arguments.end(), { "-c:a", "libmp3lame", "-q:a", std::to_string(options.mp3Quality),
+        "-id3v2_version", "4", "-write_id3v1", "0", "-write_xing", "1" });
     return arguments;
 }
 
@@ -290,6 +291,8 @@ int MediaConvertionTask::ConvertFile()
         _status = -1;
         return _status;
     }
+    _preserveOriginalMetadata = _options.target == AudioTarget::Mp3 ||
+        MediaTrack::FileExtension(_sourcePath) == u8".flac";
     if (_options.target == AudioTarget::Mp3) {
         const auto audio = std::find_if(metadata.streams.begin(), metadata.streams.end(),
             [](const Stream& stream) { return stream.codec_type && *stream.codec_type == "audio"; });
@@ -303,6 +306,8 @@ int MediaConvertionTask::ConvertFile()
             _status = -1;
             return _status;
         }
+    }
+    {
         std::error_code pathError;
         const auto canonicalSource = fs::weakly_canonical(_sourcePath, pathError);
         if (pathError) {
@@ -316,11 +321,15 @@ int MediaConvertionTask::ConvertFile()
             _status = -1;
             return _status;
         }
-        for (const auto& path : { _targetPath, _targetTMPPath, sidecarPath(_targetPath),
-            sidecarPath(_targetTMPPath), temporaryInputPath(_targetTMPPath) }) {
+        std::vector<fs::path> destinations{ _targetPath, _targetTMPPath };
+        if (_preserveOriginalMetadata) {
+            destinations.insert(destinations.end(), { sidecarPath(_targetPath),
+                sidecarPath(_targetTMPPath), temporaryInputPath(_targetTMPPath) });
+        }
+        for (const auto& path : destinations) {
             const auto canonical = fs::weakly_canonical(path, pathError);
             if (pathError) {
-                spdlog::error("Cannot resolve MP3 destination '{}': {}",
+                spdlog::error("Cannot resolve conversion destination '{}': {}",
                     CommonUtils::path_to_utf8(path), pathError.message());
                 _status = -1;
                 return _status;
@@ -337,7 +346,7 @@ int MediaConvertionTask::ConvertFile()
                 path == temporaryInputPath(_targetTMPPath);
             if (pathError || canonical == canonicalSource || sourceAlias ||
                 (temporary && exists) || (path == _targetTMPPath && canonical == canonicalTarget)) {
-                spdlog::error("Unsafe MP3 destination: {}", CommonUtils::path_to_utf8(path));
+                spdlog::error("Unsafe conversion destination: {}", CommonUtils::path_to_utf8(path));
                 _status = -1;
                 return _status;
             }
@@ -358,7 +367,8 @@ int MediaConvertionTask::ConvertFile()
         return _status;
     }
     bool preparedInput = false;
-    if (_options.target == AudioTarget::Mp3) {
+    if (_preserveOriginalMetadata) {
+        _failureType = "PRESERVATION";
         const bool sidecarExists = fs::exists(sidecarPath(_targetPath), ec);
         if (ec || (!_overwriteTarget && sidecarExists)) {
             spdlog::error("Cannot use metadata destination '{}': {}",
@@ -367,7 +377,8 @@ int MediaConvertionTask::ConvertFile()
             return _status;
         }
         if (!FlacMetadata::Save(_sourcePath, sidecarPath(_targetTMPPath),
-            temporaryInputPath(_targetTMPPath), preparedInput)) {
+            temporaryInputPath(_targetTMPPath), preparedInput) ||
+            !FlacMetadata::Verify(_sourcePath, sidecarPath(_targetTMPPath))) {
             removeTemporary(sidecarPath(_targetTMPPath));
             removeTemporary(temporaryInputPath(_targetTMPPath));
             _status = -1;
@@ -382,9 +393,10 @@ int MediaConvertionTask::ConvertFile()
     }
 
     spdlog::info("Processing: {}", CommonUtils::utf8string_to_string(_sourcePath.u8string()));
+    _failureType = "AUDIO";
     const auto arguments = conversionArguments(_options, metadata);
     const int result = runFFmpeg(executable, preparedInput ? temporaryInputPath(_targetTMPPath) : _sourcePath,
-        _targetTMPPath, _options.target == AudioTarget::Mp3 ? false : _overwriteTarget, arguments);
+        _targetTMPPath, false, arguments);
     if (preparedInput) {
         removeTemporary(temporaryInputPath(_targetTMPPath));
     }
@@ -394,7 +406,7 @@ int MediaConvertionTask::ConvertFile()
                 result, CommonUtils::utf8string_to_string(_sourcePath.u8string()));
         }
         removeTemporary(_targetTMPPath);
-        if (_options.target == AudioTarget::Mp3) {
+        if (_preserveOriginalMetadata) {
             removeTemporary(sidecarPath(_targetTMPPath));
         }
         _status = -1;
@@ -412,11 +424,7 @@ int MediaConvertionTask::ConvertFile()
         if (audio == output.streams.end() || !audio->codec_name || *audio->codec_name != "mp3" ||
             parseInteger(audio->sample_rate) != expectedRate || audio->channels != expectedChannels ||
             !output.format.duration || *output.format.duration <= 0 ||
-            output.format.nb_chapters != metadata.format.nb_chapters ||
-            (metadata.format.duration && std::abs(*metadata.format.duration - *output.format.duration) > 0.15) ||
-            std::count_if(output.streams.begin(), output.streams.end(), [](const Stream& stream) {
-                return stream.disposition && stream.disposition->attached_pic;
-            }) != std::count(arguments.begin(), arguments.end(), "-map") - 1) {
+            (metadata.format.duration && std::abs(*metadata.format.duration - *output.format.duration) > 0.15)) {
             spdlog::error("MP3 output verification failed for '{}'.", CommonUtils::path_to_utf8(_targetTMPPath));
             removeTemporary(_targetTMPPath);
             removeTemporary(sidecarPath(_targetTMPPath));
@@ -424,7 +432,42 @@ int MediaConvertionTask::ConvertFile()
             return _status;
         }
     }
+    else {
+        const auto output = FFmpeg::GetFFprobeMetadataAPI(_targetTMPPath);
+        const auto audio = std::find_if(output.streams.begin(), output.streams.end(),
+            [](const Stream& stream) { return stream.codec_type && *stream.codec_type == "audio"; });
+        const auto sourceAudio = std::find_if(metadata.streams.begin(), metadata.streams.end(),
+            [](const Stream& stream) { return stream.codec_type && *stream.codec_type == "audio"; });
+        if (audio == output.streams.end() || !audio->codec_name || *audio->codec_name != "flac" ||
+            parseInteger(audio->sample_rate) != 44100 || audio->bits_per_sample != 16 ||
+            audio->channels != sourceAudio->channels || !output.format.duration || *output.format.duration <= 0 ||
+            (metadata.format.duration && std::abs(*metadata.format.duration - *output.format.duration) > 0.15)) {
+            spdlog::error("FLAC output verification failed for '{}'.", CommonUtils::path_to_utf8(_targetTMPPath));
+            removeTemporary(_targetTMPPath);
+            if (_preserveOriginalMetadata) {
+                removeTemporary(sidecarPath(_targetTMPPath));
+            }
+            _status = -1;
+            return _status;
+        }
+    }
 
+    _failureType = "PRESERVATION";
+    const bool verifiedArchive = _preserveOriginalMetadata &&
+        FlacMetadata::Verify(_sourcePath, sidecarPath(_targetTMPPath));
+    if (_preserveOriginalMetadata && !verifiedArchive) {
+        removeTemporary(_targetTMPPath);
+        removeTemporary(sidecarPath(_targetTMPPath));
+        _status = -1;
+        return _status;
+    }
+    _audit = PreservationAudit::Compare(_sourcePath, _targetTMPPath, verifiedArchive);
+    if (!_audit.ok) {
+        removeTemporary(_targetTMPPath);
+        if (_preserveOriginalMetadata) removeTemporary(sidecarPath(_targetTMPPath));
+        _status = -1;
+        return _status;
+    }
     _status = 0;
     return _status;
 }
@@ -455,6 +498,7 @@ int MediaConvertionTask::PostRun() {
 
 int MediaConvertionTask::InstallTemporaryOutput()
 {
+    _failureType = "IO";
     if (_status == -1) {
         return _status;
     }
@@ -469,7 +513,7 @@ int MediaConvertionTask::InstallTemporaryOutput()
     fs::path backup = sidecarPath(_targetTMPPath);
     backup += ".backup";
     bool backedUp = false;
-    if (_options.target == AudioTarget::Mp3) {
+    if (_preserveOriginalMetadata) {
         if (_overwriteTarget && fs::exists(sidecarPath(_targetPath), ec)) {
             backedUp = fs::copy_file(sidecarPath(_targetPath), backup, fs::copy_options::none, ec);
             if (!backedUp) {
@@ -491,7 +535,7 @@ int MediaConvertionTask::InstallTemporaryOutput()
     }
     if (!installFile(_targetTMPPath, _targetPath, _overwriteTarget)) {
         spdlog::error("Converted audio remains recoverable at '{}'.", CommonUtils::path_to_utf8(_targetTMPPath));
-        if (_options.target == AudioTarget::Mp3) {
+        if (_preserveOriginalMetadata) {
             if (backedUp) {
                 if (!installFile(backup, sidecarPath(_targetPath), true)) {
                     spdlog::error("Original metadata remains recoverable at '{}'.",
@@ -508,8 +552,8 @@ int MediaConvertionTask::InstallTemporaryOutput()
     if (backedUp) {
         removeTemporary(backup);
     }
-    if (_options.target == AudioTarget::Mp3) {
-        spdlog::info("Installed MP3 and original-metadata sidecar: '{}', '{}'.",
+    if (_preserveOriginalMetadata) {
+        spdlog::debug("Installed audio and original-metadata sidecar: '{}', '{}'.",
             CommonUtils::path_to_utf8(_targetPath), CommonUtils::path_to_utf8(sidecarPath(_targetPath)));
     }
 

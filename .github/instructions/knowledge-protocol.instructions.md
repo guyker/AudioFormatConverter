@@ -22,15 +22,16 @@ redundant; or concluding that existing code is wrong. Run `kb.ps1 related -Path 
 
 | Trigger | Kind |
 |---|---|
-| A user-visible workflow, behavior, or contract that should remain stable | `decision` or `domain` |
+| An important user-visible workflow, behavior, or contract that should remain stable | `decision` or `domain` |
 | Product or deployment context needed to understand behavior | `domain` |
 | A technical constraint or trap with a demonstrated recurring risk to product behavior | `constraint` or `trap` |
 | A choice between real alternatives a future reader could not re-derive | `decision` |
 | An unresolved, verified defect materially affecting an important workflow | `defect` |
 
-The knowledge base is not a development diary. Do not record routine language/runtime/toolset migrations, dependency
-updates, refactors, type/structure changes, or build churn unless they alter product behavior or expose a verified
-recurring risk. Preferences spanning repositories belong in the global skill or user instructions, not each project.
+The knowledge base is not a development diary. Do not record formatting, routine wording or log changes,
+language/runtime/toolset migrations, dependency updates, refactors, type/structure changes, or build churn unless they
+materially alter product behavior or expose a verified recurring risk. Preferences spanning repositories belong in the
+global skill or user instructions, not each project.
 If unsure whether a feature or behavior is important from the product point of view, ask before recording it.
 
 Not for: routine progress, what the diff already shows, anything already in an instruction file or `DESIGN.md`, or

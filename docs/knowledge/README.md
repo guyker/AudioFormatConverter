@@ -5,6 +5,8 @@ defects. One Markdown file per entry; `index.md` lists them (generated, do not e
 lives in `DESIGN.md` files; rules live in `.github/instructions/`; issue and change history lives in work items and
 commits. Tooling: `kb.ps1` from the project-memory skill.
 
+Record important, verified context, not a diary of formatting, routine refactors or individual commits.
+
 ## Entry format
 
 ```markdown

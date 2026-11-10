@@ -1,0 +1,27 @@
+name: Documentation impact reminder
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  documentation-impact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Remind reviewers to assess material documentation changes
+        if: always()
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          if ! python3 tools/doc_impact.py --base "$BASE_SHA" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"; then
+            echo "::warning::Documentation reminder could not run; review important design and feature changes manually."
+            echo "Documentation reminder could not run; review important design and feature changes manually." >> "$GITHUB_STEP_SUMMARY"
+          fi

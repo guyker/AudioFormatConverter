@@ -6,7 +6,7 @@ area: [FlacConvert]
 status: active
 supersedes: [K-012]
 created: 2026-10-10
-reviewed: 2026-10-10
+reviewed: 2026-11-10
 cites:
   - path: FlacConvert/src/MediaConvertionTask.cpp
     symbol: conversionArguments

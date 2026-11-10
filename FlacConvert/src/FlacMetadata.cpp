@@ -8,26 +8,44 @@
 #include <spdlog/spdlog.h>
 #include "CommonUtils.h"
 
-bool FlacMetadata::Save(const std::filesystem::path& source, const std::filesystem::path& sidecar,
-    const std::filesystem::path& temporaryInput, bool& preparedInput)
+namespace {
+bool Process(const std::filesystem::path& source, const std::filesystem::path& sidecar,
+    const std::filesystem::path& temporaryInput, bool& preparedInput, bool verify)
 {
     preparedInput = false;
     std::ifstream input(source, std::ios::binary);
-    std::ofstream output(sidecar, std::ios::binary | std::ios::trunc);
+    std::ofstream output;
+    std::ifstream archive;
+    if (verify) {
+        archive.open(sidecar, std::ios::binary);
+    } else {
+        output.open(sidecar, std::ios::binary | std::ios::trunc);
+    }
     const auto fail = [&](const std::string& reason) {
         spdlog::error("Cannot preserve FLAC metadata for '{}': {}",
             CommonUtils::path_to_utf8(source), reason);
         return false;
     };
-    if (!input || !output) {
+    if (!input || (verify ? !archive : !output)) {
         return fail("cannot open source or temporary metadata sidecar");
     }
     std::array<char, 8192> buffer{};
+    const auto writeBytes = [&](const char* bytes, std::streamsize count) {
+        if (!verify) {
+            return static_cast<bool>(output.write(bytes, count));
+        }
+        std::array<char, 8192> actual{};
+        if (count < 0 || count > static_cast<std::streamsize>(actual.size())) {
+            return false;
+        }
+        return archive.read(actual.data(), count) &&
+            std::equal(bytes, bytes + count, actual.data());
+    };
     const auto copyBytes = [&](std::uint64_t remaining) {
         while (remaining != 0) {
             const auto count = static_cast<std::streamsize>((std::min)(
                 remaining, static_cast<std::uint64_t>(buffer.size())));
-            if (!input.read(buffer.data(), count) || !output.write(buffer.data(), count)) {
+            if (!input.read(buffer.data(), count) || !writeBytes(buffer.data(), count)) {
                 return false;
             }
             remaining -= static_cast<std::uint64_t>(count);
@@ -55,16 +73,22 @@ bool FlacMetadata::Save(const std::filesystem::path& source, const std::filesyst
         if (id3[3] == 4 && (id3[5] & 0x10)) {
             size += 10;
         }
-        output.write(reinterpret_cast<const char*>(id3.data()), id3.size());
+        if (!writeBytes(reinterpret_cast<const char*>(id3.data()), id3.size())) {
+            return fail("leading ID3 archive mismatch or write failure");
+        }
         if (!copyBytes(size) || !input.read(header.data(), header.size())) {
             return fail("truncated leading ID3 tag");
         }
-        spdlog::info("Preserved original leading ID3 tag in the metadata sidecar.");
+        if (!verify) {
+            spdlog::debug("Archived original leading ID3 tag in the temporary metadata sidecar.");
+        }
     }
     if (std::string(header.data(), header.size()) != "fLaC") {
-        return fail("MP3 conversion requires native FLAC, not Ogg FLAC or headerless audio");
+        return fail("Original metadata preservation requires native FLAC, not Ogg FLAC or headerless audio");
     }
-    output.write(header.data(), header.size());
+    if (!writeBytes(header.data(), header.size())) {
+        return fail("FLAC marker archive mismatch or write failure");
+    }
     bool last = false;
     bool first = true;
     while (!last) {
@@ -80,13 +104,15 @@ bool FlacMetadata::Save(const std::filesystem::path& source, const std::filesyst
             return fail("invalid FLAC metadata block");
         }
         first = false;
-        output.write(header.data(), header.size());
+        if (!writeBytes(header.data(), header.size())) {
+            return fail("metadata header archive mismatch or write failure");
+        }
         if (!copyBytes(remaining)) {
             return fail("metadata block read/write failed");
         }
-        if (type == 2 || type == 3 || type == 5 || type >= 7) {
-            spdlog::info("Retained original FLAC block type {} in sidecar; "
-                "this structure is not directly transferable to MP3.", type);
+        if (!verify && (type == 2 || type == 3 || type == 5 || type >= 7)) {
+            spdlog::debug("Retained original FLAC block type {} in temporary sidecar; "
+                "this source structure may not describe the converted audio.", type);
         }
     }
     const auto metadataEnd = input.tellg();
@@ -135,7 +161,15 @@ bool FlacMetadata::Save(const std::filesystem::path& source, const std::filesyst
         if (!copyBytes(static_cast<std::uint64_t>(fileEnd - trailerStart))) {
             return fail("cannot preserve trailing ID3v1/APE metadata");
         }
-        spdlog::info("Preserved original trailing ID3v1/APE metadata in the sidecar.");
+        if (!verify) {
+            spdlog::debug("Archived original trailing ID3v1/APE metadata in the temporary sidecar.");
+        }
+    }
+    if (verify) {
+        if (archive.peek() != std::char_traits<char>::eof() || archive.bad()) {
+            return fail("archive has additional bytes or cannot be read");
+        }
+        return true;
     }
     output.close();
     if (!output) {
@@ -161,8 +195,19 @@ bool FlacMetadata::Save(const std::filesystem::path& source, const std::filesyst
         }
         preparedInput = true;
     }
-    spdlog::info("Preserved all original FLAC metadata blocks in a sidecar (including repeated tags, "
-        "pictures, application data, cue sheets and source technical metadata). "
-        "MP3 tags may be normalized; FLAC seek tables and source checksums do not describe the MP3 audio.");
+    spdlog::debug("Created temporary original-metadata archive; verification and installation are pending.");
     return true;
+}
+}
+
+bool FlacMetadata::Save(const std::filesystem::path& source, const std::filesystem::path& sidecar,
+    const std::filesystem::path& temporaryInput, bool& preparedInput)
+{
+    return Process(source, sidecar, temporaryInput, preparedInput, false);
+}
+
+bool FlacMetadata::Verify(const std::filesystem::path& source, const std::filesystem::path& sidecar)
+{
+    bool unused = false;
+    return Process(source, sidecar, {}, unused, true);
 }

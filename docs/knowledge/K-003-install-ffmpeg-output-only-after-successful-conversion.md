@@ -5,7 +5,7 @@ title: "Install FFmpeg output only after successful conversion"
 area: [FlacConvert]
 status: active
 created: 2026-10-09
-reviewed: 2026-10-10
+reviewed: 2026-11-10
 cites:
   - path: FlacConvert/src/MediaConvertionTask.cpp
     symbol: "MediaConvertionTask::InstallTemporaryOutput"

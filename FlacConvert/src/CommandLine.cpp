@@ -78,7 +78,7 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
             return value.empty() ? "input directory must not be empty" : std::string{};
         });
     convert->add_option("--output-dir", options.outputDirectory,
-        "Destination root; preserves paths relative to input-dir. Defaults to config OutDirectory or the platform default (C:\\tmp on Windows).")
+        "Base output root: <root>/<FLAC|MP3>/<input-folder-name>, preserving relative paths. Defaults to config OutDirectory or the platform default (C:\\tmp on Windows).")
         ->check([](const std::string& value) {
             return value.empty() ? "output directory must not be empty" : std::string{};
         })
@@ -87,7 +87,7 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
         "Replace existing destination files only after each conversion succeeds.");
     add_config_option(convert, options);
     convert->footer(command_footer(
-        "FLAC output: supported inputs become 16-bit/44.1 kHz FLAC with triangular dithering. MP3 output: only native FLAC inputs; libmp3lame VBR quality 0 by default, ID3v2.4 tags/artwork plus an original FLAC metadata sidecar and unchanged non-audio companion files. MP3 retains 44.1/48 kHz; other accepted rates become 48 kHz. Multichannel MP3 requires --downmix-to-stereo. All conversions require verified source depth >=16 and rate >=44100 Hz. Paths are preserved under a separate output directory; sources are never replaced. Existing destinations fail unless --overwrite is supplied.",
+        "FLAC output: supported inputs become 16-bit/44.1 kHz FLAC with triangular dithering, mapped tags/pictures and unchanged non-audio companions. Native FLAC inputs also retain original metadata in .flac.flac-metadata sidecars; source technical fields do not describe the converted audio. MP3 output: only native FLAC inputs; libmp3lame VBR quality 0 by default, ID3v2.4 tags/artwork plus an original FLAC metadata sidecar and unchanged non-audio companion files. MP3 retains 44.1/48 kHz; other accepted rates become 48 kHz. Multichannel MP3 requires --downmix-to-stereo. All conversions require verified source depth >=16 and rate >=44100 Hz. Paths are preserved under a separate output directory; sources are never replaced. Existing destinations fail unless --overwrite is supplied. Both targets stop at the first error and keep completed outputs.",
         "  FlacConvert convert \"D:\\Music\" --output-dir \"E:\\Converted\"\n"
         "  FlacConvert convert \"D:\\Music\" --config \"D:\\settings\\config.json\""));
     convert->callback([&options, &targetFormat, quality, downmix] {

@@ -6,7 +6,7 @@ area: [FlacConvert]
 status: active
 supersedes: [K-004]
 created: 2026-10-10
-reviewed: 2026-10-10
+reviewed: 2026-11-10
 cites:
   - path: FlacConvert/src/MediaConvertionTask.cpp
     symbol: quoteWindowsArgument

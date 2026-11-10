@@ -17,37 +17,54 @@ platform-specific code behind narrow platform abstractions or conditional implem
 | Folder / file | What it is | Read first |
 |---|---|---|
 | `MediaBoost.sln` | The Visual Studio solution | `README.md`, then `FlacConvert/FlacConvert.vcxproj` |
-| `FlacConvert/src/` | Application implementation | The relevant `.cpp` file and matching headers in `FlacConvert/include/` |
-| `FlacConvert/include/` | Application headers | The relevant header and implementation |
+| `FlacConvert/` | The application: components, flows, contracts, schemas | `FlacConvert/DESIGN.md` |
+| `FlacConvert/src/`, `FlacConvert/include/` | Implementation and headers | `FlacConvert/DESIGN.md` component map, then the file |
+| `docs/features/` | User-visible features (F-xxx): behaviour, entry points, acceptance checks | `docs/features/index.md` |
+| `tests/` | Integration and ad-hoc C++ tests (not in the solution) | `README.md` test section |
 | `external/` | Third-party source/SDK dependencies | `FlacConvert/FlacConvert.vcxproj` for expected paths |
+
+## Skills
+
+| Task | Repo skill |
+|---|---|
+| New feature or behaviour change | `.github/skills/feature-development` |
+| Review a diff or PR | `.github/skills/code-review` (with the global code-review skill) |
+| "How does X work / what breaks if I change Y" | `.github/skills/change-impact` |
+| Check docs after a change | `.github/skills/doc-sync` |
 
 ## Build and test
 
-From a Visual Studio Developer PowerShell/Command Prompt with the C++ v143 toolset:
+From a Visual Studio Developer PowerShell/Command Prompt with the C++ v145 toolset:
 
 ```text
 msbuild .\MediaBoost.sln /m /p:Configuration=Debug /p:Platform=x64
 ```
 
-Prefer x64 (C++20, v143); Win32 Debug contains a machine-specific Boost path. The project expects the FFmpeg SDK under
+Prefer x64 (C++20, v145); Win32 Debug contains a machine-specific Boost path. The project expects the FFmpeg SDK under
 `external/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/` and SQLite amalgamation sources under
 `external/sqlite-amalgamation/`. Check prerequisites before building; use matching FFmpeg headers, libraries and runtime
 DLLs, and record the exact build/version when changing dependencies rather than relying on the `latest` folder name.
-The solution has no test project or automated test command. See `.github/instructions/audio-cpp.instructions.md` for
+The solution has no test project. `tests/mp3_conversion.py` is the automated MP3 integration test (command in
+`README.md`); `tests/*.cpp` are built manually against the Debug objects. See `.github/instructions/audio-cpp.instructions.md` for
 audio validation and source-file safety.
 
 ## Where knowledge lives
 
 | Kind | Where | Changes how |
 |---|---|---|
-| What the system is (design, flows, contracts) | `DESIGN.md` next to a component, when present | Kept aligned with behaviour changes |
+| What the system is (design, flows, contracts) | `FlacConvert/DESIGN.md` | Kept aligned with behaviour changes |
+| What users get (features, acceptance checks) | `docs/features/F-xxx-*.md` | Edited when important behaviour changes |
 | Rules for changing it | `.github/instructions/*.instructions.md` (scoped by `applyTo`) | Rewritten |
 | Why: decisions, traps, constraints, preferences, domain facts, known defects | `docs/knowledge/` (one file per entry; start at `docs/knowledge/index.md`) | Appended; the fact is never rewritten, only its status, review date and citations |
 | How-to procedures | `.github/skills/*/SKILL.md` | Versioned with the tooling |
 | Issues and change history | Work items, commits, pull requests | Closed, not edited |
 
 Use the globally installed Project Memory skill and its `kb.ps1` script; do not copy the skill or script into this
-repository. Start with `docs/knowledge/index.md`. This repository currently has no `DESIGN.md`.
+repository. Start with `docs/knowledge/index.md`.
 
 Read applicable scoped instructions and owning design documents before edits. Follow
 `.github/instructions/knowledge-protocol.instructions.md` for knowledge lookup, recording and post-change maintenance.
+For code changes, assess whether important behaviour, design, contracts, schemas or risks changed; update the
+relevant DESIGN and feature entries only when needed. Do not create change-history entries for routine edits.
+For material or uncertain impact, `python tools\doc_impact.py --details` helps locate candidate documents; it is
+advisory, not a substitute for review.

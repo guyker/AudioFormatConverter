@@ -6,7 +6,7 @@ area: [FlacConvert]
 status: active
 supersedes: [K-019]
 created: 2026-10-11
-reviewed: 2026-10-11
+reviewed: 2026-11-10
 cites:
   - path: FlacConvert/src/FlacConvertMain.cpp
     symbol: ConfigureManualMp3

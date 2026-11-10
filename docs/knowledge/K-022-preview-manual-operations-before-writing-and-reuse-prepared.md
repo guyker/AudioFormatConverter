@@ -3,7 +3,8 @@ id: K-022
 kind: decision
 title: "Preview manual operations before writing and reuse prepared inputs"
 area: [FlacConvert]
-status: active
+status: superseded
+superseded_by: K-027
 created: 2026-10-11
 reviewed: 2026-10-11
 cites:

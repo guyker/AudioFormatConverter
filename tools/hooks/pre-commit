@@ -1,0 +1,29 @@
+#!/bin/sh
+# AudioFormatConverter documentation reminder; never blocks a commit.
+
+if [ ! -f "tools/doc_impact.py" ]; then
+    printf '%s\n' "WARNING: tools/doc_impact.py is unavailable; review design and features manually." >&2
+    exit 0
+fi
+
+if command -v python >/dev/null 2>&1 &&
+    python -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+    python tools/doc_impact.py --staged
+    status=$?
+elif command -v python3 >/dev/null 2>&1 &&
+    python3 -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+    python3 tools/doc_impact.py --staged
+    status=$?
+elif command -v py >/dev/null 2>&1 &&
+    py -3 -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+    py -3 tools/doc_impact.py --staged
+    status=$?
+else
+    printf '%s\n' "WARNING: Python 3.8 or newer is unavailable; review design and features manually." >&2
+    exit 0
+fi
+
+if [ "$status" -ne 0 ]; then
+    printf '%s\n' "WARNING: Documentation reminder failed; review design and features manually." >&2
+fi
+exit 0

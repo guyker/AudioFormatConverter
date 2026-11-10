@@ -5,7 +5,7 @@ title: "Preserve original FLAC metadata alongside MP3 output"
 area: [FlacConvert]
 status: active
 created: 2026-10-10
-reviewed: 2026-10-10
+reviewed: 2026-11-10
 cites:
   - path: FlacConvert/src/FlacMetadata.cpp
     symbol: "FlacMetadata::Save"
