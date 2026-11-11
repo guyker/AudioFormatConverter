@@ -31,7 +31,7 @@ It runs either as explicit CLI commands or, with no arguments, as a legacy inter
 | Track/album model | `src/MediaTrack.cpp`, `include/MediaTrack.h`, `include/MediaInformation.h`, `include/MediaAlbum.h` | `MediaTrack` (probe parsing, JSON, comparison, SQLite row), `FFprobeOutput`, `MediaAlbum` |
 | Album collection | `src/AlbumCollection.cpp`, `include/AlbumCollection.h` | Discovery (`AlbumCollection::LoadAlbumsCo`), metadata import, JSON save/load, duplicate search, `AlbumCollection::ExportToDatabase` |
 | Platform adapters | `src/PlatformUtils.cpp`, `include/PlatformUtils.h` | UTF-16/UTF-8, `PlatformUtils::WindowsLongPath`, `PlatformUtils::OpenDirectory` |
-| Utilities | `src/CommonUtils.cpp`, `include/CommonUtils.h`, `src/JsonUtils.cpp`, `include/JsonUtils.h` | UTF-8 path helpers, coroutine `Generator`, JSON helpers |
+| Utilities | `src/CommonUtils.cpp`, `include/CommonUtils.h`, `include/BoundedTaskRunner.h`, `src/JsonUtils.cpp`, `include/JsonUtils.h` | UTF-8 path helpers, coroutine `Generator`, bounded task runner, JSON helpers |
 | Legacy (unused) | `FolderConvert::ConverAudioFolder`, `FolderConvert::ConverAudioFolder2`, `MediaConvertionAsyncTask` | In-place conversion paths with no caller outside themselves; not part of any current flow |
 
 ## Data flow
@@ -155,6 +155,7 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | `OutDirectory` | `C:\tmp` (Windows) / temp dir (K-007) | All outputs |
 | `LogLevel` | 1 (0–6, spdlog levels) | Logger |
 | `UseAsyncFFmpegCalls` | true | Parallel metadata import |
+| `MetadataScanMaxThreads` | 0 (automatic) | Maximum per-album metadata workers; 0 uses hardware concurrency, falling back to 4 |
 | `UseFFmpegLibraryAPI` | true | libav probe vs ffprobe executable |
 | `ExtraAudioQualityMetrics` | false | Peak/RMS/dynamic range analysis |
 | `MinMatchingTracksForDuplicate`, `SizeMatchPercentageThreshold` | 1, 3 | Duplicate search |
@@ -202,7 +203,12 @@ serialized as usable audio metadata.
 ## Threading and process lifetime
 
 - Conversion: single thread; one synchronous FFmpeg child at a time (`_wspawnvp(_P_WAIT)` / `fork`+`execvp`+`waitpid`).
-- Metadata import and duplicate comparison: one `std::async` task per track, joined before the batch is used.
+- Metadata import: when enabled, `BoundedTaskRunner::ForEach` runs a bounded per-album set of worker threads that
+  claim track indexes from an atomic counter.
+  At most `min(valid tracks in album, effective worker cap)` workers run; `MetadataScanMaxThreads=0` selects hardware
+  concurrency (fallback 4). Workers finish before the next album is processed, and exceptions are rethrown after joining.
+  `UseAsyncFFmpegCalls=false` keeps metadata reads sequential.
+- Duplicate comparison: one `std::async` task per track, joined before the comparison is used.
 - `FFmpeg::ffmpeg_log_callback` is process-wide and appends to a mutex-protected buffer.
 - `AppSettingsJson::AppSetting` is a lazily created process-wide instance read from worker threads; initialise it
   before starting tasks.

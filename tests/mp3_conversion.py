@@ -1030,6 +1030,38 @@ class ConversionTests(unittest.TestCase):
         stream = data[0]["Tracks"][0]["streams"][0]
         self.assertEqual(stream["codec_long_name"], "FLAC (Free Lossless Audio Codec)")
 
+    def test_metadata_scan_worker_limit_handles_thousand_track_album(self):
+        album = self.source / "album"
+        album.mkdir()
+        fixture_bytes = self.fixture.read_bytes()
+        for index in range(1000):
+            (album / f"track-{index:04d}.flac").write_bytes(fixture_bytes)
+
+        config = json.loads(self.config.read_text(encoding="utf-8"))
+        config.update({"UseAsyncFFmpegCalls": True, "MetadataScanMaxThreads": 2})
+        config_path = self.work / "bounded-metadata-config.json"
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        result = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                     "--config", config_path)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        output = self.output / self.source.name / f"media_out_{self.source.name}_1.json"
+        data = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(len(data[0]["Tracks"]), 1000)
+
+    def test_metadata_scan_rejects_negative_worker_limit(self):
+        for name, value in (("negative", -1), ("string", "two")):
+            with self.subTest(value=value):
+                config = json.loads(self.config.read_text(encoding="utf-8"))
+                config["MetadataScanMaxThreads"] = value
+                config_path = self.work / f"invalid-metadata-config-{name}.json"
+                config_path.write_text(json.dumps(config), encoding="utf-8")
+
+                result = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                             "--config", config_path)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("MetadataScanMaxThreads", result.stdout + result.stderr)
+
     def test_incomplete_scan_preserves_previous_json_and_accepts_uppercase_extension(self):
         album = self.source / "album"
         album.mkdir()

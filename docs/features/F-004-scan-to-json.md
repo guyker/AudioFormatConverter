@@ -3,9 +3,11 @@
 Status: active
 
 ## Behaviour
-Discovers album folders under a library, probes each `.flac`/`.mp3` track (extension matching is case-insensitive),
-and writes batches of up to
-`AlbumsSplitThreshold` albums to `OutDirectory/<name>/media_out_<name>[_<n>].json`. Previous generated JSON is
+Discovers album folders under a library, probes each `.flac`/`.mp3` track (extension matching is case-insensitive).
+When asynchronous metadata reads are enabled, each album uses a bounded worker group. A positive
+`MetadataScanMaxThreads` sets the cap; the default value `0` selects hardware concurrency (falling back to 4).
+The scan writes batches of up to `AlbumsSplitThreshold` albums to
+`OutDirectory/<name>/media_out_<name>[_<n>].json`. Previous generated JSON is
 replaced per library through staging, backup and rollback; databases and sources are not touched. Scan failures log
 the track path and reason; captured FFmpeg diagnostics can accompany a successfully saved batch as
 `*_ffmpeg_error.json`. JSON preserves format and stream metadata, stream dispositions, and chapter timing/tags. If
@@ -29,6 +31,7 @@ JSON, leaving the previous generated files unchanged.
 - [ ] A malformed or unusable accepted track fails the scan instead of installing an incomplete catalog.
 - [ ] Output directory overlapping the source library is rejected.
 - [ ] Batch count = ceil(albums / `AlbumsSplitThreshold`).
+- [ ] With async metadata reads enabled, scan succeeds when the configured worker cap is lower than the album's track count.
 
 ## Known limitations
 - Only `.flac` and `.mp3` tracks are recorded.

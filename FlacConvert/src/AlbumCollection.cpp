@@ -23,6 +23,7 @@
 #include <iostream>
 
 #include "AlbumCollection.h"
+#include "BoundedTaskRunner.h"
 #include "MediaTrack.h"
 #include "FolderConvert.h"
 #include "JsonUtils.h"
@@ -317,8 +318,6 @@ std::pair<long long, long long> AlbumCollection::GetNumberOfItemsInFolder(std::f
 
 
 
-//currently I have a list of async objects that fills up when I scan each album, at the end of each album, I wait for the completion of all tracks, I want something similar but at the Album list level.in another words I want to improve performance by keeping the track processing queue lenght to N(pre defince number)
-
 //Load all media media information from the preloaded album list (albumList)
 size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr, size_t currentCount, size_t totalCount, bool bAsync)
 {
@@ -348,26 +347,36 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         auto progressInfoPtr = std::make_shared<CommonUtils::ProgressBarInfo>("Processing...", currentCount++, totalCount, name, 20, subProgressInfoPtr);
         CommonUtils::show_progress_bar(progressInfoPtr, CommonUtils::ProgressBarType::Progress);
 
-        //Album tracks list holder 
-        std::vector<std::tuple<MediaLoadingFuture, FFprobeOutput&, std::optional<std::wstring>&>> asyncFutureList;
+        struct MetadataTarget
+        {
+            std::filesystem::path path;
+            FFprobeOutput* mediaInfo;
+            std::optional<std::wstring>* mediaInfoString;
+        };
+        std::vector<MetadataTarget> metadataTargets;
+        if (bAsync)
+        {
+            metadataTargets.reserve(trackList.size());
+        }
 
         for (auto& [trackName, size, mediaInfo, mediaInfoString, lastError] : trackList)
         {
             std::filesystem::path trackPath = albumPath.path() / std::filesystem::path(trackName);
 
             if (MediaTrack::IsValidMedia(trackPath)) {
-                auto path2Fixed = trackPath.lexically_normal().native();
-
 				auto bIncludeAudioQualityMetrics = AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics;
                 if (bAsync)
                 {
-                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMetadataInfoFromFile, path2Fixed, bIncludeAudioQualityMetrics);
-                    asyncFutureList.push_back({ std::move(miFuture), mediaInfo, mediaInfoString });
-
+                    metadataTargets.push_back({
+                        trackPath.lexically_normal(),
+                        &mediaInfo,
+                        &mediaInfoString
+                    });
                 }
                 else
                 {
-                    auto [mi_ret, jsonString_ret] = MediaTrack::ReadMetadataInfoFromFile(path2Fixed, bIncludeAudioQualityMetrics);
+                    auto [mi_ret, jsonString_ret] = MediaTrack::ReadMetadataInfoFromFile(
+                        trackPath.lexically_normal().native(), bIncludeAudioQualityMetrics);
                     mediaInfoString = jsonString_ret;
                     mediaInfo = mi_ret;
                     CommonUtils::show_progress_bar(progressInfoPtr, CommonUtils::ProgressBarType::SubProgress);
@@ -377,11 +386,22 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
 
         if (bAsync)
         {
-            for (auto& [furure_ret, mediaInfo, mediaInfoString] : asyncFutureList)
+            if (!metadataTargets.empty())
             {
-                auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
-                mediaInfo = mediaInfo_ret;
-                mediaInfoString = mediaInfoString_ret;
+                const auto settings = AppSettingsJson::AppSetting();
+                const unsigned int hardwareConcurrency = std::thread::hardware_concurrency();
+                const size_t automaticLimit = hardwareConcurrency == 0 ? 4 : hardwareConcurrency;
+                const size_t threadLimit = settings->MetadataScanMaxThreads > 0
+                    ? static_cast<size_t>(settings->MetadataScanMaxThreads)
+                    : automaticLimit;
+                const bool bIncludeAudioQualityMetrics = settings->ExtraAudioQualityMetrics;
+                BoundedTaskRunner::ForEach(metadataTargets.size(), threadLimit, [&](size_t targetIndex) {
+                    auto& target = metadataTargets[targetIndex];
+                    auto [mediaInfo, mediaInfoString] = MediaTrack::ReadMetadataInfoFromFile(
+                        target.path.native(), bIncludeAudioQualityMetrics);
+                    *target.mediaInfo = std::move(mediaInfo);
+                    *target.mediaInfoString = std::move(mediaInfoString);
+                });
             }
         }
     }

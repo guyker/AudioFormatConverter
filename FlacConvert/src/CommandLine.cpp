@@ -20,6 +20,7 @@ const std::string kConfigurationHelp =
     "    isActive (bool, default true), mediaPath (path), mediaName (string, defaults to the path's folder name): legacy menu properties.\n"
     "  LogLevel (integer 0-6, default 1): subcommand logging level (trace, debug, info, warn, err, critical, off).\n"
     "  UseAsyncFFmpegCalls (bool, default true): parallel metadata reads while scanning.\n"
+    "  MetadataScanMaxThreads (integer >=0, default 0): per-album metadata worker cap; 0 uses hardware concurrency (fallback 4).\n"
     "  UseFFmpegLibraryAPI (bool, default true): use FFmpeg libraries rather than the ffprobe executable for metadata.\n"
     "  ExtraAudioQualityMetrics (bool, default false): include extended audio-quality analysis for duplicate matches.\n"
     "  MinMatchingTracksForDuplicate (integer, default 1): minimum matching tracks for a duplicate candidate.\n"

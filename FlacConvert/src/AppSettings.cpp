@@ -249,6 +249,7 @@ std::string AppSettingsJson::toJsonString() const {
 
     doc.AddMember("LogLevel", LogLevel, allocator);
     doc.AddMember("UseAsyncFFmpegCalls", UseAsyncFFmpegCalls, allocator);
+    doc.AddMember("MetadataScanMaxThreads", MetadataScanMaxThreads, allocator);
     doc.AddMember("UseFFmpegLibraryAPI", UseFFmpegLibraryAPI, allocator);
     doc.AddMember("ExtraAudioQualityMetrics", ExtraAudioQualityMetrics, allocator);
     doc.AddMember("MinMatchingTracksForDuplicate", MinMatchingTracksForDuplicate, allocator);
@@ -293,6 +294,11 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
 
     if (doc.HasParseError() || !doc.IsObject()) {
         std::cerr << "Error: Configuration must be a valid JSON object." << std::endl;
+        return false;
+    }
+    if (doc.HasMember("MetadataScanMaxThreads") &&
+        (!doc["MetadataScanMaxThreads"].IsInt() || doc["MetadataScanMaxThreads"].GetInt() < 0)) {
+        spdlog::error("MetadataScanMaxThreads must be a non-negative integer.");
         return false;
     }
 
@@ -358,6 +364,9 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
     }
     if (doc.HasMember("UseAsyncFFmpegCalls") && doc["UseAsyncFFmpegCalls"].IsBool()) {
         UseAsyncFFmpegCalls = doc["UseAsyncFFmpegCalls"].GetBool();
+    }
+    if (doc.HasMember("MetadataScanMaxThreads")) {
+        MetadataScanMaxThreads = doc["MetadataScanMaxThreads"].GetInt();
     }
     if (doc.HasMember("UseFFmpegLibraryAPI") && doc["UseFFmpegLibraryAPI"].IsBool()) {
         UseFFmpegLibraryAPI = doc["UseFFmpegLibraryAPI"].GetBool();

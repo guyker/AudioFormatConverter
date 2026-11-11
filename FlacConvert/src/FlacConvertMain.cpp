@@ -1379,6 +1379,7 @@ int RunLegacyMenu()
 
     spdlog::info("Log Level: {}", AppSettingsJson::AppSetting()->LogLevel);
     spdlog::info("Use Async FFmpeg Calls: {}", AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+    spdlog::info("Metadata Scan Max Threads: {}", AppSettingsJson::AppSetting()->MetadataScanMaxThreads);
     spdlog::info("Use ffmpeg Library API: {}", AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI);
     spdlog::info("Extra Audio Quality Metrics: {}", AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics);
     spdlog::info("Albums Split Threshold: {}", AppSettingsJson::AppSetting()->AlbumsSplitThreshold);

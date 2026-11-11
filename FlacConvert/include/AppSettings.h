@@ -131,6 +131,7 @@ struct AppSettingsJson
 
 	int LogLevel { 1 };
 	bool UseAsyncFFmpegCalls { true };
+	int MetadataScanMaxThreads{ 0 };
 	bool UseFFmpegLibraryAPI { true };
 	bool ExtraAudioQualityMetrics{ false };
 	int MinMatchingTracksForDuplicate{ 1 };
@@ -163,6 +164,7 @@ struct AppSettingsJson
 			AppSettingsJson::DefaultDatabaseFileName,
 			1,
 			true, //UseAsyncFFmpegCalls
+			0, //MetadataScanMaxThreads (automatic)
 			true, //UseFFmpegLibraryAPI
 			false, //ExtraAudioQualityMetrics
 			1, //MinMatchingTracksForDuplicate
