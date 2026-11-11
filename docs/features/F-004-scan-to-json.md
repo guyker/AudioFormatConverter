@@ -3,10 +3,14 @@
 Status: active
 
 ## Behaviour
-Discovers album folders under a library, probes each `.flac`/`.mp3` track and writes batches of up to
+Discovers album folders under a library, probes each `.flac`/`.mp3` track (extension matching is case-insensitive),
+and writes batches of up to
 `AlbumsSplitThreshold` albums to `OutDirectory/<name>/media_out_<name>[_<n>].json`. Previous generated JSON is
-replaced per library through staging, backup and rollback; databases and sources are not touched. Parse problems are
-written to `*_error.json` / `*_ffmpeg_error.json`.
+replaced per library through staging, backup and rollback; databases and sources are not touched. Scan failures log
+the track path and reason; captured FFmpeg diagnostics can accompany a successfully saved batch as
+`*_ffmpeg_error.json`. JSON preserves format and stream metadata, stream dispositions, and chapter timing/tags. If
+any accepted track has an extraction/parse error or no usable audio stream, the scan fails before installing staged
+JSON, leaving the previous generated files unchanged.
 
 ## Entry points
 - `FlacConvert scan <library> [--output-dir]` → `FlacConvertMain.cpp#RunWithArguments`
@@ -21,6 +25,8 @@ written to `*_error.json` / `*_ffmpeg_error.json`.
 ## Acceptance checks
 - [ ] Output JSON parses and contains one object per album with non-empty `Tracks`.
 - [ ] A failed scan leaves the previous `media_out_*.json` files unchanged.
+- [ ] Supported extensions are matched case-insensitively; chapters and attached-picture disposition are retained.
+- [ ] A malformed or unusable accepted track fails the scan instead of installing an incomplete catalog.
 - [ ] Output directory overlapping the source library is rejected.
 - [ ] Batch count = ceil(albums / `AlbumsSplitThreshold`).
 

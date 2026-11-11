@@ -882,6 +882,87 @@ class ConversionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertTrue((destination / f"media_out_{stem}.db").exists())
 
+    def test_database_import_round_trips_string_fields_without_format_tags(self):
+        json_directory = self.work / "metadata"
+        json_directory.mkdir()
+        json_file = json_directory / "media_out_metadata_1.json"
+        json_file.write_text(json.dumps([{
+            "Album Path": str(self.source / "album"),
+            "Folder": "album",
+            "Tracks": [{
+                "format": {
+                    "filename": str(self.track),
+                    "size": "1234",
+                    "nb_streams": 1,
+                    "format_name": "flac",
+                    "format_long_name": "raw FLAC",
+                    "start_time": "0.250000",
+                    "duration": "1.250000",
+                    "bit_rate": "320000",
+                    "probe_score": 100
+                },
+                "streams": [{
+                    "index": 0,
+                    "codec_name": "flac",
+                    "codec_type": "audio",
+                    "sample_rate": "44100",
+                    "channels": 2,
+                    "channel_layout": "stereo",
+                    "bits_per_sample": 16,
+                    "bit_rate": "320000",
+                    "time_base": "1/44100",
+                    "r_frame_rate": "0/0",
+                    "avg_frame_rate": "0/0",
+                    "start_pts": 11025,
+                    "start_time": 0.25,
+                    "duration_ts": 55125,
+                    "nb_frames": "12",
+                    "disposition": {"attached_pic": 0}
+                }]
+            }]
+        }]), encoding="utf-8")
+
+        database_output = self.work / "database-output"
+        result = run(ARGS.converter, "db", "import", json_directory, "--output-dir", database_output)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        database = database_output / "metadata" / "media_out_metadata.db"
+        with closing(sqlite3.connect(database)) as connection:
+            row = connection.execute(
+                "SELECT file_size, start_time, duration, bit_rate, title, stream1_index, "
+                "stream1_codec_name, stream1_sample_rate, stream1_channels, stream1_start_time "
+                "FROM TracksDB").fetchone()
+        self.assertEqual(row[0], 1234)
+        self.assertAlmostEqual(row[1], 0.25)
+        self.assertAlmostEqual(row[2], 1.25)
+        self.assertEqual(row[3], 320000)
+        self.assertIsNone(row[4])
+        self.assertEqual(row[5:9], (0, "flac", "44100", 2))
+        self.assertAlmostEqual(row[9], 0.25)
+
+    def test_database_import_rejects_malformed_track_without_partial_rows(self):
+        json_directory = self.work / "malformed-metadata"
+        json_directory.mkdir()
+        json_file = json_directory / "media_out_malformed_1.json"
+        valid_track = {
+            "format": {"filename": str(self.track), "format_name": "flac"},
+            "streams": [{"codec_type": "audio", "codec_name": "flac"}]
+        }
+        json_file.write_text(json.dumps([{
+            "Album Path": str(self.source / "album"),
+            "Folder": "album",
+            "Tracks": [valid_track, {"streams": []}]
+        }]), encoding="utf-8")
+
+        database_output = self.work / "malformed-database-output"
+        result = run(ARGS.converter, "db", "import", json_directory, "--output-dir", database_output)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        database = database_output / "malformed-metadata" / "media_out_malformed-metadata.db"
+        if database.exists():
+            with closing(sqlite3.connect(database)) as connection:
+                row_count = connection.execute("SELECT COUNT(*) FROM TracksDB").fetchone()[0]
+            self.assertEqual(row_count, 0)
+
     def test_manual_scan_matches_explicit_scan_across_batches(self):
         for name in ("a", "b", "c"):
             album = self.source / name
@@ -930,6 +1011,87 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(data[0]["Tracks"][0]["format"]["tags"]["title"], "Title \u97f3\u697d")
         if os.name != "nt":
             self.assertFalse(marker.exists(), "Filename was interpreted as shell syntax")
+
+    def test_async_ffprobe_scan_retains_raw_stream_fields(self):
+        album = self.source / "album"
+        album.mkdir()
+        (album / "track.flac").write_bytes(self.fixture.read_bytes())
+
+        config = json.loads(self.config.read_text(encoding="utf-8"))
+        config.update({"UseFFmpegLibraryAPI": False, "UseAsyncFFmpegCalls": True})
+        config_path = self.work / "async-ffprobe-config.json"
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        result = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                     "--config", config_path)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        output = self.output / self.source.name / f"media_out_{self.source.name}_1.json"
+        data = json.loads(output.read_text(encoding="utf-8"))
+        stream = data[0]["Tracks"][0]["streams"][0]
+        self.assertEqual(stream["codec_long_name"], "FLAC (Free Lossless Audio Codec)")
+
+    def test_incomplete_scan_preserves_previous_json_and_accepts_uppercase_extension(self):
+        album = self.source / "album"
+        album.mkdir()
+        track = album / "track.FLAC"
+        track.write_bytes(self.fixture.read_bytes())
+        config = json.loads(self.config.read_text(encoding="utf-8"))
+        config.update({"UseFFmpegLibraryAPI": False, "UseAsyncFFmpegCalls": False})
+        config_path = self.work / "incomplete-scan-config.json"
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+
+        result = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                     "--config", config_path)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = self.output / self.source.name / f"media_out_{self.source.name}_1.json"
+        previous = output.read_bytes()
+        data = json.loads(previous)
+        self.assertEqual(len(data[0]["Tracks"]), 1)
+
+        track.write_bytes(b"")
+        result = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                     "--config", config_path)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(output.read_bytes(), previous)
+
+    def test_scan_retains_chapters_and_attached_picture_disposition(self):
+        album = self.source / "album"
+        album.mkdir()
+        chapter_metadata = self.work / "chapters.txt"
+        chapter_metadata.write_text(
+            ";FFMETADATA1\n"
+            "[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=600\ntitle=First chapter\n"
+            "[CHAPTER]\nTIMEBASE=1/1000\nSTART=600\nEND=1300\ntitle=Second chapter\n",
+            encoding="utf-8")
+        chapter_track = album / "chapters.flac"
+        checked(ARGS.ffmpeg, "-y", "-v", "error", "-f", "lavfi", "-i",
+                "sine=frequency=997:sample_rate=48000:duration=1.3", "-i", chapter_metadata,
+                "-map", "0:a:0", "-map_metadata", "1", "-map_chapters", "1",
+                "-c:a", "flac", "-f", "matroska", chapter_track)
+
+        artwork_track = album / "artwork.flac"
+        checked(ARGS.ffmpeg, "-y", "-v", "error", "-i", self.fixture, "-i",
+                self.root / "image.png", "-map", "0:a:0", "-map", "1:v:0",
+                "-c:a", "copy", "-c:v", "copy", "-disposition:v", "attached_pic", artwork_track)
+
+        config = json.loads(self.config.read_text(encoding="utf-8"))
+        config["UseFFmpegLibraryAPI"] = False
+        config_path = self.work / "chapter-ffprobe-config.json"
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        result = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                     "--config", config_path)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = self.output / self.source.name / f"media_out_{self.source.name}_1.json"
+        data = json.loads(output.read_text(encoding="utf-8"))
+        tracks = {Path(track["format"]["filename"]).name: track for track in data[0]["Tracks"]}
+        self.assertEqual(len(tracks["chapters.flac"]["chapters"]), 2)
+        self.assertEqual(tracks["chapters.flac"]["chapters"][0]["tags"]["title"], "First chapter")
+        chapter_stream = tracks["chapters.flac"]["streams"][0]
+        self.assertEqual(chapter_stream["r_frame_rate"], "0/0")
+        self.assertTrue(chapter_stream["time_base"].count("/") == 1)
+        artwork_stream = next(stream for stream in tracks["artwork.flac"]["streams"]
+                              if stream["codec_type"] == "video")
+        self.assertEqual(artwork_stream["disposition"]["attached_pic"], 1)
 
     def test_scan_sort_uses_album_artist_order(self):
         for folder, artist in (("a", "Zebra"), ("b", "Alpha"), ("c", "Beta")):

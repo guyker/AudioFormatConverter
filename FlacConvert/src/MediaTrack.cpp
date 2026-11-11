@@ -10,6 +10,9 @@
 #include <filesystem>
 #include <fstream>
 #include <codecvt>
+#include <charconv>
+#include <cmath>
+#include <limits>
 
 #include <spdlog/spdlog.h>
 
@@ -19,6 +22,69 @@
 #include "JsonUtils.h"
 #include "AppSettings.h"
 
+namespace {
+
+template <typename T>
+std::optional<T> parseIntegerMember(const rapidjson::Value& object, const char* name)
+{
+    if (auto value = JsonUtils::tryParseMember<T>(object, name)) {
+        return value;
+    }
+    if constexpr (std::is_unsigned_v<T>) {
+        if (auto signedValue = JsonUtils::tryParseMember<int64_t>(object, name);
+            signedValue && *signedValue >= 0 &&
+            static_cast<uint64_t>(*signedValue) <= std::numeric_limits<T>::max()) {
+            return static_cast<T>(*signedValue);
+        }
+    }
+    const auto text = JsonUtils::tryParseMember<std::string>(object, name);
+    if (!text) {
+        return std::nullopt;
+    }
+    T value{};
+    const auto [end, error] = std::from_chars(text->data(), text->data() + text->size(), value);
+    if (error == std::errc{} && end == text->data() + text->size()) {
+        return value;
+    }
+    return std::nullopt;
+}
+
+std::optional<double> parseDoubleMember(const rapidjson::Value& object, const char* name)
+{
+    if (auto value = JsonUtils::tryParseMember<double>(object, name)) {
+        return value;
+    }
+    if (auto value = parseIntegerMember<int64_t>(object, name)) {
+        return static_cast<double>(*value);
+    }
+    const auto text = JsonUtils::tryParseMember<std::string>(object, name);
+    if (!text) {
+        return std::nullopt;
+    }
+    double value = 0.0;
+    const auto [end, error] = std::from_chars(
+        text->data(), text->data() + text->size(), value, std::chars_format::general);
+    if (error == std::errc{} && end == text->data() + text->size() && std::isfinite(value)) {
+        return value;
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> parseStringMember(const rapidjson::Value& object, const char* name)
+{
+    if (auto value = JsonUtils::tryParseMember<std::string>(object, name)) {
+        return value;
+    }
+    if (auto value = parseIntegerMember<int64_t>(object, name)) {
+        return std::to_string(*value);
+    }
+    if (auto value = parseDoubleMember(object, name)) {
+        return std::to_string(*value);
+    }
+    return std::nullopt;
+}
+
+}
 
 //returns media information (json string and media objec) from a media file (on file system)
 std::tuple<FFprobeOutput, std::optional<std::wstring>> MediaTrack::ReadMetadataInfoFromFile(std::filesystem::path mediaFilePath, const bool bIncludeAudioQualityMetrics)
@@ -65,23 +131,31 @@ bool TryParseFFprobeFormat(const Value& doc, FFprobeOutput &mediaInfo)
 
         const auto& formatTag = doc["format"];
         if (auto value = JsonUtils::tryParseMember<std::string>(formatTag, "filename")) { format.filename = *value; }
-        if (auto value = JsonUtils::tryParseMember<uint64_t>(formatTag, "fs_file_size")) { format.fs_file_size = value; }
-        if (auto value = JsonUtils::tryParseMember<int64_t>(formatTag, "file_size")) { format.file_size = value; }
-        if (auto value = JsonUtils::tryParseMember<std::string>(formatTag, "url")) { format.filename = *value; }
+        if (auto value = parseIntegerMember<int64_t>(formatTag, "fs_file_size"); value && *value >= 0) {
+            format.fs_file_size = static_cast<uint64_t>(*value);
+        }
+        if (auto value = parseIntegerMember<int64_t>(formatTag, "file_size")) { format.file_size = *value; }
+        else if (auto value = parseIntegerMember<int64_t>(formatTag, "size")) { format.file_size = *value; }
+        if (auto value = JsonUtils::tryParseMember<std::string>(formatTag, "url")) { format.url = *value; }
 
-        if (auto value = JsonUtils::tryParseMember<int>(formatTag, "nb_streams")) { format.nb_streams = *value; }
-        if (auto value = JsonUtils::tryParseMember<int>(formatTag, "nb_programs")) { format.nb_programs = *value; }
-        if (auto value = JsonUtils::tryParseMember<int>(formatTag, "nb_stream_groups")) { format.nb_stream_groups = *value; }
-        if (auto value = JsonUtils::tryParseMember<int>(formatTag, "nb_chapters")) { format.nb_chapters = *value; }
+        if (auto value = parseIntegerMember<int>(formatTag, "ctx_flags")) { format.ctx_flags = *value; }
+        if (auto value = parseIntegerMember<int>(formatTag, "nb_streams")) { format.nb_streams = *value; }
+        if (auto value = parseIntegerMember<int>(formatTag, "nb_programs")) { format.nb_programs = *value; }
+        if (auto value = parseIntegerMember<unsigned int>(formatTag, "nb_stream_groups")) { format.nb_stream_groups = *value; }
+        if (auto value = parseIntegerMember<unsigned int>(formatTag, "nb_chapters")) { format.nb_chapters = *value; }
 
-        if (auto format_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_name")) { format.format_name = *format_name; }
-        if (auto format_long_name = JsonUtils::tryParseMember<std::string>(formatTag, "format_long_name")) { format.format_long_name = *format_long_name; }
-        if (auto start_time = JsonUtils::tryParseMember<std::optional<std::string>>(formatTag, "start_time")) { format.start_time = std::stoll(*start_time.value_or("0")); }
-        if (auto duration = JsonUtils::tryParseMember<std::optional<std::string>>(formatTag, "duration")) { format.duration = std::stod(*duration.value_or("0")); }
-        if (auto bit_rate = JsonUtils::tryParseMember<std::string>(formatTag, "bit_rate")) { format.bit_rate = std::stoll(bit_rate.value_or("0")); }
-        if (auto probe_score = JsonUtils::tryParseMember<int>(formatTag, "probe_score")) { format.probe_score = *probe_score; }
+        if (auto value = JsonUtils::tryParseMember<std::string>(formatTag, "codec_name")) { format.audio_codec_name = *value; }
+        if (auto value = JsonUtils::tryParseMember<std::string>(formatTag, "format_name")) { format.format_name = *value; }
+        if (auto value = JsonUtils::tryParseMember<std::string>(formatTag, "format_long_name")) { format.format_long_name = *value; }
+        if (auto value = parseDoubleMember(formatTag, "start_time")) { format.start_time = *value; }
+        if (auto value = parseDoubleMember(formatTag, "duration")) { format.duration = *value; }
+        if (auto value = parseIntegerMember<int64_t>(formatTag, "bit_rate")) { format.bit_rate = *value; }
+        if (auto value = parseIntegerMember<unsigned int>(formatTag, "packet_size")) { format.packet_size = *value; }
+        if (auto value = parseIntegerMember<int>(formatTag, "max_delay")) { format.max_delay = *value; }
+        if (auto value = parseIntegerMember<int>(formatTag, "flags")) { format.flags = *value; }
+        if (auto value = parseIntegerMember<int>(formatTag, "probe_score")) { format.probe_score = *value; }
 
-        if (auto value = JsonUtils::tryParseMember<int>(formatTag, "audio_codec_id")) { format.audio_codec_id = static_cast<AVCodecID>(*value); }
+        if (auto value = parseIntegerMember<int>(formatTag, "audio_codec_id")) { format.audio_codec_id = static_cast<AVCodecID>(*value); }
 
         if (formatTag.HasMember("tags") && formatTag["tags"].IsObject()) {
             const rapidjson::Value& jsonValue = formatTag["tags"];
@@ -102,28 +176,54 @@ bool TryParseFFprobeStreams(const Value& doc, FFprobeOutput& mediaInfo)
 
     if (doc.HasMember("streams") && doc["streams"].IsArray()) {
         for (const auto& s : doc["streams"].GetArray()) {
+            if (!s.IsObject()) {
+                continue;
+            }
             Stream stream;
-            stream.index = s.HasMember("index") && s["index"].IsInt() ? s["index"].GetInt() : 0;
-            stream.codec_name = s.HasMember("codec_name") && s["codec_name"].IsString() ? std::optional<std::string>(s["codec_name"].GetString()) : std::nullopt;
-            stream.codec_type = s.HasMember("codec_type") && s["codec_type"].IsString() ? std::optional<std::string>(s["codec_type"].GetString()) : std::nullopt;
-            stream.codec_time_base = s.HasMember("codec_time_base") && s["codec_time_base"].IsString() ? std::optional<std::string>(s["codec_time_base"].GetString()) : std::nullopt;
-            stream.codec_tag_string = s.HasMember("codec_tag_string") && s["codec_tag_string"].IsString() ? std::optional<std::string>(s["codec_tag_string"].GetString()) : std::nullopt;
-            stream.codec_tag = s.HasMember("codec_tag") && s["codec_tag"].IsString() ? std::optional<std::string>(s["codec_tag"].GetString()) : std::nullopt;
-            stream.sample_fmt = s.HasMember("sample_fmt") && s["sample_fmt"].IsString() ? std::optional<std::string>(s["sample_fmt"].GetString()) : std::nullopt;
-            stream.sample_rate = s.HasMember("sample_rate") && s["sample_rate"].IsString() ? std::optional<std::string>(s["sample_rate"].GetString()) : std::nullopt;
-            stream.channels = s.HasMember("channels") && s["channels"].IsInt() ? std::optional<int>(s["channels"].GetInt()) : std::nullopt;
-            stream.channel_layout = s.HasMember("channel_layout") && s["channel_layout"].IsString() ? std::optional<std::string>(s["channel_layout"].GetString()) : std::nullopt;
-            stream.bit_rate = s.HasMember("bit_rate") && s["bit_rate"].IsInt64() ? std::optional<int64_t>(s["bit_rate"].GetInt64()) : std::nullopt;
-            stream.bits_per_sample = s.HasMember("bits_per_sample") && s["bits_per_sample"].IsInt() ? std::optional<int>(s["bits_per_sample"].GetInt()) : std::nullopt;
-            stream.frame_size = s.HasMember("frame_size") && s["frame_size"].IsInt() ? std::optional<int>(s["frame_size"].GetInt()) : std::nullopt;
-            stream.nb_frames = s.HasMember("nb_frames") && s["nb_frames"].IsInt64() ? std::optional<int64_t>(s["nb_frames"].GetInt64()) : std::nullopt;
-            stream.r_frame_rate = s.HasMember("r_frame_rate") && s["r_frame_rate"].IsString() ? std::optional<std::string>(s["r_frame_rate"].GetString()) : std::nullopt;
-            stream.avg_frame_rate = s.HasMember("avg_frame_rate") && s["avg_frame_rate"].IsString() ? std::optional<std::string>(s["avg_frame_rate"].GetString()) : std::nullopt;
-            stream.time_base = s.HasMember("time_base") && s["time_base"].IsString() ? std::optional<std::string>(s["time_base"].GetString()) : std::nullopt;
-            stream.start_pts = s.HasMember("start_pts") && s["start_pts"].IsInt64() ? std::optional<int64_t>(s["start_pts"].GetInt64()) : std::nullopt;
-            stream.start_time = s.HasMember("start_time") && s["start_time"].IsInt64() ? std::optional<int64_t>(s["start_time"].GetInt64()) : std::nullopt;
-            stream.duration_ts = s.HasMember("duration_ts") && s["duration_ts"].IsInt64() ? std::optional<int64_t>(s["duration_ts"].GetInt64()) : std::nullopt;
-            stream.duration = s.HasMember("duration") && s["duration"].IsString() ? std::optional<std::string>(s["duration"].GetString()) : std::nullopt;
+            stream.index = parseIntegerMember<int>(s, "index").value_or(0);
+            stream.codec_name = parseStringMember(s, "codec_name");
+            stream.codec_long_name = parseStringMember(s, "codec_long_name");
+            stream.codec_type = parseStringMember(s, "codec_type");
+            stream.codec_time_base = parseStringMember(s, "codec_time_base");
+            stream.codec_tag_string = parseStringMember(s, "codec_tag_string");
+            stream.codec_tag = parseStringMember(s, "codec_tag");
+            stream.sample_fmt = parseStringMember(s, "sample_fmt");
+            stream.sample_rate = parseStringMember(s, "sample_rate");
+            stream.channels = parseIntegerMember<int>(s, "channels");
+            stream.channel_layout = parseStringMember(s, "channel_layout");
+            stream.bit_rate = parseIntegerMember<int64_t>(s, "bit_rate");
+            stream.bits_per_sample = parseIntegerMember<int>(s, "bits_per_sample");
+            stream.frame_size = parseIntegerMember<int>(s, "frame_size");
+            stream.nb_frames = parseIntegerMember<int64_t>(s, "nb_frames");
+            stream.r_frame_rate = parseStringMember(s, "r_frame_rate");
+            stream.avg_frame_rate = parseStringMember(s, "avg_frame_rate");
+            stream.time_base = parseStringMember(s, "time_base");
+            stream.start_pts = parseIntegerMember<int64_t>(s, "start_pts");
+            stream.start_time = parseDoubleMember(s, "start_time");
+            stream.duration_ts = parseIntegerMember<int64_t>(s, "duration_ts");
+            stream.duration = parseStringMember(s, "duration");
+            if (s.HasMember("disposition") && s["disposition"].IsObject()) {
+                const auto& jsonDisposition = s["disposition"];
+                Disposition disposition;
+                const auto parseFlag = [&jsonDisposition](const char* name, int& flag) {
+                    if (auto value = parseIntegerMember<int>(jsonDisposition, name)) {
+                        flag = *value;
+                    }
+                };
+                parseFlag("default", disposition.default_stream);
+                parseFlag("dub", disposition.dub);
+                parseFlag("original", disposition.original);
+                parseFlag("comment", disposition.comment);
+                parseFlag("lyrics", disposition.lyrics);
+                parseFlag("karaoke", disposition.karaoke);
+                parseFlag("forced", disposition.forced);
+                parseFlag("hearing_impaired", disposition.hearing_impaired);
+                parseFlag("visual_impaired", disposition.visual_impaired);
+                parseFlag("clean_effects", disposition.clean_effects);
+                parseFlag("attached_pic", disposition.attached_pic);
+                parseFlag("timed_thumbnails", disposition.timed_thumbnails);
+                stream.disposition = disposition;
+            }
             if (s.HasMember("tags") && s["tags"].IsObject()) {
                 stream.tags = JsonUtils::GetKeyValueMap(s["tags"]);
             }
@@ -135,12 +235,41 @@ bool TryParseFFprobeStreams(const Value& doc, FFprobeOutput& mediaInfo)
     return parsed;
 }
 
+bool TryParseFFprobeChapters(const Value& doc, FFprobeOutput& mediaInfo)
+{
+    if (!doc.HasMember("chapters") || !doc["chapters"].IsArray()) {
+        return false;
+    }
+
+    for (const auto& value : doc["chapters"].GetArray()) {
+        if (!value.IsObject()) {
+            continue;
+        }
+        Chapter chapter;
+        if (auto id = parseIntegerMember<int64_t>(value, "id")) { chapter.id = *id; }
+        if (auto timeBase = parseStringMember(value, "time_base")) { chapter.time_base = *timeBase; }
+        if (auto start = parseIntegerMember<int64_t>(value, "start")) { chapter.start = *start; }
+        if (auto startTime = parseStringMember(value, "start_time")) { chapter.start_time = *startTime; }
+        if (auto end = parseIntegerMember<int64_t>(value, "end")) { chapter.end = *end; }
+        if (auto endTime = parseStringMember(value, "end_time")) { chapter.end_time = *endTime; }
+        if (value.HasMember("tags") && value["tags"].IsObject()) {
+            chapter.tags = JsonUtils::GetKeyValueMap(value["tags"]);
+        }
+        mediaInfo.chapters.push_back(std::move(chapter));
+    }
+    return true;
+}
+
 FFprobeOutput MediaTrack::ParseFFprobeInformation(const Value& doc)
 {
     FFprobeOutput mediaInfo;
+    if (!doc.IsObject()) {
+        return mediaInfo;
+    }
 
     TryParseFFprobeFormat(doc, mediaInfo);
     TryParseFFprobeStreams(doc, mediaInfo);
+    TryParseFFprobeChapters(doc, mediaInfo);
 
     return mediaInfo;
 }
@@ -175,11 +304,11 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
             json << "    \"dynamic_range_db\": " << audio_quality.dynamic_range_db << ",\n";
             json << "    \"clipped_samples\": " << audio_quality.clipped_samples << ",\n";
             json << "    \"total_samples\": " << audio_quality.total_samples << ",\n";
-			json << "    \"noise_floor_rms\": \"" << audio_quality.noise_floor_rms << "\",\n";
-			json << "    \"estimated_snr_db\": \"" << audio_quality.estimated_snr_db << "\",\n";
+			json << "    \"noise_floor_rms\": " << audio_quality.noise_floor_rms << ",\n";
+			json << "    \"estimated_snr_db\": " << audio_quality.estimated_snr_db << ",\n";
 
-            json << "    \"low_noise_floor_rms\": \"" << (audio_quality.low_noise_floor_rms ? "true" : "false") << "\",\n";
-            json << "    \"high_noise_comb\": \"" << (audio_quality.high_noise_comb ? "true" : "false") << "\",\n";
+			json << "    \"low_noise_floor_rms\": " << (audio_quality.low_noise_floor_rms ? "true" : "false") << ",\n";
+			json << "    \"high_noise_comb\": " << (audio_quality.high_noise_comb ? "true" : "false") << ",\n";
 
             json << "    \"samples_too_big\": " << audio_quality.samples_too_big << ",\n";
             json << "    \"samples_negative\": " << audio_quality.samples_negative << "";
@@ -215,10 +344,10 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
 
 
         if (fmt.start_time) {
-            json << ",\n    \"start_time\": \"" << *fmt.start_time << "\"";
+            json << ",\n    \"start_time\": \"" << std::to_string(*fmt.start_time) << "\"";
         }
         if (fmt.duration) {
-            json << ",\n    \"duration\": \"" << std::fixed << std::setprecision(3) << *fmt.duration << "\"";
+            json << ",\n    \"duration\": \"" << std::to_string(*fmt.duration) << "\"";
         }
         if (fmt.bit_rate) {
             json << ",\n    \"bit_rate\": \"" << *fmt.bit_rate << "\"";
@@ -257,6 +386,9 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
             if (s.codec_name) {
                 json << ",\n      \"codec_name\": \"" << JsonUtils::escapeJsonString(*s.codec_name) << "\"";
             }
+            if (s.codec_long_name) {
+                json << ",\n      \"codec_long_name\": \"" << JsonUtils::escapeJsonString(*s.codec_long_name) << "\"";
+            }
             if (s.codec_type) {
                 json << ",\n      \"codec_type\": \"" << JsonUtils::escapeJsonString(*s.codec_type) << "\"";
             }
@@ -294,25 +426,43 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
                 json << ",\n      \"nb_frames\": \"" << *s.nb_frames << "\"";
             }
             if (s.r_frame_rate) {
-                json << ",\n      \"r_frame_rate\": " << *s.r_frame_rate;
+                json << ",\n      \"r_frame_rate\": \"" << JsonUtils::escapeJsonString(*s.r_frame_rate) << "\"";
             }
             if (s.avg_frame_rate) {
-                json << ",\n      \"avg_frame_rate\": " << *s.avg_frame_rate;
+                json << ",\n      \"avg_frame_rate\": \"" << JsonUtils::escapeJsonString(*s.avg_frame_rate) << "\"";
             }
             if (s.time_base) {
-                json << ",\n      \"time_base\": " << *s.time_base;
+                json << ",\n      \"time_base\": \"" << JsonUtils::escapeJsonString(*s.time_base) << "\"";
             }
             if (s.start_pts) {
                 json << ",\n      \"start_pts\": " << *s.start_pts;
             }
             if (s.start_time) {
-                json << ",\n      \"start_time\": \"" << *s.start_time << "\"";
+                json << ",\n      \"start_time\": \"" << std::to_string(*s.start_time) << "\"";
             }
             if (s.duration_ts) {
                 json << ",\n      \"duration_ts\": " << *s.duration_ts;
             }
             if (s.duration) {
                 json << ",\n      \"duration\": \"" << JsonUtils::escapeJsonString(*s.duration) << "\"";
+            }
+
+            if (s.disposition) {
+                const auto& d = *s.disposition;
+                json << ",\n      \"disposition\": {\n"
+                    << "        \"default\": " << d.default_stream << ",\n"
+                    << "        \"dub\": " << d.dub << ",\n"
+                    << "        \"original\": " << d.original << ",\n"
+                    << "        \"comment\": " << d.comment << ",\n"
+                    << "        \"lyrics\": " << d.lyrics << ",\n"
+                    << "        \"karaoke\": " << d.karaoke << ",\n"
+                    << "        \"forced\": " << d.forced << ",\n"
+                    << "        \"hearing_impaired\": " << d.hearing_impaired << ",\n"
+                    << "        \"visual_impaired\": " << d.visual_impaired << ",\n"
+                    << "        \"clean_effects\": " << d.clean_effects << ",\n"
+                    << "        \"attached_pic\": " << d.attached_pic << ",\n"
+                    << "        \"timed_thumbnails\": " << d.timed_thumbnails << "\n"
+                    << "      }";
             }
 
             if (s.tags) {
@@ -327,6 +477,44 @@ std::string MediaTrack::toJsonString(const FFprobeOutput& output) {
             }
             json << "\n    }";
             if (i < output.streams.size() - 1) json << ",";
+            json << "\n";
+        }
+        json << "  ]";
+    }
+
+    if (!output.chapters.empty()) {
+        json << ",\n  \"chapters\": [\n";
+        for (size_t i = 0; i < output.chapters.size(); ++i) {
+            const Chapter& chapter = output.chapters[i];
+            json << "    {\n      \"id\": " << chapter.id;
+            if (chapter.time_base) {
+                json << ",\n      \"time_base\": \"" << JsonUtils::escapeJsonString(*chapter.time_base) << "\"";
+            }
+            if (chapter.start) {
+                json << ",\n      \"start\": " << *chapter.start;
+            }
+            if (chapter.start_time) {
+                json << ",\n      \"start_time\": \"" << JsonUtils::escapeJsonString(*chapter.start_time) << "\"";
+            }
+            if (chapter.end) {
+                json << ",\n      \"end\": " << *chapter.end;
+            }
+            if (chapter.end_time) {
+                json << ",\n      \"end_time\": \"" << JsonUtils::escapeJsonString(*chapter.end_time) << "\"";
+            }
+            if (chapter.tags) {
+                json << ",\n      \"tags\": {\n";
+                bool first = true;
+                for (const auto& [key, value] : *chapter.tags) {
+                    if (!first) json << ",\n";
+                    json << "        \"" << JsonUtils::escapeJsonString(key) << "\": \""
+                        << JsonUtils::escapeJsonString(value) << "\"";
+                    first = false;
+                }
+                json << "\n      }";
+            }
+            json << "\n    }";
+            if (i + 1 < output.chapters.size()) json << ",";
             json << "\n";
         }
         json << "  ]";
@@ -534,7 +722,7 @@ const std::string MediaTrack::GetCreateTableSQL() {
             nb_stream_groups INTEGER,
             format_name TEXT,
             format_long_name TEXT,
-            start_time INTEGER,
+            start_time REAL,
             duration REAL,
             bit_rate INTEGER,
             probe_score INTEGER,
@@ -564,11 +752,11 @@ const std::string MediaTrack::GetCreateTableSQL() {
             stream1_sample_rate TEXT,
             stream1_channels INTEGER,
             stream1_channel_layout TEXT,
-            stream1_bits_per_sample TEXT,
+            stream1_bits_per_sample INTEGER,
             stream1_bit_rate INTEGER,
             stream1_frame_size INTEGER,
             stream1_duration REAL,
-            stream1_start_time INTEGER,
+            stream1_start_time REAL,
             stream1_tag1 TEXT,
             stream2_index INTEGER,
             stream2_codec_name TEXT,
@@ -576,11 +764,11 @@ const std::string MediaTrack::GetCreateTableSQL() {
             stream2_sample_rate TEXT,
             stream2_channels INTEGER,
             stream2_channel_layout TEXT,
-            stream2_bits_per_sample TEXT,
+            stream2_bits_per_sample INTEGER,
             stream2_bit_rate INTEGER,
             stream2_frame_size INTEGER,
             stream2_duration REAL,
-            stream2_start_time INTEGER,
+            stream2_start_time REAL,
             stream2_tag1 TEXT
         )
     )",
@@ -667,20 +855,17 @@ bool MediaTrack::ExportToDatabase(sqlite3_stmt* stmt, const std::wstring& albumP
     sqlite3_bind_int(stmt, bindIndex++, mediaInfo.format.nb_stream_groups);
     sqlite3_bind_text(stmt, bindIndex++, mediaInfo.format.format_name.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, bindIndex++, mediaInfo.format.format_long_name.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, bindIndex++, mediaInfo.format.start_time.value_or(0));
+    sqlite3_bind_double(stmt, bindIndex++, mediaInfo.format.start_time.value_or(0.0));
     sqlite3_bind_double(stmt, bindIndex++, mediaInfo.format.duration.value_or(0.0));
     sqlite3_bind_int64(stmt, bindIndex++, mediaInfo.format.bit_rate.value_or(0));
     sqlite3_bind_int(stmt, bindIndex++, mediaInfo.format.probe_score);
 
-    auto& tags = mediaInfo.format.tags;
-    if (tags.has_value())
-    {
-		auto& tagsObj = tags.value();
-        
-        auto getTagValue = [](const JsonUtils::Tags& map, const std::string& key) -> const char * {
-                auto it = map.find(key);
-                return (it != map.end()) ? it->second.c_str() : nullptr;
-            };
+    static const JsonUtils::Tags emptyTags;
+    const JsonUtils::Tags& tagsObj = mediaInfo.format.tags ? *mediaInfo.format.tags : emptyTags;
+    auto getTagValue = [](const JsonUtils::Tags& map, const std::string& key) -> const char* {
+        const auto it = map.find(key);
+        return it != map.end() ? it->second.c_str() : nullptr;
+    };
 
         sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_title), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_artist), -1, SQLITE_TRANSIENT);
@@ -702,7 +887,6 @@ bool MediaTrack::ExportToDatabase(sqlite3_stmt* stmt, const std::wstring& albumP
         sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_encoded_by), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_album_dynamic_range), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, bindIndex++, getTagValue(tagsObj, MediaTrackConstants::kFormatTag_dynamic_range), -1, SQLITE_TRANSIENT);
-    }
 
     if (auto stream1 = mediaInfo.streams.size() > 0 ? std::optional<Stream>{mediaInfo.streams[0]} : std::nullopt; stream1.has_value()) {
         sqlite3_bind_int(stmt, bindIndex++, stream1->index);
@@ -715,7 +899,7 @@ bool MediaTrack::ExportToDatabase(sqlite3_stmt* stmt, const std::wstring& albumP
         sqlite3_bind_int64(stmt, bindIndex++, stream1->bit_rate.value_or(0));
         sqlite3_bind_int(stmt, bindIndex++, stream1->frame_size.value_or(0));
         sqlite3_bind_text(stmt, bindIndex++, stream1->duration.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int64(stmt, bindIndex++, stream1->start_time.value_or(0));
+        sqlite3_bind_double(stmt, bindIndex++, stream1->start_time.value_or(0.0));
         sqlite3_bind_text(stmt, bindIndex++, stream1Tag1.value_or("").c_str(), -1, SQLITE_TRANSIENT);
     }
     else {
@@ -733,7 +917,7 @@ bool MediaTrack::ExportToDatabase(sqlite3_stmt* stmt, const std::wstring& albumP
         sqlite3_bind_int64(stmt, bindIndex++, stream2->bit_rate.value_or(0));
         sqlite3_bind_int(stmt, bindIndex++, stream2->frame_size.value_or(0));
         sqlite3_bind_text(stmt, bindIndex++, stream2->duration.value_or("").c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int64(stmt, bindIndex++, stream2->start_time.value_or(0));
+        sqlite3_bind_double(stmt, bindIndex++, stream2->start_time.value_or(0.0));
         sqlite3_bind_text(stmt, bindIndex++, stream2Tag1.value_or("").c_str(), -1, SQLITE_TRANSIENT);
     }
     else {
@@ -750,7 +934,3 @@ bool MediaTrack::ExportToDatabase(sqlite3_stmt* stmt, const std::wstring& albumP
     sqlite3_clear_bindings(stmt);
     return true;
 }
-
-
-
-

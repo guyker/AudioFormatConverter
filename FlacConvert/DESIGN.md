@@ -110,8 +110,9 @@ overwriting), then the audio; on audio failure it restores or removes the sideca
 `ScanFolderAndCreateJSON`: discover albums in batches of `AlbumsSplitThreshold` (`AlbumCollection::LoadAlbumsCo`),
 import metadata (`AlbumCollection::ImportMetadata`, parallel when `UseAsyncFFmpegCalls`), sort by album artist, write
 each batch to a staging sibling directory (`AlbumCollection::SaveAlbumsToJSON`), then `installGeneratedFiles` swaps
-only `media_out_*.json` files into `OutDirectory/<mediaName>/`, with backup and rollback (K-005). The menu preview
-discovers albums without reading track metadata and reuses the discovered batches.
+only `media_out_*.json` files into `OutDirectory/<mediaName>/`, with backup and rollback (K-005). An accepted audio
+track with extraction/JSON errors or no usable audio stream fails the scan before installation, preserving the prior
+generated JSON. The menu preview discovers albums without reading track metadata and reuses the discovered batches.
 
 ### Duplicates (menu 3, `duplicates`)
 
@@ -123,7 +124,8 @@ quality comparison (`MediaTrack::GenerateComparisonReport`). Read-only; folders 
 
 `ExportJSONToDB` (menu, per library, one transaction per JSON batch) or `ImportJsonDirectoryToDatabase` (CLI, one
 transaction): `AlbumCollection::ExportToDatabase` creates `TracksDB` if needed and inserts one row per track.
-The row id is bound as NULL, so each import **appends** rows; re-importing the same JSON duplicates them.
+Malformed album/track structure fails loading instead of silently importing a partial JSON batch. The row id is
+bound as NULL, so each import **appends** rows; re-importing the same JSON duplicates them.
 
 ## Contracts and invariants
 
@@ -173,7 +175,7 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | Audit report | `<library output>/conversion-audit.json` | `writeAudit` in `FolderConvert.cpp` |
 | In-progress marker | `<library output>/.conversion-in-progress/` (directory) | `FolderConvert::ExecuteConversion` |
 | Album JSON | `OutDirectory/<name>/media_out_<name>[_<n>].json` | `AlbumCollection::SaveAlbumsToJSON` |
-| JSON error reports | `<album json>_error.json`, `<album json>_ffmpeg_error.json` (excluded from inputs) | `AlbumCollection` |
+| JSON diagnostic reports | `<album json>_ffmpeg_error.json` when captured (excluded from inputs); legacy `_error.json` reports are also excluded | `AlbumCollection` |
 | SQLite database | `OutDirectory/<name>/media_out_<name>.db` | `AlbumCollection::ExportToDatabase` |
 
 **Sidecar:** original leading ID3, `fLaC` marker and every metadata block byte-for-byte, plus trailing APE/ID3v1;
@@ -188,11 +190,14 @@ no audio. Describes the source, not the output.
 `PreservationAudit::Status`: `Preserved`, `Normalized`, `SidecarOnly`, `MissingOrChanged`, `NotVerified`, `SourceOnly`.
 
 **Album JSON:** array of `{ "Album Path", "Folder", "Tracks": [ffprobe-style object with format, streams,
-chapters] }`; albums without parsable tracks are omitted.
+chapters] }`. Format and stream timing is in seconds; stream dispositions and chapter timing/tags are preserved.
+The scan accepts `.flac` and `.mp3` case-insensitively and rejects the whole scan if an accepted track cannot be
+serialized as usable audio metadata.
 
 **`TracksDB`** (`MediaTrack::GetCreateTableSQL`): `ID` (`INTEGER PRIMARY KEY`, bound NULL → new rowid), `album_path`, format fields (`file_size`,
-`nb_streams`, `format_name`, `duration`, `bit_rate`, …), one TEXT column per `MediaTrackConstants::kFormatTag_*`
-(title, artist, album, album_artist, genre, track, disc, date, …), and `stream1_*` / `stream2_*` technical columns.
+`nb_streams`, `format_name`, `start_time` and `duration` in seconds, `bit_rate`, …), one TEXT column per
+`MediaTrackConstants::kFormatTag_*` (title, artist, album, album_artist, genre, track, disc, date, …), and
+`stream1_*` / `stream2_*` technical columns, including stream start time in seconds.
 
 ## Threading and process lifetime
 

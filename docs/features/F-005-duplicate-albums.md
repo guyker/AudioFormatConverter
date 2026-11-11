@@ -5,7 +5,8 @@ Status: active
 ## Behaviour
 Loads generated album JSON, finds album pairs with matching track counts and track durations/sizes within
 `SizeMatchPercentageThreshold`, then re-probes both folders and logs a quality and tag comparison per pair. Read-only.
-With `--open` (CLI) or always in the menu, both folders are opened in the file manager.
+Malformed album/track structures or tracks without audio-stream metadata fail JSON loading rather than being silently
+skipped. With `--open` (CLI) or always in the menu, both folders are opened in the file manager.
 
 ## Entry points
 - `FlacConvert duplicates <json dir> [--open]` → `FlacConvertMain.cpp#RunWithArguments`
@@ -21,6 +22,7 @@ With `--open` (CLI) or always in the menu, both folders are opened in the file m
 - [ ] No files are created or changed.
 - [ ] Without `--open`, no folder is opened.
 - [ ] Empty JSON directory exits non-zero.
+- [ ] Malformed track metadata fails loading instead of producing partial duplicate results.
 
 ## Known limitations
 - Results are logged, not written to a file.

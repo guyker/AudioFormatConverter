@@ -95,7 +95,7 @@ struct Format {
 
 	std::string format_name; // Container format short name, e.g., "flac", "mp3"
 	std::string format_long_name; // Container format descriptive name, e.g., "raw FLAC"
-    std::optional<int64_t> start_time; // Start time in seconds, string with decimal, e.g., "0.000000", optional  - { AV_NOPTS_VALUE if empty/unknown}
+    std::optional<double> start_time; // Start time in seconds, optional
     std::optional<double> duration; // Duration in seconds, string with decimal, e.g., "123.456789", optional - { AV_NOPTS_VALUE if empry/unknown}
 	std::optional<int64_t> bit_rate; // Overall bitrate in bits/s, string with integer, e.g., "960000", optional
 
@@ -129,7 +129,7 @@ struct Stream {
     std::optional<std::string> avg_frame_rate; // Average frame rate, e.g., "0/0" (audio), optional
     std::optional<std::string> time_base; // Stream time base, e.g., "1/44100", optional
     std::optional<int64_t> start_pts; // First frame PTS, integer, e.g., 0, optional
-    std::optional<int64_t> start_time; // Start time in seconds, e.g., "0.000000", optional
+    std::optional<double> start_time; // Start time in seconds, optional
     std::optional<int64_t> duration_ts; // Duration in time base units, integer, e.g., 5432100, optional
     std::optional<std::string> duration; // Duration in seconds, e.g., "123.456789", optional
     std::optional<int64_t> bit_rate; // Stream bitrate in bits/s, e.g., "960000", optional
@@ -180,7 +180,7 @@ struct Program {
 
 // Represents an entry in the "chapters" array (-show_chapters)
 struct Chapter {
-    int id{ 0 }; // Chapter ID, integer, e.g., 0
+    int64_t id{ 0 }; // Chapter ID, integer, e.g., 0
     std::optional<std::string> time_base; // Time base, e.g., "1/1000", optional
     std::optional<int64_t> start; // Start time in time base units, integer, e.g., 0, optional
     std::optional<std::string> start_time; // Start time in seconds, e.g., "0.000000", optional
@@ -216,6 +216,7 @@ struct FFprobeOutput {
 
 	Format format; // Format section from -show_format, optional
 	std::vector<Stream> streams; // Streams array from -show_streams
+    std::vector<Chapter> chapters; // Chapters array from -show_chapters
 
 /*
     std::optional<Format> format; // Format section from -show_format, optional
@@ -223,7 +224,6 @@ struct FFprobeOutput {
     std::vector<Packet> packets; // Packets array from -show_packets
     std::vector<Frame> frames; // Frames array from -show_frames
     std::vector<Program> programs; // Programs array from -show_programs
-    std::vector<Chapter> chapters; // Chapters array from -show_chapters
     std::optional<Error> error; // Error section from -show_error, optional
     std::map<std::string, LibraryVersion> library_versions; // Library versions from -show_versions, key is library name
     std::vector<PixelFormat> pixel_formats; // Pixel formats array from -show_pixel_formats
@@ -231,8 +231,6 @@ struct FFprobeOutput {
     std::optional<AudioMetrics> audio_metrics;
     std::optional<AudioAnalysisInfo> audio_quality;
 };
-
-
 
 
 

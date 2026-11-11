@@ -3,7 +3,8 @@ id: K-034
 kind: defect
 title: "Incomplete scans can replace valid JSON output"
 area: [FlacConvert]
-status: active
+status: fixed
+fixed_by: K-035
 created: 2026-11-10
 reviewed: 2026-11-10
 cites:

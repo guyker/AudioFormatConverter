@@ -10,6 +10,7 @@
 #include <iostream>
 #include <map>
 #include <algorithm>
+#include <charconv>
 #include <ranges>
 #include <format>
 #include <spdlog/spdlog.h>
@@ -348,7 +349,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         CommonUtils::show_progress_bar(progressInfoPtr, CommonUtils::ProgressBarType::Progress);
 
         //Album tracks list holder 
-        std::vector<std::tuple<MediaLoadingFuture, FFprobeOutput&, std::optional<std::wstring>>> asyncFutureList;
+        std::vector<std::tuple<MediaLoadingFuture, FFprobeOutput&, std::optional<std::wstring>&>> asyncFutureList;
 
         for (auto& [trackName, size, mediaInfo, mediaInfoString, lastError] : trackList)
         {
@@ -513,8 +514,9 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
     rapidjson::Document mediaDoc;
     mediaDoc.SetArray(); // Top-level array for albums
     rapidjson::Document::AllocatorType& allocator = mediaDoc.GetAllocator();
+    bool batchHasErrors = false;
 
-    for (auto [albumPath, trackList] : *albumListPtr)
+    for (auto& [albumPath, trackList] : *albumListPtr)
     {
         // Create album object
         rapidjson::Value albumObj(rapidjson::kObjectType);
@@ -539,10 +541,32 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
             auto& [trackName, size, mediaInfo, mediaInfoString, lastError] = item;
             std::filesystem::path trackPath = albumPath.path() / std::filesystem::path(trackName);
 
-            auto hasExtension = trackPath.has_extension();
-            auto fileEextension = trackPath.extension();
-            // std::wstring entryPath{ trackPath.wstring() };
-            if (trackPath.has_extension() && (fileEextension == ".flac" || fileEextension == ".mp3")) {
+            if (MediaTrack::IsFileAcceptedAudioFile(trackPath)) {
+                if (lastError) {
+                    spdlog::error("Metadata extraction failed for '{}': {}",
+                        CommonUtils::path_to_utf8(trackPath), *lastError);
+                    batchHasErrors = true;
+                    continue;
+                }
+                const bool hasAudioStream = std::ranges::any_of(mediaInfo.streams, [](const Stream& stream) {
+                    if (stream.codec_type != "audio" || !stream.codec_name || stream.codec_name->empty() ||
+                        !stream.sample_rate || !stream.channels || *stream.channels <= 0) {
+                        return false;
+                    }
+                    int sampleRate = 0;
+                    const auto [end, error] = std::from_chars(
+                        stream.sample_rate->data(),
+                        stream.sample_rate->data() + stream.sample_rate->size(),
+                        sampleRate);
+                    return error == std::errc{} && end == stream.sample_rate->data() + stream.sample_rate->size() &&
+                        sampleRate > 0;
+                });
+                if (!hasAudioStream) {
+                    spdlog::error("Metadata extraction produced no usable audio stream for '{}'.",
+                        CommonUtils::path_to_utf8(trackPath));
+                    batchHasErrors = true;
+                    continue;
+                }
 
                 rapidjson::Document trackDoc;
 
@@ -579,8 +603,10 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                     size_t errorOffset = trackDoc.GetErrorOffset();
                     item.LastErroString = errorMsg;
                     ffmpeg_LasrErrorList.push_back(item);
-                    spdlog::error("Error parsing JSON: {}", errorMsg);
-//                    continue;
+                    spdlog::error("Error parsing metadata JSON for '{}': {} at offset {}",
+                        CommonUtils::path_to_utf8(trackPath), errorMsg, errorOffset);
+                    batchHasErrors = true;
+                    continue;
                 }
                 else
                 {
@@ -600,6 +626,15 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
             // Add album object to top-level array (no key)
             mediaDoc.PushBack(albumObj, allocator);
         }
+        else {
+            spdlog::error("Album '{}' has no serializable FLAC or MP3 tracks.",
+                CommonUtils::path_to_utf8(albumPath.path()));
+            batchHasErrors = true;
+        }
+    }
+
+    if (batchHasErrors) {
+        return false;
     }
 
     if (fs::exists(path)) {
@@ -693,6 +728,10 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
         spdlog::error("JSON root is not an array");
         return nullptr;
     }
+    if (doc.Empty()) {
+        spdlog::error("Album JSON contains no albums");
+        return nullptr;
+    }
 
     //Albums
     int iAlbumCount = 0;
@@ -704,19 +743,23 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
         // Validate that albumVal is an object with required fields
         if (!albumVal.IsObject()) {
             spdlog::error("Album entry {} is not an object", iAlbumCount);
-            continue;
+            return nullptr;
         }
         if (!albumVal.HasMember("Album Path") || !albumVal["Album Path"].IsString()) {
             spdlog::error("Album entry {} missing or invalid Album Path", iAlbumCount);
-            continue;
+            return nullptr;
         }
         if (!albumVal.HasMember("Folder") || !albumVal["Folder"].IsString()) {
             spdlog::error("Album entry {} missing or invalid Folder", iAlbumCount);
-            continue;
+            return nullptr;
         }
         if (!albumVal.HasMember("Tracks") || !albumVal["Tracks"].IsArray()) {
             spdlog::error("Album entry {} missing or invalid Tracks array", iAlbumCount);
-            continue;
+            return nullptr;
+        }
+        if (albumVal["Tracks"].Empty()) {
+            spdlog::error("Album entry {} has no tracks", iAlbumCount);
+            return nullptr;
         }
 
         std::string albumPathStr = albumVal["Album Path"].GetString();
@@ -735,7 +778,19 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
 
         const auto& mediaTrackList = albumVal["Tracks"].GetArray();
         for (SizeType i = 0; i < mediaTrackList.Size(); i++) {
+            if (!mediaTrackList[i].IsObject() ||
+                !mediaTrackList[i].HasMember("format") || !mediaTrackList[i]["format"].IsObject()) {
+                spdlog::error("Track {} in album '{}' has invalid metadata structure",
+                    i, albumPathStr);
+                return nullptr;
+            }
             FFprobeOutput mi = MediaTrack::ParseFFprobeInformation(mediaTrackList[i]);
+            if (!std::ranges::any_of(mi.streams, [](const Stream& stream) {
+                    return stream.codec_type == "audio";
+                })) {
+                spdlog::error("Track {} in album '{}' has no audio stream metadata", i, albumPathStr);
+                return nullptr;
+            }
             //Derive track filename from FFprobeOutput or use fallback
             std::wstring trackFilename = mi.format.filename.empty() ?
                 L"track_" + std::to_wstring(i) :

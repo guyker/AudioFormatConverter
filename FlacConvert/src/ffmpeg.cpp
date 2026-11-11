@@ -456,6 +456,32 @@ namespace FFmpeg {
         // Streams section
         output.streams = FFmpeg::GetStreamInformation(fmt_ctx);
 
+        output.chapters.reserve(fmt_ctx->nb_chapters);
+        for (unsigned int i = 0; i < fmt_ctx->nb_chapters; ++i) {
+            const AVChapter* sourceChapter = fmt_ctx->chapters[i];
+            Chapter chapter;
+            chapter.id = sourceChapter->id;
+            chapter.time_base = std::to_string(sourceChapter->time_base.num) + "/" +
+                std::to_string(sourceChapter->time_base.den);
+            if (sourceChapter->start != AV_NOPTS_VALUE) {
+                chapter.start = sourceChapter->start;
+                chapter.start_time = std::to_string(sourceChapter->start * av_q2d(sourceChapter->time_base));
+            }
+            if (sourceChapter->end != AV_NOPTS_VALUE) {
+                chapter.end = sourceChapter->end;
+                chapter.end_time = std::to_string(sourceChapter->end * av_q2d(sourceChapter->time_base));
+            }
+            if (sourceChapter->metadata) {
+                JsonUtils::Tags chapterTags;
+                AVDictionaryEntry* tag = nullptr;
+                while ((tag = av_dict_get(sourceChapter->metadata, "", tag, AV_DICT_IGNORE_SUFFIX))) {
+                    chapterTags[tag->key] = tag->value;
+                }
+                chapter.tags = std::move(chapterTags);
+            }
+            output.chapters.push_back(std::move(chapter));
+        }
+
         // Audio Quality
         if (bIncludeAudioQualityMetrics)
         {
@@ -824,7 +850,7 @@ namespace FFmpeg {
 
 
         if (fmt_ctx->start_time != AV_NOPTS_VALUE) {
-            fmt.start_time = fmt_ctx->start_time;
+            fmt.start_time = static_cast<double>(fmt_ctx->start_time) / AV_TIME_BASE;
         }
         if (fmt_ctx->duration != AV_NOPTS_VALUE) {
             fmt.duration = static_cast<double>(fmt_ctx->duration) / AV_TIME_BASE;
@@ -872,6 +898,22 @@ namespace FFmpeg {
             AVStream* stream = fmt_ctx->streams[i];
             Stream s;
             s.index = stream->index;
+            if (const AVCodecDescriptor* descriptor = avcodec_descriptor_get(stream->codecpar->codec_id);
+                descriptor && descriptor->long_name) {
+                s.codec_long_name = descriptor->long_name;
+            }
+            if (stream->codecpar->codec_tag != 0) {
+                char codecTag[AV_FOURCC_MAX_STRING_SIZE]{};
+                av_fourcc_make_string(codecTag, stream->codecpar->codec_tag);
+                s.codec_tag_string = codecTag;
+                s.codec_tag = std::format("0x{:08x}", stream->codecpar->codec_tag);
+            }
+            s.r_frame_rate = std::to_string(stream->r_frame_rate.num) + "/" +
+                std::to_string(stream->r_frame_rate.den);
+            s.avg_frame_rate = std::to_string(stream->avg_frame_rate.num) + "/" +
+                std::to_string(stream->avg_frame_rate.den);
+            s.time_base = std::to_string(stream->time_base.num) + "/" +
+                std::to_string(stream->time_base.den);
             const auto flag = [stream](int value) { return (stream->disposition & value) != 0 ? 1 : 0; };
             s.disposition = Disposition{
                 flag(AV_DISPOSITION_DEFAULT), flag(AV_DISPOSITION_DUB), flag(AV_DISPOSITION_ORIGINAL),
@@ -882,6 +924,11 @@ namespace FFmpeg {
             };
             AVCodecParameters* codecpar = stream->codecpar;
             s.codec_name = avcodec_get_name(codecpar->codec_id);
+            if (codecpar->format != AV_SAMPLE_FMT_NONE) {
+                if (const char* sampleFormat = av_get_sample_fmt_name(static_cast<AVSampleFormat>(codecpar->format))) {
+                    s.sample_fmt = sampleFormat;
+                }
+            }
             switch (codecpar->codec_type) {
             case AVMEDIA_TYPE_AUDIO: s.codec_type = "audio"; break;
             case AVMEDIA_TYPE_VIDEO: s.codec_type = "video"; break;
@@ -917,10 +964,12 @@ namespace FFmpeg {
             }
 
             if (stream->duration != AV_NOPTS_VALUE) {
+                s.duration_ts = stream->duration;
                 s.duration = std::to_string(static_cast<double>(stream->duration) * av_q2d(stream->time_base));
             }
             if (stream->start_time != AV_NOPTS_VALUE) {
-                s.start_time = stream->start_time;
+                s.start_pts = stream->start_time;
+                s.start_time = static_cast<double>(stream->start_time) * av_q2d(stream->time_base);
             }
             if (stream->nb_frames > 0) {
                 s.nb_frames = stream->nb_frames;
