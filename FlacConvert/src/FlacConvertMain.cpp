@@ -336,7 +336,7 @@ struct ManualOperationSummary {
             std::chrono::steady_clock::now() - startTime).count() : 0;
         std::cout << "\nCompletion summary: " << status
             << "\n  Completed: " << totalCompleted << ' ' << unit
-            << "; copied: " << conversion.copied << " companion files"
+            << "; copied: " << conversion.copied << " files unchanged"
             << "; failed: " << (result == 0 ? 0 : 1)
             << (started ? " work items" : " preflight checks")
             << "\n  Elapsed: " << elapsed << " ms\n";
@@ -482,7 +482,8 @@ void ShowConversionPreview(const FolderConversionPlan& plan)
         << "  Input: " << pathToUtf8(plan.input) << '\n'
         << "  Output: " << pathToUtf8(plan.output) << '\n'
         << "  Audio files: " << plan.audio.size()
-        << "; companions: " << plan.companions.size()
+        << (plan.options.target == AudioTarget::Mp3 ? "; companions: " : "; files copied unchanged: ")
+        << plan.companions.size()
         << "; metadata sidecars: " << std::count_if(plan.audio.begin(), plan.audio.end(),
             [&](const PlannedFileConversion& file) {
                 return plan.options.target == AudioTarget::Mp3 ||
@@ -491,6 +492,13 @@ void ShowConversionPreview(const FolderConversionPlan& plan)
         << "  Existing destinations: " << plan.existingTargets.size()
         << "; duplicate destinations: " << plan.collisions.size() << '\n'
         << "  Overwrite: " << (plan.overwrite ? "enabled" : "disabled") << '\n';
+    if (plan.options.target == AudioTarget::Flac) {
+        std::cout << "  Source directories written: " << plan.directories.size()
+            << "; unchanged folders skipped (audio, no conversions): " << plan.skippedDirectories.size() << '\n';
+        for (const auto& skipped : plan.skippedDirectories) {
+            std::cout << "    Skipped: " << pathToUtf8(skipped.source) << " (" << skipped.files << " files)\n";
+        }
+    }
     for (const auto& target : plan.existingTargets) {
         std::cout << "    Existing: " << pathToUtf8(target) << '\n';
     }
@@ -577,6 +585,8 @@ int ConvertConfiguredLibraries(const std::vector<MediaDirectoryElement>& mediaDi
     } else {
         std::cout << "  Quality: 16-bit / 44.1 kHz, triangular dithering; channel count retained.\n"
             "  Tags and supported pictures mapped; original native FLAC metadata retained in sidecars.\n"
+            "  Written folders keep every file; other audio (e.g. MP3) beside conversions is copied unchanged.\n"
+            "  Folders with audio but nothing to convert are skipped and listed in conversion-audit.json.\n"
             "  Sources unchanged. Source quality is verified during conversion.\n";
     }
     const auto confirmation = ConfirmPreview();
@@ -1215,10 +1225,11 @@ struct MenuEntry {
 constexpr std::array<MenuEntry, 6> MenuEntries{ {
     { '1', ConvertActionEnum::ConverEnum,
         "Convert to FLAC [sources unchanged]",
-        "      Input: supported audio files in the active source libraries, recursively.\n"
+        "      Input: all regular files and directories in the active source libraries, recursively.\n"
         "      Output: OutDirectory/FLAC/<mediaName>, retaining relative folder structure.\n"
         "              16-bit / 44.1 kHz FLAC with dithering, original FLAC metadata sidecars,\n"
-        "              mapped tags/pictures and unchanged non-audio companions.\n"
+        "              mapped tags/pictures; other files in written folders are copied unchanged.\n"
+        "              Folders with audio but nothing to convert are skipped and listed in the audit.\n"
         "      Changes: source files are untouched; existing output files are rejected.\n"
         "               Resampling/depth reduction loses information in the output audio.\n"
         "      Audit: conversion-audit.json lists preservation differences and installation states.\n"

@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <chrono>
 #include <fstream>
+#include <iterator>
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
 #ifndef NOMINMAX
@@ -21,6 +22,7 @@
 #include <unistd.h>
 #endif
 #include <set>
+#include <map>
 #include "CommonUtils.h"
 #include "MediaInformation.h"
 #include "MediaTrack.h"
@@ -93,6 +95,40 @@ fs::path makeTemporaryOutputPath(const fs::path& targetPath, std::uint64_t seque
 constexpr const char* auditFilename = "conversion-audit.json";
 constexpr const char* markerFilename = ".conversion-in-progress";
 
+bool writeTextOutput(const fs::path& target, std::string_view contents, bool overwrite)
+{
+    const auto temporary = makeTemporaryOutputPath(target, 0);
+    std::error_code ec;
+    if (fs::exists(temporary, ec) || ec) {
+        spdlog::error("Cannot reserve temporary text output: {}", CommonUtils::path_to_utf8(temporary));
+        return false;
+    }
+    const auto cleanup = [&] {
+        fs::remove(temporary, ec);
+        if (ec) spdlog::warn("Cannot remove incomplete text output: {}", ec.message());
+    };
+    std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+    stream.write(contents.data(), static_cast<std::streamsize>(contents.size()));
+    stream.flush();
+    const bool written = static_cast<bool>(stream);
+    stream.close();
+    if (!written || stream.fail()) {
+        spdlog::error("Cannot write text output: {}", CommonUtils::path_to_utf8(temporary));
+        cleanup();
+        return false;
+    }
+    std::ifstream verification(temporary, std::ios::binary);
+    const std::string actual{ std::istreambuf_iterator<char>(verification), std::istreambuf_iterator<char>() };
+    const bool verified = verification && actual == contents;
+    verification.close();
+    if (!verified) {
+        spdlog::error("Text output verification failed: {}", CommonUtils::path_to_utf8(temporary));
+        cleanup();
+        return false;
+    }
+    return MediaConvertionTask::InstallOutputFile(temporary, target, overwrite);
+}
+
 struct FileAudit {
     const PlannedFileConversion* file;
     const char* kind;
@@ -129,7 +165,18 @@ bool writeAudit(const FolderConversionPlan& plan, const fs::path& output,
     writer.Key("installedAudio"); writer.Uint64(installedAudio);
     writer.Key("installedCompanions"); writer.Uint64(installedCompanions);
     writer.Key("skippedAudio"); writer.Uint64(plan.skippedAudio.size());
+    writer.Key("plannedDirectories"); writer.Uint64(plan.directories.size());
+    writer.Key("skippedUnchangedDirectories"); writer.Uint64(plan.skippedDirectories.size());
     writer.EndObject();
+    writer.Key("skippedUnchangedDirectories"); writer.StartArray();
+    for (const auto& skipped : plan.skippedDirectories) {
+        writer.StartObject();
+        text("source", CommonUtils::path_to_utf8(skipped.source));
+        writer.Key("files"); writer.Uint64(skipped.files);
+        writer.Key("audioFiles"); writer.Uint64(skipped.audioFiles);
+        writer.EndObject();
+    }
+    writer.EndArray();
     writer.Key("skippedAudio"); writer.StartArray();
     for (const auto& skipped : plan.skippedAudio) {
         const auto path = CommonUtils::path_to_utf8(skipped.lexically_relative(plan.input));
@@ -166,25 +213,8 @@ bool writeAudit(const FolderConversionPlan& plan, const fs::path& output,
         writer.EndObject();
     }
     writer.EndArray(); writer.EndObject();
-    const auto temporary = makeTemporaryOutputPath(output / auditFilename, 0);
-    std::error_code inspectError;
-    if (fs::exists(temporary, inspectError) || inspectError) {
-        spdlog::error("Cannot reserve temporary audit report: {}", CommonUtils::path_to_utf8(temporary));
-        return false;
-    }
-    std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
-    stream.write(buffer.GetString(), static_cast<std::streamsize>(buffer.GetSize()));
-    stream.flush();
-    const bool written = static_cast<bool>(stream);
-    stream.close();
-    if (!written || stream.fail()) {
-        spdlog::error("Cannot write preservation report: {}", CommonUtils::path_to_utf8(temporary));
-        std::error_code ec;
-        fs::remove(temporary, ec);
-        if (ec) spdlog::warn("Cannot remove incomplete report: {}", ec.message());
-        return false;
-    }
-    return MediaConvertionTask::InstallOutputFile(temporary, output / auditFilename, true);
+    return writeTextOutput(output / auditFilename,
+        std::string_view(buffer.GetString(), buffer.GetSize()), true);
 }
 
 void logAudit(const PlannedFileConversion& file, const PreservationAudit::Result& audit)
@@ -315,44 +345,124 @@ int FolderConvert::PrepareConversion(
         }
     }
 
-    ScanInfo scanInfo{};
-    if (ScanAudioFiles(scanInfo, inputRoot) != 0) {
-        return -1;
-    }
+    std::vector<fs::directory_entry> audio;
     std::vector<fs::directory_entry> companions;
-    if (options.target == AudioTarget::Mp3) {
-        std::erase_if(scanInfo.mediaList, [&](const fs::directory_entry& entry) {
-            const bool skipped = MediaTrack::FileExtension(entry.path()) != u8".flac";
-            if (skipped) plan.skippedAudio.push_back(entry.path());
-            return skipped;
-        });
-    }
+    const bool completeTree = options.target == AudioTarget::Flac;
+    // FLAC subtree classification; relative source directories, with the library root as the empty path.
+    struct SubtreeCounts { std::size_t files{ 0 }, audioFiles{ 0 }, conversions{ 0 }; };
+    std::vector<fs::path> directories;
+    std::map<fs::path, SubtreeCounts> subtrees;
     {
-        // Audio files of other formats are not companion documents or artwork.
+        // Other audio formats are excluded only from the MP3 export.
         const std::set<std::u8string> audioExtensions{ u8".mp3", u8".aac", u8".ogg", u8".oga",
             u8".opus", u8".wma", u8".aif", u8".aiff", u8".alac", u8".mp4", u8".mka", u8".ac3",
             u8".m4b", u8".m4p", u8".mp2", u8".mp1", u8".au", u8".snd", u8".aifc", u8".caf",
             u8".tak", u8".tta", u8".shn", u8".amr" };
+        const auto count = [&](const fs::path& source, bool isAudio, bool converted) {
+            for (auto relative = source.lexically_relative(inputRoot).parent_path();;
+                relative = relative.parent_path()) {
+                auto& counts = subtrees[relative];
+                ++counts.files;
+                if (isAudio) ++counts.audioFiles;
+                if (converted) ++counts.conversions;
+                if (relative.empty()) break;
+            }
+        };
         try {
             for (const auto& entry : fs::recursive_directory_iterator(inputRoot)) {
-                if (entry.is_regular_file() && !MediaTrack::IsFileConvertable(entry.path())) {
-                    if (audioExtensions.contains(MediaTrack::FileExtension(entry.path())))
+                if (entry.is_directory()) {
+                    if (completeTree) {
+                        const auto relative = entry.path().lexically_relative(inputRoot);
+                        const auto canonicalDirectory = fs::weakly_canonical(entry.path(), ec);
+                        const auto expectedDirectory = input / relative;
+                        if (ec || entry.is_symlink() ||
+                            !isSameOrChildPath(canonicalDirectory, expectedDirectory) ||
+                            !isSameOrChildPath(expectedDirectory, canonicalDirectory)) {
+                            spdlog::error("Directory links cannot be classified or copied: {}",
+                                CommonUtils::path_to_utf8(entry.path()));
+                            return -1;
+                        }
+                        directories.push_back(relative);
+                    }
+                    continue;
+                }
+                if (!entry.is_regular_file()) {
+                    if (completeTree) {
+                        spdlog::error("Cannot preserve unsupported source filesystem entry: {}",
+                            CommonUtils::path_to_utf8(entry.path()));
+                        return -1;
+                    }
+                    continue;
+                }
+                const auto extension = MediaTrack::FileExtension(entry.path());
+                if (MediaTrack::IsFileConvertable(entry.path())) {
+                    if (!completeTree && extension != u8".flac") {
                         plan.skippedAudio.push_back(entry.path());
-                    else companions.push_back(entry);
+                    }
+                    else {
+                        audio.push_back(entry);
+                        if (completeTree) count(entry.path(), true, true);
+                    }
+                }
+                else {
+                    const bool unsupportedAudio = audioExtensions.contains(extension);
+                    if (!completeTree && unsupportedAudio) {
+                        plan.skippedAudio.push_back(entry.path());
+                    }
+                    else {
+                        companions.push_back(entry);
+                        if (completeTree) count(entry.path(), unsupportedAudio, false);
+                    }
                 }
             }
         }
         catch (const fs::filesystem_error& error) {
-            spdlog::error("Cannot enumerate companion files: {}", error.what());
+            spdlog::error("Cannot enumerate files and directories: {}", error.what());
             return -1;
         }
     }
-    if (scanInfo.mediaList.empty()) {
+    if (audio.empty() && !completeTree) {
         spdlog::warn("No convertible audio files found under '{}'.", CommonUtils::path_to_utf8(inputRoot));
         return 0;
     }
+    if (completeTree) {
+        // Omit the topmost subtrees that contain audio but nothing to convert, so every written
+        // folder is complete. Folders without audio stay with their written parent. A library
+        // without conversions writes only its report.
+        std::set<fs::path> skippedRoots;
+        const auto isSkipped = [&](fs::path relative) {
+            for (;; relative = relative.parent_path()) {
+                if (skippedRoots.contains(relative)) return true;
+                if (relative.empty()) return false;
+            }
+        };
+        const auto root = subtrees[fs::path{}];
+        if (root.conversions == 0) {
+            skippedRoots.insert(fs::path{});
+            plan.skippedDirectories.push_back({ fs::path("."), root.files, root.audioFiles });
+        }
+        else {
+            // Path ordering visits each parent before its descendants.
+            std::sort(directories.begin(), directories.end());
+            for (const auto& directory : directories) {
+                if (isSkipped(directory.parent_path())) continue;
+                const auto found = subtrees.find(directory);
+                if (found != subtrees.end() && found->second.conversions == 0 && found->second.audioFiles > 0) {
+                    skippedRoots.insert(directory);
+                    plan.skippedDirectories.push_back({ directory, found->second.files, found->second.audioFiles });
+                }
+            }
+        }
+        plan.directories.push_back(outputRoot);
+        for (const auto& directory : directories) {
+            if (!isSkipped(directory)) plan.directories.push_back(outputRoot / directory);
+        }
+        std::erase_if(companions, [&](const fs::directory_entry& entry) {
+            return isSkipped(entry.path().lexically_relative(inputRoot).parent_path());
+        });
+    }
 
-    plan.audio.reserve(scanInfo.mediaList.size());
+    plan.audio.reserve(audio.size());
     std::set<fs::path, CaseInsensitivePathLess> plannedTargets;
     plannedTargets.insert(fs::weakly_canonical(outputRoot / auditFilename, ec));
     if (!ec) plannedTargets.insert(fs::weakly_canonical(outputRoot / markerFilename, ec));
@@ -390,7 +500,21 @@ int FolderConvert::PrepareConversion(
         return true;
     };
 
-    for (const auto& entry : scanInfo.mediaList) {
+    for (const auto& directory : plan.directories) {
+        const auto canonical = fs::weakly_canonical(directory, ec);
+        if (ec || !isSameOrChildPath(canonical, output) || isSameOrChildPath(canonical, input)) {
+            spdlog::error("Unsafe output directory: {}", CommonUtils::path_to_utf8(directory));
+            return -1;
+        }
+        if (!plannedTargets.insert(canonical).second) plan.collisions.push_back(directory);
+        const bool exists = fs::exists(directory, ec);
+        if (ec || (exists && !fs::is_directory(directory, ec)) || ec) {
+            spdlog::error("Cannot preserve output directory: {}", CommonUtils::path_to_utf8(directory));
+            return -1;
+        }
+    }
+
+    for (const auto& entry : audio) {
         const fs::path source = entry.path();
         const fs::path relativePath = source.lexically_relative(inputRoot);
         if (relativePath.empty() || *relativePath.begin() == "..") {
@@ -447,7 +571,7 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
         return -1;
     }
     if (progress) progress->actualOutput = plan.output;
-    if (plan.audio.empty()) return 0;
+    if (plan.audio.empty() && plan.directories.empty()) return 0;
     std::vector<FileAudit> files;
     files.reserve(plan.audio.size() + plan.companions.size());
     for (const auto& file : plan.audio) files.push_back({ &file, "audio" });
@@ -505,7 +629,19 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
         return -1;
     }
     std::size_t current = 0;
+    for (const auto& skipped : plan.skippedDirectories) {
+        spdlog::info("Skipped unchanged folder (audio, no conversions): {} ({} files)",
+            CommonUtils::path_to_utf8(skipped.source), skipped.files);
+    }
     try {
+    for (const auto& directory : plan.directories) {
+        fs::create_directories(directory, ec);
+        if (ec) {
+            spdlog::error("Cannot preserve source directory '{}': {}",
+                CommonUtils::path_to_utf8(directory), ec.message());
+            return finish("IO");
+        }
+    }
     for (const auto& conversion : plan.audio) {
         auto& record = files[current++];
         record.status = "failed";
@@ -568,7 +704,9 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
         if (progress) {
             ++progress->copied;
         }
-        spdlog::info("Copied companion file unchanged: {}", CommonUtils::path_to_utf8(copy.target));
+        spdlog::info("Copied {}file unchanged: {}",
+            plan.options.target == AudioTarget::Mp3 ? "companion " : "",
+            CommonUtils::path_to_utf8(copy.target));
     }
 
     }
@@ -594,6 +732,12 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
                     "metadata-archive", "installed archive", "Final installed archive verification failed.", true });
                 return finish("PRESERVATION");
             }
+        }
+    }
+    for (const auto& directory : plan.directories) {
+        if (!fs::is_directory(directory, ec) || ec) {
+            spdlog::error("Expected output directory is missing: {}", CommonUtils::path_to_utf8(directory));
+            return finish("INCOMPLETE");
         }
     }
     return finish({});

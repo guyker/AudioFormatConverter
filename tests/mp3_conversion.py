@@ -153,7 +153,7 @@ class ConversionTests(unittest.TestCase):
 
     def assert_summary(self, result, status, completed, unit, copied=0, failed=0, started=True):
         self.assertIn(f"Completion summary: {status}", result.stdout)
-        self.assertIn(f"Completed: {completed} {unit}; copied: {copied} companion files; "
+        self.assertIn(f"Completed: {completed} {unit}; copied: {copied} files unchanged; "
                       f"failed: {failed} {'work items' if started else 'preflight checks'}", result.stdout)
         self.assertRegex(result.stdout, r"Elapsed: \d+ ms")
         self.assertEqual(result.stdout.count("Completion summary:"), 1)
@@ -374,6 +374,140 @@ class ConversionTests(unittest.TestCase):
         for companion in ("cover.png", "album.cue"):
             self.assertEqual((target.parent / companion).read_bytes(), (nested / companion).read_bytes())
         self.assertFalse(list(self.output.rglob(".afc-convert-*")))
+
+    def test_flac_skips_unchanged_audio_folders_and_keeps_written_folders_complete(self):
+        artist = self.source / "Artist \u97f3"
+        album = artist / "AlbumA"
+        artwork = album / "Artwork"
+        empty = album / "Empty"
+        unchanged = artist / "AlbumB"
+        nested = unchanged / "nested"
+        scans = artist / "Scans"
+        for directory in (artwork, empty, nested, scans):
+            directory.mkdir(parents=True)
+        (album / "second.FLAC").write_bytes(self.fixture.read_bytes())
+        (album / "bonus.MP3").write_bytes(b"copied beside a conversion")
+        (artwork / "cover.png").write_bytes(self.image)
+        (scans / "scan.png").write_bytes(self.image)
+        (self.source / "README").write_bytes(b"extensionless companion")
+        extensions = ("MP3", "aac", "ogg", "oga", "opus", "wma", "aif", "aiff",
+                      "alac", "mp4", "mka", "ac3", "m4b", "m4p", "mp2", "mp1",
+                      "au", "snd", "aifc", "caf", "tak", "tta", "shn", "amr")
+        for extension in extensions:
+            (nested / ("track." + extension)).write_bytes(("unchanged " + extension).encode())
+        (unchanged / "cover.png").write_bytes(self.image)
+        (unchanged / "notes").write_bytes(b"skipped with its album")
+        before = {p.relative_to(self.source): p.read_bytes()
+                  for p in self.source.rglob("*") if p.is_file()}
+        result = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "1\nRUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_summary(result, "Completed", 2, "audio files", copied=4)
+        self.assertIn("Skipped: " + str(unchanged.relative_to(self.source)), result.stdout)
+        self.assertEqual({p.relative_to(self.source): p.read_bytes()
+                          for p in self.source.rglob("*") if p.is_file()}, before)
+        destination = self.output / "FLAC" / "Library"
+        skipped = unchanged.relative_to(self.source)
+        kept = {relative: content for relative, content in before.items()
+                if skipped not in relative.parents}
+        for relative, content in kept.items():
+            if relative.suffix.lower() != ".flac":
+                self.assertEqual((destination / relative).read_bytes(), content)
+        self.assertEqual(
+            {p.relative_to(destination) for p in destination.rglob("*") if p.is_dir()},
+            {p.relative_to(self.source) for p in self.source.rglob("*")
+             if p.is_dir() and p != unchanged and unchanged not in p.parents})
+        expected_files = {p.with_suffix(".flac") if p.suffix.lower() == ".flac" else p for p in kept}
+        expected_files.update(Path(str(p.with_suffix(".flac")) + ".flac-metadata")
+                              for p in kept if p.suffix.lower() == ".flac")
+        expected_files.add(Path("conversion-audit.json"))
+        self.assertEqual({p.relative_to(destination) for p in destination.rglob("*") if p.is_file()},
+                         expected_files)
+        report = self.audit(destination)
+        self.assertEqual(report["skippedAudio"], [])
+        self.assertEqual(report["counts"]["installedCompanions"], 4)
+        self.assertEqual(report["counts"]["skippedUnchangedDirectories"], 1)
+        self.assertEqual([(Path(item["source"]), item["files"], item["audioFiles"])
+                          for item in report["skippedUnchangedDirectories"]],
+                         [(skipped, len(extensions) + 2, len(extensions))])
+
+    def test_flac_library_without_conversions_writes_only_report(self):
+        for name in ("copy-only", "empty"):
+            with self.subTest(name=name):
+                source = self.work / name
+                source.mkdir()
+                (source / "empty child").mkdir()
+                if name == "copy-only":
+                    (source / "song.mp3").write_bytes(b"unchanged audio")
+                    (source / "README").write_bytes(b"unchanged document")
+                before = {p.relative_to(source): p.read_bytes()
+                          for p in source.rglob("*") if p.is_file()}
+                result = self.legacy(
+                    [{"isActive": True, "mediaPath": str(source), "mediaName": name}], "1\nRUN\n",
+                    FLACSettings={"ffmpeg_exe_name": str(self.work / "must-not-run.exe")})
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assert_summary(result, "Completed", 0, "audio files")
+                destination = self.output / "FLAC" / name
+                self.assertEqual([p.name for p in destination.iterdir()], ["conversion-audit.json"])
+                report = self.audit(destination)
+                self.assertEqual(report["status"], "completed")
+                self.assertEqual(report["counts"]["plannedAudio"], 0)
+                self.assertEqual(report["counts"]["plannedCompanions"], 0)
+                self.assertEqual(report["skippedUnchangedDirectories"], [
+                    {"source": ".", "files": len(before), "audioFiles": 1 if before else 0}])
+                self.assertEqual({p.relative_to(source): p.read_bytes()
+                                  for p in source.rglob("*") if p.is_file()}, before)
+
+    def test_flac_directory_collision_fails_before_writing(self):
+        (self.source / "collision.wav").write_bytes(b"not decoded during preflight")
+        (self.source / "collision.flac").mkdir()
+        self.convert(target="flac", success=False)
+        self.assertFalse(self.output.exists())
+
+    def test_flac_overwrite_writes_formerly_skipped_folder_completely(self):
+        album = self.source / "album"
+        album.mkdir()
+        (album / "song.mp3").write_bytes(b"unchanged audio")
+        (album / "cover.png").write_bytes(self.image)
+        self.convert(target="flac")
+        written = self.destination("flac") / "album"
+        self.assertFalse(written.exists())
+        self.assertEqual([item["source"] for item in
+                          self.audit(self.destination("flac"))["skippedUnchangedDirectories"]], ["album"])
+        (album / "new.flac").write_bytes(self.fixture.read_bytes())
+        self.convert("--overwrite", target="flac")
+        self.assertEqual({p.name for p in written.iterdir()},
+                         {"song.mp3", "cover.png", "new.flac", "new.flac.flac-metadata"})
+        self.assertEqual(self.audit(self.destination("flac"))["skippedUnchangedDirectories"], [])
+
+    def test_flac_rejects_directory_links_instead_of_omitting_their_contents(self):
+        linked_source = self.work / "linked target"
+        linked_source.mkdir()
+        (linked_source / "keep.txt").write_bytes(b"must not disappear silently")
+        link = self.source / "directory link"
+        if os.name == "nt":
+            result = run(os.environ["ComSpec"], "/c", "mklink", "/J", link, linked_source)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        else:
+            link.symlink_to(linked_source, target_is_directory=True)
+        self.convert(target="flac", success=False)
+        self.assertFalse(self.output.exists())
+        self.assertEqual((linked_source / "keep.txt").read_bytes(), b"must not disappear silently")
+
+    @unittest.skipUnless(os.name == "nt", "Windows sharing failure during copied audio")
+    def test_flac_unsupported_audio_copy_failure_marks_output_failed(self):
+        track = self.source / "bonus.mp3"
+        track.write_bytes(b"original unconverted audio")
+        with deny_delete(track, share=0):
+            self.convert(target="flac", success=False)
+        failed = next((self.output / "FLAC").glob("ERROR_COPY_*"))
+        report = self.audit(failed)
+        self.assertEqual(report["errorType"], "COPY")
+        self.assertEqual(report["counts"]["installedAudio"], 1)
+        self.assertEqual(report["counts"]["installedCompanions"], 0)
+        self.assertTrue((failed / ".conversion-in-progress").is_dir())
+        self.assertEqual(track.read_bytes(), b"original unconverted audio")
 
     def test_flac_existing_destinations_and_cross_library_preflight(self):
         libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]

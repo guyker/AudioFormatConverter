@@ -78,16 +78,25 @@ All commands accept `--config <file>`. Exit code is 0 on success, non-zero on an
 ### Conversion (menu 1/6, `convert`)
 
 1. **Plan** – `FolderConvert::PrepareConversion` resolves input/output, rejects source/output overlap and reserved
-   state names, enumerates convertible audio (`MediaTrack::IsFileConvertable`) and non-audio companions, maps each to
+   state names, enumerates source entries once, classifies convertible audio (`MediaTrack::IsFileConvertable`), maps files to
    `<output>/<relative path>` with a unique temporary (`.afc-convert-<pid>-<time>-<n><ext>`), and records existing
-   targets and case-insensitive collisions. MP3 mode skips non-FLAC audio. Nothing is written.
+   targets and case-insensitive collisions, including file/directory collisions. FLAC counts files, audio and
+   conversions per source subtree. The topmost subtrees with audio but no conversions are skipped and recorded in
+   `FolderConversionPlan::skippedDirectories`; a library without conversions skips its root (`"."`) and writes only
+   the report. Every other directory is retained and every other regular file is copied, including unsupported
+   audio beside conversions and folders without audio (K-036). Directory links and non-regular entries fail FLAC
+   planning anywhere, including inside skipped subtrees, rather than disappearing from output. MP3 mode retains its
+   non-audio companion policy, skips non-FLAC audio and does nothing without convertible FLAC. Nothing is written.
 2. **Preview** (menu only) – `ConvertConfiguredLibraries` plans *all* active libraries, checks cross-library overlap,
    prints `ShowConversionPreview`, and requires `RUN` (`ConfirmPreview`). Any conflict blocks the whole run (K-027).
 3. **Execute** – `FolderConvert::ExecuteConversion` creates the library folder (ownership = created by this run),
    creates the `.conversion-in-progress` marker directory, then processes audio files sequentially:
-   `MediaConvertionTask::Run` (convert + verify + audit) then `MediaConvertionTask::PostRun` (install). Companions are
+   `MediaConvertionTask::Run` (convert + verify + audit) then `MediaConvertionTask::PostRun` (install). Retained FLAC
+   output directories, including empty ones, are created; skipped folders are logged and never created.
+   Unchanged file copies (internally `companions`, including unsupported audio for FLAC) are
    copied to a temporary, verified byte-for-byte (`PreservationAudit::VerifyCopy`) and installed.
-4. **Finish** – re-checks every installed file and sidecar (`FlacMetadata::Verify`), writes `conversion-audit.json`,
+4. **Finish** – re-checks every installed file, directory and sidecar (`FlacMetadata::Verify`). The report uses a
+   verified temporary and the same output installer. Writes `conversion-audit.json`,
    removes the marker. On failure the report is written, an owned folder is renamed with an error prefix, and the
    marker is retained (K-030).
 
@@ -138,7 +147,13 @@ bound as NULL, so each import **appends** rows; re-importing the same JSON dupli
 - **Processing is sequential and stops at the first error**; earlier outputs remain; no batch rollback (K-024).
 - **Ownership:** only library folders created by the current execution are renamed on failure (K-030).
 - **Reserved names:** `conversion-audit.json` and `.conversion-in-progress` at a library root; a source containing
-  them blocks the run; an existing marker in the output blocks reuse.
+  them blocks the run; an existing in-progress marker in the output blocks reuse.
+- **FLAC completeness:** every written folder is complete: each enumerated regular file outside a skipped subtree is
+  converted or copied, and each directory outside it is retained. Skipped subtrees (audio, no conversions) are
+  omitted entirely and listed in the report. Unsupported filesystem entries or filename collisions fail rather than
+  being silently omitted.
+  Regular-file symlinks are read as content, not reproduced as links. Plans are preview-time snapshots, not
+  transactional filesystem snapshots; unrelated existing output files are not deleted.
 - **External FFmpeg tools are child processes with argument vectors**, never shell commands (K-014).
   `FFmpeg::GetJsonMetadataShell` captures ffprobe output through a pipe when `UseFFmpegLibraryAPI` is false.
 - **Counts reflect confirmed work only** (installed files, installed JSON batches, committed DB batches, processed
@@ -172,7 +187,7 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 |---|---|---|
 | Converted audio | `<root>/FLAC\|MP3/<name>/<relative path>.flac\|.mp3` | `MediaConvertionTask` |
 | Metadata sidecar | `<audio file>.flac-metadata` (MP3 and native-FLAC sources) | `FlacMetadata::Save` |
-| Companion copies | Same relative path, unchanged bytes | `FolderConvert::ExecuteConversion` |
+| Unchanged file copies | Same relative path; non-converted regular files outside skipped subtrees for FLAC, non-audio companions for MP3 | `FolderConvert::ExecuteConversion` |
 | Audit report | `<library output>/conversion-audit.json` | `writeAudit` in `FolderConvert.cpp` |
 | In-progress marker | `<library output>/.conversion-in-progress/` (directory) | `FolderConvert::ExecuteConversion` |
 | Album JSON | `OutDirectory/<name>/media_out_<name>[_<n>].json` | `AlbumCollection::SaveAlbumsToJSON` |
@@ -184,11 +199,16 @@ no audio. Describes the source, not the output.
 
 **`conversion-audit.json` (`schemaVersion` 1):** `source`, `output`, `target` (`FLAC`/`MP3`), `status`
 (`completed`/`failed`), `errorType` (`""`, `AUDIO`, `PRESERVATION`, `COPY`, `IO`, `INCOMPLETE`), `counts`
-{`plannedAudio`, `plannedCompanions`, `installedAudio`, `installedCompanions`, `skippedAudio`}, `skippedAudio[]`,
+{`plannedAudio`, `plannedCompanions`, `installedAudio`, `installedCompanions`, `skippedAudio`,
+`plannedDirectories`, `skippedUnchangedDirectories`}, `skippedUnchangedDirectories[]` {`source` (relative
+directory, `"."` for root), `files`, `audioFiles`}, `skippedAudio[]`,
 `files[]` {`source`, `output` (relative), `kind` (`audio`/`companion`), `status`
 (`not-attempted`/`failed`/`audited`/`installed`), `metadataArchive`?, `preservationChecked`, `preservationPassed`,
 `resources[]` {`status`, `resource`, `name`, `detail`, `fatal`}}. Resource statuses are
 `PreservationAudit::Status`: `Preserved`, `Normalized`, `SidecarOnly`, `MissingOrChanged`, `NotVerified`, `SourceOnly`.
+`companion`/`*Companions` denote unchanged file copies and include unsupported audio for FLAC; MP3 still skips
+other audio. Directory fields are additive version-1 fields and are empty/zero for MP3. Skipped folders are
+planning results; they are listed even when the run later fails.
 
 **Album JSON:** array of `{ "Album Path", "Folder", "Tracks": [ffprobe-style object with format, streams,
 chapters] }`. Format and stream timing is in seconds; stream dispositions and chapter timing/tags are preserved.

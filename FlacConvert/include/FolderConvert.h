@@ -28,6 +28,13 @@ struct PlannedFileConversion {
     fs::path temporary;
 };
 
+// A source subtree omitted from FLAC output because it contains audio but nothing to convert.
+struct SkippedDirectory {
+    fs::path source;
+    std::size_t files{ 0 };
+    std::size_t audioFiles{ 0 };
+};
+
 struct FolderConversionPlan {
     fs::path input;
     fs::path output;
@@ -35,6 +42,8 @@ struct FolderConversionPlan {
     ConversionOptions options;
     std::vector<PlannedFileConversion> audio;
     std::vector<PlannedFileConversion> companions;
+    std::vector<fs::path> directories;
+    std::vector<SkippedDirectory> skippedDirectories;
     std::vector<fs::path> skippedAudio;
     std::vector<fs::path> existingTargets;
     std::vector<fs::path> collisions;

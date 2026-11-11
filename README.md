@@ -37,8 +37,12 @@ press Enter; invalid input is retried, `0` exits, and end-of-input exits without
 Option `5` is explicitly unavailable: scan with `2`, then import into SQLite with `4`.
 Option `1` writes to `OutDirectory\FLAC\<mediaName>` and leaves the source tree untouched.
 It keeps the 16-bit / 44.1 kHz profile with triangular dithering, maps tags and supported embedded pictures,
-archives original native FLAC metadata in `<filename>.flac.flac-metadata` sidecars, and copies non-audio
-companions unchanged. Existing outputs are rejected; use explicit `convert --overwrite` to replace outputs.
+archives original native FLAC metadata in `<filename>.flac.flac-metadata` sidecars, and keeps every written
+folder complete: other regular files there, including MP3 beside converted tracks, are copied unchanged, as are
+folders without audio (artwork, scans, empty folders). A folder whose subtree contains audio but nothing to
+convert is skipped entirely and listed in `conversion-audit.json`; a library without conversions produces only
+that report. Folder names and relative paths stay intact. Existing outputs are rejected;
+use explicit `convert --overwrite` to replace outputs.
 No active libraries is an error. `<mediaName>` defaults to the source folder name.
 Selected actions show an operation preview with absolute configured input/output paths, input counts,
 conversion quality/overwrite policies, and existing or duplicate destinations. Options `1`, `2`, `3`, `4`
@@ -53,7 +57,7 @@ At the preview confirmation, `BACK` returns to the menu and `EXIT` quits without
 Running uses the same single `RUN` confirmation for every available action.
 Enter, unrecognized confirmation text or EOF still cancels and exits. Option numbers are unchanged.
 Finished manual actions report `Completed`, `Partially completed` or `Failed`, elapsed execution time,
-output locations, completed work and copied companions. Counts reflect successfully installed audio,
+output locations, completed work and copied files. Counts reflect successfully installed audio,
 installed album JSON files (not optional error reports), committed JSON database batches, or fully
 processed duplicate pairs; they are not preview estimates. A failure stops at the first error and
 does not count unattempted work as failed or imply whole-operation rollback. Preflight failures state
@@ -162,9 +166,23 @@ even if FFmpeg cannot embed them faithfully. Picture dimensions and mapped tags 
 Original seek tables, checksums and technical fields in the sidecar describe the source, not the new
 16-bit / 44.1 kHz audio; they must not be inserted blindly into the converted FLAC.
 Non-FLAC inputs rely on FFmpeg tag/picture mapping and do not produce this native-FLAC sidecar.
-Non-audio companion files are copied unchanged with relative paths preserved. Cue sheets/playlists are
-not rewritten, and may still refer to old names or source audio properties. Empty directories are not copied.
+Every regular file not selected for FLAC conversion in a written folder is copied unchanged, including MP3, AAC,
+Ogg and other unsupported audio beside converted tracks. Folders without audio, including empty folders, stay with
+their written parent. Converted
+sources are represented by their new `.flac` files, not additional copies of their original audio containers.
+Cue sheets/playlists are not rewritten and may still refer to old names or source audio properties.
 Native metadata sidecars do not contain audio or restore precision lost through resampling/dithering.
+
+A folder whose source subtree contains audio but no file to convert (for example an MP3-only album) is skipped
+entirely, so the output never holds a partial copy of an untouched album. Only the topmost such folder is listed
+in the audit's `skippedUnchangedDirectories`, with its file and audio counts. A library without conversions writes
+only `FLAC\<mediaName>\conversion-audit.json` listing `"."`. Because the rule is per folder, an MP3-only `CD2` beside a
+converted `CD1` is skipped. Directory symlinks/junctions, broken links and special filesystem entries fail FLAC
+planning explicitly, even inside a skipped folder. Regular-file links are materialized as file contents, not
+preserved as links.
+Explicit `--overwrite` replaces existing targets; unrelated existing output files (including folders that are now
+skipped) are retained, so this is not a directory-mirroring/delete operation.
+MP3 conversion keeps its narrower policy: other audio formats are skipped, and empty/copy-only trees are not exported.
 
 ### Preservation audit and incomplete output
 
@@ -173,7 +191,9 @@ attached picture payloads/descriptors, chapters and opaque FLAC metadata. Requir
 verified byte-for-byte against the original. Companion files are compared byte-for-byte before installation.
 Each installed audio file logs a compact summary and resource differences, without dumping tag values.
 `conversion-audit.json` in the library output contains per-file installation states, resource classifications,
-counts and the actual output location. Unattempted files are listed explicitly.
+counts and the actual output location. Unattempted files are listed explicitly. For FLAC, unchanged file copies
+include unsupported audio; `skippedUnchangedDirectories` lists folders omitted because they contain audio but nothing
+to convert. Root-relative `"."` identifies the library folder itself.
 
 `Preserved` means observed fields match; `Normalized` identifies changed representations;
 `SidecarOnly` means the original is retained in a verified archive; `MissingOrChanged` identifies loss;
