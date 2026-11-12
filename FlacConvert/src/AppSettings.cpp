@@ -247,6 +247,17 @@ std::string AppSettingsJson::toJsonString() const {
     }
     doc.AddMember("MediaDirectoryList", mediaArray, allocator);
 
+    const auto policyName = [](MetadataSidecarPolicy policy) {
+        return policy == MetadataSidecarPolicy::Disabled ? "disabled" :
+            policy == MetadataSidecarPolicy::Optional ? "optional" : "required";
+    };
+    rapidjson::Value sidecarObj(rapidjson::kObjectType);
+    sidecarObj.AddMember("Format", rapidjson::StringRef(
+        MetadataSidecars.Format == MetadataSidecarFormat::Json ? "json" : "binary"), allocator);
+    sidecarObj.AddMember("ConvertToFlac", rapidjson::StringRef(policyName(MetadataSidecars.ConvertToFlac)), allocator);
+    sidecarObj.AddMember("ConvertToMp3", rapidjson::StringRef(policyName(MetadataSidecars.ConvertToMp3)), allocator);
+    doc.AddMember("MetadataSidecars", sidecarObj, allocator);
+
     doc.AddMember("LogLevel", LogLevel, allocator);
     doc.AddMember("UseAsyncFFmpegCalls", UseAsyncFFmpegCalls, allocator);
     doc.AddMember("MetadataScanMaxThreads", MetadataScanMaxThreads, allocator);
@@ -290,7 +301,7 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
 
     rapidjson::IStreamWrapper isw(ifs);
     rapidjson::Document doc;
-    doc.ParseStream(isw);
+    doc.ParseStream<rapidjson::kParseCommentsFlag>(isw);
 
     if (doc.HasParseError() || !doc.IsObject()) {
         std::cerr << "Error: Configuration must be a valid JSON object." << std::endl;
@@ -322,6 +333,42 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
         }
         if (flacObj.HasMember("ffmpeg_get_metadata_tags") && flacObj["ffmpeg_get_metadata_tags"].IsString()) {
             FLACSettings.ffmpeg_get_metadata_tags = UTF8ToWide(flacObj["ffmpeg_get_metadata_tags"].GetString());
+        }
+    }
+
+    if (doc.HasMember("MetadataSidecars")) {
+        const auto& sidecarObj = doc["MetadataSidecars"];
+        if (!sidecarObj.IsObject()) {
+            std::cerr << "Error: MetadataSidecars must be a JSON object." << std::endl;
+            return false;
+        }
+        if (sidecarObj.HasMember("Format")) {
+            const auto& value = sidecarObj["Format"];
+            const std::string text = value.IsString() ? value.GetString() : "";
+            if (text == "binary") MetadataSidecars.Format = MetadataSidecarFormat::Binary;
+            else if (text == "json") MetadataSidecars.Format = MetadataSidecarFormat::Json;
+            else {
+                std::cerr << "Error: MetadataSidecars.Format must be \"binary\" or \"json\"." << std::endl;
+                return false;
+            }
+        }
+        const auto readPolicy = [&](const char* key, MetadataSidecarPolicy& policy) {
+            if (!sidecarObj.HasMember(key)) return true;
+            const auto& value = sidecarObj[key];
+            const std::string text = value.IsString() ? value.GetString() : "";
+            if (text == "disabled") policy = MetadataSidecarPolicy::Disabled;
+            else if (text == "optional") policy = MetadataSidecarPolicy::Optional;
+            else if (text == "required") policy = MetadataSidecarPolicy::Required;
+            else {
+                std::cerr << "Error: MetadataSidecars." << key
+                    << " must be \"disabled\", \"optional\" or \"required\"." << std::endl;
+                return false;
+            }
+            return true;
+        };
+        if (!readPolicy("ConvertToFlac", MetadataSidecars.ConvertToFlac) ||
+            !readPolicy("ConvertToMp3", MetadataSidecars.ConvertToMp3)) {
+            return false;
         }
     }
 

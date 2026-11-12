@@ -159,13 +159,33 @@ All libraries are checked before manual execution; source/output overlap, duplic
 outputs block the run. Files are processed sequentially and stop at the first error. Completed outputs remain;
 the source tree is never modified. Manual overwrite is disabled; explicit `--overwrite` only replaces outputs.
 
-Tags and supported attached pictures are mapped into FLAC without image re-encoding. Native FLAC inputs also
-produce `<filename>.flac.flac-metadata`: the same byte-preserving original metadata archive used by MP3.
+Tags and supported attached pictures are mapped into FLAC without image re-encoding. When enabled by the
+`MetadataSidecars` policy, native FLAC inputs also produce `<filename>.flac.flac-metadata`: the same
+byte-preserving original metadata archive used by MP3.
 This retains repeated comments, application blocks, cue sheets, original chapters and unsupported pictures
 even if FFmpeg cannot embed them faithfully. Picture dimensions and mapped tags can be normalized.
 Original seek tables, checksums and technical fields in the sidecar describe the source, not the new
 16-bit / 44.1 kHz audio; they must not be inserted blindly into the converted FLAC.
 Non-FLAC inputs rely on FFmpeg tag/picture mapping and do not produce this native-FLAC sidecar.
+
+Sidecars are configured in `config.json`:
+
+```json
+"MetadataSidecars": {
+  "Format": "binary",
+  "ConvertToFlac": "disabled",
+  "ConvertToMp3": "disabled"
+}
+```
+
+`Format` is `binary` (`.flac-metadata`) or `json` (`.flac-metadata.json`: readable tags/streams/chapters in the
+scan-JSON shape plus the exact archive as Base64; only the archive is verified). Each target policy is
+`disabled` (never written), `optional` (written by default; the menu asks, CLI `--no-metadata-sidecar` turns it off)
+or `required` (always written; `--no-metadata-sidecar` is an error); both default to `disabled`. The sample
+`config.json` uses `//` comments, accepted by the config loader, to explain these choices. Without a sidecar,
+metadata the output cannot carry (application blocks, repeated tags, unsupported pictures, etc.) stops the
+conversion instead of being lost.
+Scan, duplicates and database import are unaffected.
 Every regular file not selected for FLAC conversion in a written folder is copied unchanged, including MP3, AAC,
 Ogg and other unsupported audio beside converted tracks. Folders without audio, including empty folders, stay with
 their written parent. Converted
@@ -229,7 +249,8 @@ Pictures are copied without image re-encoding, including their types/description
 information remains enabled for seeking and gapless playback. Unsupported pictures remain in the
 sidecar, rather than being silently discarded. Not every player displays every ID3 field or multiple pictures.
 
-Each MP3 has a required `<filename>.mp3.flac-metadata` binary sidecar: the original FLAC marker and every
+Each MP3 has a `<filename>.mp3.flac-metadata` binary sidecar by default (JSON or optional per
+`MetadataSidecars`, see above): the original FLAC marker and every
 metadata block, byte-for-byte, plus leading ID3 and recognized trailing APE/ID3v1 tags when present.
 It preserves repeated Vorbis comments, vendor data, application blocks, cue sheets, seek tables and
 all picture payloads that ID3 or FFmpeg cannot faithfully represent. This is **not playable audio** or

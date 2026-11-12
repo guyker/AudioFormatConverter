@@ -8,7 +8,9 @@ Converts every supported audio file (`.flac .ape .dsf .dff .dsd .wv .wav .m2ts .
 folder is complete: other regular files there are copied unchanged, including unsupported audio such as MP3/AAC/Ogg
 beside converted tracks, and folders without audio (artwork, scans, empty folders) are retained. A folder subtree
 containing audio but nothing to convert is skipped entirely and listed in `conversion-audit.json`; a library without
-conversions writes only that report. Folder names are never changed.
+conversions writes only that report. Folder names are never changed. Native FLAC sources get an original-metadata
+sidecar when enabled by `MetadataSidecars` (binary by default, JSON optional; both target policies default to
+disabled, F-007).
 Convertible sources below 16-bit or 44.1 kHz are rejected; they are not silently dropped or copied as fallback.
 Without `--overwrite`, existing targets are never replaced. Exit code 0 only if every planned item was preserved.
 
@@ -20,7 +22,7 @@ Without `--overwrite`, existing targets are never replaced. Exit code 0 only if 
 
 ## Design and knowledge
 - DESIGN: `FlacConvert/DESIGN.md` → Key flows / Conversion; Contracts and invariants
-- K-003 install after success, K-013 CD-quality gate, K-014 FFmpeg argument vector, K-015/K-028 sidecar,
+- K-003 install after success, K-013 CD-quality gate, K-014 FFmpeg argument vector, K-038 sidecar policy,
   K-032 configured vs canonical paths, K-026/K-031 output tree layout, K-036 complete folders, skipped unchanged folders
 
 ## Acceptance checks

@@ -35,6 +35,7 @@
 #include "AlbumCollection.h"
 #include "CommandLine.h"
 #include "FolderConvert.h"
+#include "FlacMetadata.h"
 
 #include "MediaInformation.h"
 
@@ -475,8 +476,45 @@ fs::path absoluteDisplayPath(const fs::path& path)
     return fs::absolute(path).lexically_normal();
 }
 
+const char* sidecarFormatName(MetadataSidecarFormat format)
+{
+    return format == MetadataSidecarFormat::Json ? "JSON (.flac-metadata.json)" :
+        format == MetadataSidecarFormat::Binary ? "binary (.flac-metadata)" : "none";
+}
+
+// Applies MetadataSidecars from the configuration; an optional policy asks the user (default YES).
+MenuConfirmation ConfigureMenuSidecars(ConversionOptions& options)
+{
+    const auto settings = AppSettingsJson::AppSetting();
+    const MetadataSidecarSettings sidecars = settings ? settings->MetadataSidecars : MetadataSidecarSettings{};
+    const auto policy = sidecars.PolicyFor(options.target);
+    std::string error;
+    options.sidecarFormat = sidecars.Resolve(options.target, false, error).value_or(MetadataSidecarFormat::None);
+    if (policy != MetadataSidecarPolicy::Optional) {
+        return MenuConfirmation::Run;
+    }
+    for (;;) {
+        std::string response;
+        const std::string prompt = std::string("Write original-metadata sidecars, format ") +
+            sidecarFormatName(sidecars.Format) + " [YES] (YES/NO): ";
+        const auto choice = ReadManualSetting(prompt.c_str(), response);
+        if (choice != MenuConfirmation::Run) {
+            return choice;
+        }
+        if (response.empty() || response == "YES") {
+            return MenuConfirmation::Run;
+        }
+        if (response == "NO") {
+            options.sidecarFormat = MetadataSidecarFormat::None;
+            return MenuConfirmation::Run;
+        }
+        std::cout << "Invalid selection. Enter YES or NO.\n";
+    }
+}
+
 void ShowConversionPreview(const FolderConversionPlan& plan)
 {
+    const bool sidecars = plan.options.sidecarFormat != MetadataSidecarFormat::None;
     std::cout << "\nOperation preview: "
         << (plan.options.target == AudioTarget::Mp3 ? "FLAC to MP3" : "FLAC conversion") << '\n'
         << "  Input: " << pathToUtf8(plan.input) << '\n'
@@ -484,11 +522,11 @@ void ShowConversionPreview(const FolderConversionPlan& plan)
         << "  Audio files: " << plan.audio.size()
         << (plan.options.target == AudioTarget::Mp3 ? "; companions: " : "; files copied unchanged: ")
         << plan.companions.size()
-        << "; metadata sidecars: " << std::count_if(plan.audio.begin(), plan.audio.end(),
+        << "; metadata sidecars: " << (sidecars ? std::count_if(plan.audio.begin(), plan.audio.end(),
             [&](const PlannedFileConversion& file) {
-                return plan.options.target == AudioTarget::Mp3 ||
-                    MediaTrack::FileExtension(file.source) == u8".flac";
-            }) << '\n'
+                return FlacMetadata::AppliesTo(file.source, plan.options);
+            }) : 0)
+        << " (" << sidecarFormatName(plan.options.sidecarFormat) << ")\n"
         << "  Existing destinations: " << plan.existingTargets.size()
         << "; duplicate destinations: " << plan.collisions.size() << '\n'
         << "  Overwrite: " << (plan.overwrite ? "enabled" : "disabled") << '\n';
@@ -584,7 +622,8 @@ int ConvertConfiguredLibraries(const std::vector<MediaDirectoryElement>& mediaDi
         "  Source quality/channel properties are verified during conversion.\n";
     } else {
         std::cout << "  Quality: 16-bit / 44.1 kHz, triangular dithering; channel count retained.\n"
-            "  Tags and supported pictures mapped; original native FLAC metadata retained in sidecars.\n"
+            "  Tags and supported pictures mapped; original native FLAC metadata retained in sidecars\n"
+            "  when enabled (otherwise any metadata the FLAC cannot carry stops the conversion).\n"
             "  Written folders keep every file; other audio (e.g. MP3) beside conversions is copied unchanged.\n"
             "  Folders with audio but nothing to convert are skipped and listed in conversion-audit.json.\n"
             "  Sources unchanged. Source quality is verified during conversion.\n";
@@ -608,7 +647,12 @@ int ConvertConfiguredLibraries(const std::vector<MediaDirectoryElement>& mediaDi
 int ConvertFLACToFLAC(const std::vector<MediaDirectoryElement>& libraries, const fs::path& outputRoot,
     ManualOperationSummary& summary)
 {
-    return ConvertConfiguredLibraries(libraries, outputRoot, summary, {}, false);
+    ConversionOptions options{};
+    const auto sidecarChoice = ConfigureMenuSidecars(options);
+    if (sidecarChoice != MenuConfirmation::Run) {
+        return cancelledMenuResult(sidecarChoice);
+    }
+    return ConvertConfiguredLibraries(libraries, outputRoot, summary, options, false);
 }
 
 int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& libraries, const fs::path& outputRoot,
@@ -616,7 +660,10 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& libraries, const 
 {
     ConversionOptions options{ AudioTarget::Mp3, 0, false };
     bool overwrite = false;
-    const auto settingsChoice = ConfigureManualMp3(options, overwrite);
+    auto settingsChoice = ConfigureManualMp3(options, overwrite);
+    if (settingsChoice == MenuConfirmation::Run) {
+        settingsChoice = ConfigureMenuSidecars(options);
+    }
     if (settingsChoice != MenuConfirmation::Run) {
         return cancelledMenuResult(settingsChoice);
     }
@@ -1227,8 +1274,9 @@ constexpr std::array<MenuEntry, 6> MenuEntries{ {
         "Convert to FLAC [sources unchanged]",
         "      Input: all regular files and directories in the active source libraries, recursively.\n"
         "      Output: OutDirectory/FLAC/<mediaName>, retaining relative folder structure.\n"
-        "              16-bit / 44.1 kHz FLAC with dithering, original FLAC metadata sidecars,\n"
-        "              mapped tags/pictures; other files in written folders are copied unchanged.\n"
+        "              16-bit / 44.1 kHz FLAC with dithering, mapped tags/pictures, original FLAC\n"
+        "              metadata sidecars per MetadataSidecars (binary/JSON; disabled/optional/required);\n"
+        "              other files in written folders are copied unchanged.\n"
         "              Folders with audio but nothing to convert are skipped and listed in the audit.\n"
         "      Changes: source files are untouched; existing output files are rejected.\n"
         "               Resampling/depth reduction loses information in the output audio.\n"
@@ -1258,8 +1306,8 @@ constexpr std::array<MenuEntry, 6> MenuEntries{ {
     { '6', ConvertActionEnum::ConvertMp3Enum, "Convert FLAC to MP3 [sources unchanged]",
         "      Input: native FLAC files in the active source libraries, recursively.\n"
         "      Output: OutDirectory/MP3/<mediaName>/ with relative paths preserved:\n"
-        "              MP3 (LAME VBR quality 0 by default), .mp3.flac-metadata sidecars,\n"
-        "              and unchanged non-audio companion files (artwork, booklets, etc.).\n"
+        "              MP3 (LAME VBR quality 0 by default), .mp3.flac-metadata sidecars\n"
+        "              (or .json; per MetadataSidecars), and unchanged non-audio companion files.\n"
         "      Changes: sources unchanged; existing destinations fail unless overwrite is enabled.\n"
         "               Supported tags/pictures/chapters go into ID3v2.4; original metadata\n"
         "               is retained in sidecars. MP3 audio is lossy. Multichannel audio\n"
@@ -1543,6 +1591,14 @@ int RunWithArguments(const std::vector<const char*>& arguments)
                 spdlog::error("Conversion input must have a library folder name.");
                 return 1;
             }
+            std::string sidecarError;
+            const auto sidecarFormat = settings->MetadataSidecars.Resolve(
+                options.conversion.target, options.noMetadataSidecar, sidecarError);
+            if (!sidecarFormat) {
+                std::cerr << "Configuration error: " << sidecarError << '\n';
+                return 1;
+            }
+            options.conversion.sidecarFormat = *sidecarFormat;
             return FolderConvert::ConvertAudioFolderToOutput(
                 inputPath, outputDirectory / (options.conversion.target == AudioTarget::Mp3 ? "MP3" : "FLAC") / name,
                 options.overwrite, options.conversion) == 0 ? 0 : 1;

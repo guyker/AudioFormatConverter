@@ -113,10 +113,9 @@ std::wstring quoteWindowsArgument(const std::wstring& argument)
 }
 #endif
 
-fs::path sidecarPath(fs::path audio)
+fs::path sidecarPath(const fs::path& audio, MetadataSidecarFormat format)
 {
-    audio += ".flac-metadata";
-    return audio;
+    return FlacMetadata::SidecarPath(audio, format);
 }
 
 fs::path temporaryInputPath(fs::path audio)
@@ -291,8 +290,9 @@ int MediaConvertionTask::ConvertFile()
         _status = -1;
         return _status;
     }
-    _preserveOriginalMetadata = _options.target == AudioTarget::Mp3 ||
-        MediaTrack::FileExtension(_sourcePath) == u8".flac";
+    const bool parseOriginalMetadata = FlacMetadata::AppliesTo(_sourcePath, _options);
+    _preserveOriginalMetadata = parseOriginalMetadata &&
+        _options.sidecarFormat != MetadataSidecarFormat::None;
     if (_options.target == AudioTarget::Mp3) {
         const auto audio = std::find_if(metadata.streams.begin(), metadata.streams.end(),
             [](const Stream& stream) { return stream.codec_type && *stream.codec_type == "audio"; });
@@ -323,8 +323,11 @@ int MediaConvertionTask::ConvertFile()
         }
         std::vector<fs::path> destinations{ _targetPath, _targetTMPPath };
         if (_preserveOriginalMetadata) {
-            destinations.insert(destinations.end(), { sidecarPath(_targetPath),
-                sidecarPath(_targetTMPPath), temporaryInputPath(_targetTMPPath) });
+            destinations.insert(destinations.end(), { sidecarPath(_targetPath, _options.sidecarFormat),
+                sidecarPath(_targetTMPPath, _options.sidecarFormat) });
+        }
+        if (parseOriginalMetadata) {
+            destinations.push_back(temporaryInputPath(_targetTMPPath));
         }
         for (const auto& path : destinations) {
             const auto canonical = fs::weakly_canonical(path, pathError);
@@ -342,8 +345,8 @@ int MediaConvertionTask::ConvertFile()
                 return _status;
             }
             const bool sourceAlias = exists && fs::equivalent(path, _sourcePath, pathError);
-            const bool temporary = path == _targetTMPPath || path == sidecarPath(_targetTMPPath) ||
-                path == temporaryInputPath(_targetTMPPath);
+            const bool temporary = path == _targetTMPPath || path == temporaryInputPath(_targetTMPPath) ||
+                (_preserveOriginalMetadata && path == sidecarPath(_targetTMPPath, _options.sidecarFormat));
             if (pathError || canonical == canonicalSource || sourceAlias ||
                 (temporary && exists) || (path == _targetTMPPath && canonical == canonicalTarget)) {
                 spdlog::error("Unsafe conversion destination: {}", CommonUtils::path_to_utf8(path));
@@ -367,19 +370,27 @@ int MediaConvertionTask::ConvertFile()
         return _status;
     }
     bool preparedInput = false;
-    if (_preserveOriginalMetadata) {
+    if (parseOriginalMetadata) {
         _failureType = "PRESERVATION";
-        const bool sidecarExists = fs::exists(sidecarPath(_targetPath), ec);
+        const auto sidecar = sidecarPath(_targetPath, _options.sidecarFormat);
+        const auto temporarySidecar = sidecarPath(_targetTMPPath, _options.sidecarFormat);
+        const bool sidecarExists = _preserveOriginalMetadata && fs::exists(sidecar, ec);
         if (ec || (!_overwriteTarget && sidecarExists)) {
             spdlog::error("Cannot use metadata destination '{}': {}",
-                CommonUtils::path_to_utf8(sidecarPath(_targetPath)), ec ? ec.message() : "already exists");
+                CommonUtils::path_to_utf8(sidecar), ec ? ec.message() : "already exists");
             _status = -1;
             return _status;
         }
-        if (!FlacMetadata::Save(_sourcePath, sidecarPath(_targetTMPPath),
+        const auto readable = _options.sidecarFormat == MetadataSidecarFormat::Json
+            ? MediaTrack::toJsonString(metadata) : std::string{};
+        // With sidecars disabled, Save only prepares a decoder input without appended tags.
+        if (!FlacMetadata::Save(_sourcePath, temporarySidecar, _options.sidecarFormat, readable,
             temporaryInputPath(_targetTMPPath), preparedInput) ||
-            !FlacMetadata::Verify(_sourcePath, sidecarPath(_targetTMPPath))) {
-            removeTemporary(sidecarPath(_targetTMPPath));
+            (_preserveOriginalMetadata &&
+                !FlacMetadata::Verify(_sourcePath, temporarySidecar, _options.sidecarFormat))) {
+            if (_preserveOriginalMetadata) {
+                removeTemporary(temporarySidecar);
+            }
             removeTemporary(temporaryInputPath(_targetTMPPath));
             _status = -1;
             return _status;
@@ -407,7 +418,7 @@ int MediaConvertionTask::ConvertFile()
         }
         removeTemporary(_targetTMPPath);
         if (_preserveOriginalMetadata) {
-            removeTemporary(sidecarPath(_targetTMPPath));
+            removeTemporary(sidecarPath(_targetTMPPath, _options.sidecarFormat));
         }
         _status = -1;
         return _status;
@@ -427,7 +438,9 @@ int MediaConvertionTask::ConvertFile()
             (metadata.format.duration && std::abs(*metadata.format.duration - *output.format.duration) > 0.15)) {
             spdlog::error("MP3 output verification failed for '{}'.", CommonUtils::path_to_utf8(_targetTMPPath));
             removeTemporary(_targetTMPPath);
-            removeTemporary(sidecarPath(_targetTMPPath));
+            if (_preserveOriginalMetadata) {
+                removeTemporary(sidecarPath(_targetTMPPath, _options.sidecarFormat));
+            }
             _status = -1;
             return _status;
         }
@@ -445,7 +458,7 @@ int MediaConvertionTask::ConvertFile()
             spdlog::error("FLAC output verification failed for '{}'.", CommonUtils::path_to_utf8(_targetTMPPath));
             removeTemporary(_targetTMPPath);
             if (_preserveOriginalMetadata) {
-                removeTemporary(sidecarPath(_targetTMPPath));
+                removeTemporary(sidecarPath(_targetTMPPath, _options.sidecarFormat));
             }
             _status = -1;
             return _status;
@@ -454,17 +467,17 @@ int MediaConvertionTask::ConvertFile()
 
     _failureType = "PRESERVATION";
     const bool verifiedArchive = _preserveOriginalMetadata &&
-        FlacMetadata::Verify(_sourcePath, sidecarPath(_targetTMPPath));
+        FlacMetadata::Verify(_sourcePath, sidecarPath(_targetTMPPath, _options.sidecarFormat), _options.sidecarFormat);
     if (_preserveOriginalMetadata && !verifiedArchive) {
         removeTemporary(_targetTMPPath);
-        removeTemporary(sidecarPath(_targetTMPPath));
+        removeTemporary(sidecarPath(_targetTMPPath, _options.sidecarFormat));
         _status = -1;
         return _status;
     }
     _audit = PreservationAudit::Compare(_sourcePath, _targetTMPPath, verifiedArchive);
     if (!_audit.ok) {
         removeTemporary(_targetTMPPath);
-        if (_preserveOriginalMetadata) removeTemporary(sidecarPath(_targetTMPPath));
+        if (_preserveOriginalMetadata) removeTemporary(sidecarPath(_targetTMPPath, _options.sidecarFormat));
         _status = -1;
         return _status;
     }
@@ -510,19 +523,19 @@ int MediaConvertionTask::InstallTemporaryOutput()
         return _status;
     }
 
-    fs::path backup = sidecarPath(_targetTMPPath);
+    fs::path backup = sidecarPath(_targetTMPPath, _options.sidecarFormat);
     backup += ".backup";
     bool backedUp = false;
     if (_preserveOriginalMetadata) {
-        if (_overwriteTarget && fs::exists(sidecarPath(_targetPath), ec)) {
-            backedUp = fs::copy_file(sidecarPath(_targetPath), backup, fs::copy_options::none, ec);
+        if (_overwriteTarget && fs::exists(sidecarPath(_targetPath, _options.sidecarFormat), ec)) {
+            backedUp = fs::copy_file(sidecarPath(_targetPath, _options.sidecarFormat), backup, fs::copy_options::none, ec);
             if (!backedUp) {
                 spdlog::error("Cannot back up existing metadata sidecar: {}", ec.message());
                 _status = -1;
                 return _status;
             }
         }
-        if (ec || !installFile(sidecarPath(_targetTMPPath), sidecarPath(_targetPath), _overwriteTarget)) {
+        if (ec || !installFile(sidecarPath(_targetTMPPath, _options.sidecarFormat), sidecarPath(_targetPath, _options.sidecarFormat), _overwriteTarget)) {
             if (ec) {
                 spdlog::error("Cannot inspect existing metadata sidecar: {}", ec.message());
             }
@@ -537,13 +550,13 @@ int MediaConvertionTask::InstallTemporaryOutput()
         spdlog::error("Converted audio remains recoverable at '{}'.", CommonUtils::path_to_utf8(_targetTMPPath));
         if (_preserveOriginalMetadata) {
             if (backedUp) {
-                if (!installFile(backup, sidecarPath(_targetPath), true)) {
+                if (!installFile(backup, sidecarPath(_targetPath, _options.sidecarFormat), true)) {
                     spdlog::error("Original metadata remains recoverable at '{}'.",
                         CommonUtils::path_to_utf8(backup));
                 }
             }
             else {
-                removeTemporary(sidecarPath(_targetPath));
+                removeTemporary(sidecarPath(_targetPath, _options.sidecarFormat));
             }
         }
         _status = -1;
@@ -554,7 +567,7 @@ int MediaConvertionTask::InstallTemporaryOutput()
     }
     if (_preserveOriginalMetadata) {
         spdlog::debug("Installed audio and original-metadata sidecar: '{}', '{}'.",
-            CommonUtils::path_to_utf8(_targetPath), CommonUtils::path_to_utf8(sidecarPath(_targetPath)));
+            CommonUtils::path_to_utf8(_targetPath), CommonUtils::path_to_utf8(sidecarPath(_targetPath, _options.sidecarFormat)));
     }
 
     _status = 0;

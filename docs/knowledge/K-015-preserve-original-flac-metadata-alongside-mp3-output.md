@@ -3,7 +3,8 @@ id: K-015
 kind: decision
 title: "Preserve original FLAC metadata alongside MP3 output"
 area: [FlacConvert]
-status: active
+status: superseded
+superseded_by: K-037
 created: 2026-10-10
 reviewed: 2026-11-10
 cites:

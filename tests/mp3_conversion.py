@@ -1,6 +1,7 @@
 """Generated-fixture integration tests; requires a built converter and FFmpeg/ffprobe."""
 
 import argparse
+import base64
 from contextlib import closing, contextmanager
 import hashlib
 import json
@@ -88,7 +89,12 @@ class ConversionTests(unittest.TestCase):
         cls.config = cls.root / "config.json"
         cls.config.write_text(json.dumps({
             "FLACSettings": {"ffmpeg_exe_name": str(ARGS.ffmpeg)},
-            "LogLevel": 2}), encoding="utf-8")
+            "LogLevel": 2,
+            "MetadataSidecars": {
+                "Format": "binary",
+                "ConvertToFlac": "required",
+                "ConvertToMp3": "required",
+            }}), encoding="utf-8")
         cls.fixture = cls.root / "fixture.flac"
         checked(ARGS.ffmpeg, "-v", "error", "-f", "lavfi", "-i",
                 "sine=frequency=997:sample_rate=48000:duration=1.3", "-ac", "2",
@@ -128,6 +134,7 @@ class ConversionTests(unittest.TestCase):
             for index, (kind, payload) in enumerate(metadata))
         cls.fixture.write_bytes(prefix + original[audio_offset:])
         cls.prefix = prefix
+        cls.plain = original
 
     @classmethod
     def tearDownClass(cls):
@@ -143,9 +150,9 @@ class ConversionTests(unittest.TestCase):
         self.track.write_bytes(self.fixture.read_bytes())
         self.original_hash = hashlib.sha256(self.track.read_bytes()).digest()
 
-    def convert(self, *extra, success=True, target="mp3"):
+    def convert(self, *extra, success=True, target="mp3", config=None):
         result = run(ARGS.converter, "convert", self.source, "--output-dir", self.output,
-                     "--config", self.config, "--to", target, *extra)
+                     "--config", config or self.config, "--to", target, *extra)
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
         self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
         self.assertNotIn("Completion summary:", result.stdout)
@@ -560,6 +567,80 @@ class ConversionTests(unittest.TestCase):
                              if s.get("disposition", {}).get("attached_pic")]), 2)
         self.convert("--overwrite", target="flac")
         self.assertEqual(Path(str(target) + ".flac-metadata").read_bytes(), self.prefix)
+
+    def sidecar_config(self, **sidecars):
+        settings = json.loads(self.config.read_text(encoding="utf-8"))
+        settings["MetadataSidecars"].update(sidecars)
+        path = self.work / "sidecar-config.json"
+        path.write_text(json.dumps(settings), encoding="utf-8")
+        return path
+
+    def test_json_sidecar_holds_readable_metadata_and_exact_archive(self):
+        config = self.sidecar_config(Format="json")
+        for target, audio in (("mp3", self.mp3()), ("flac", self.destination("flac") / self.track.name)):
+            self.convert(config=config, target=target)
+            self.assertFalse(Path(str(audio) + ".flac-metadata").exists())
+            sidecar = json.loads(Path(str(audio) + ".flac-metadata.json").read_text(encoding="utf-8"))
+            self.assertEqual(sidecar["schema"], "AudioFormatConverter.FlacMetadataSidecar")
+            self.assertEqual(base64.b64decode(sidecar["archive"]["data"]), self.prefix)
+            self.assertIn("\"Album\"", json.dumps(sidecar["metadata"]["format"]))
+            report = self.audit(audio.parent)
+            self.assertEqual(report["metadataSidecars"], "json")
+            self.assertTrue(any(f.get("metadataArchive", "").endswith(".flac-metadata.json")
+                                for f in report["files"]))
+
+    def test_disabled_sidecars_fail_closed_on_metadata_output_cannot_carry(self):
+        config = self.sidecar_config(ConvertToMp3="disabled", ConvertToFlac="disabled")
+        self.convert(config=config, success=False)
+        self.assertFalse(self.mp3().exists())
+        self.track.write_bytes(self.plain)
+        self.original_hash = hashlib.sha256(self.plain).digest()
+        self.convert(config=config, target="flac")
+        target = self.destination("flac") / self.track.name
+        self.assertTrue(target.exists())
+        self.assertFalse(Path(str(target) + ".flac-metadata").exists())
+        self.assertEqual(self.audit(target.parent)["metadataSidecars"], "none")
+
+    def test_config_comments_and_omitted_policies_default_to_disabled(self):
+        settings = json.loads(self.config.read_text(encoding="utf-8"))
+        settings["MetadataSidecars"] = {}
+        config_contents = json.dumps(settings, indent=2).replace(
+            '  "MetadataSidecars": {}',
+            '  "MetadataSidecars": {\n'
+            '    // The following line selects the archive representation.\n'
+            '    "Format": "binary"\n'
+            '    // Omitted target policies use the disabled default.\n'
+            '  }')
+        config = self.work / "commented-config.json"
+        config.write_text(config_contents, encoding="utf-8")
+
+        self.track.write_bytes(self.plain)
+        self.original_hash = hashlib.sha256(self.plain).digest()
+        self.convert(config=config, target="flac")
+        target = self.destination("flac") / self.track.name
+        self.assertTrue(target.exists())
+        self.assertFalse(Path(str(target) + ".flac-metadata").exists())
+        self.assertEqual(self.audit(target.parent)["metadataSidecars"], "none")
+
+    def test_sidecar_policy_controls_no_metadata_sidecar_flag(self):
+        self.track.write_bytes(self.plain)
+        self.original_hash = hashlib.sha256(self.plain).digest()
+        result = self.convert("--no-metadata-sidecar", target="flac", success=False)
+        self.assertIn("required", result.stderr)
+        self.assertFalse(self.destination("flac").exists())
+        config = self.sidecar_config(ConvertToFlac="optional")
+        self.convert("--no-metadata-sidecar", target="flac", config=config)
+        target = self.destination("flac") / self.track.name
+        self.assertTrue(target.exists())
+        self.assertFalse(Path(str(target) + ".flac-metadata").exists())
+        self.convert("--overwrite", target="flac", config=config)
+        self.assertTrue(Path(str(target) + ".flac-metadata").exists())
+
+    def test_invalid_sidecar_setting_is_rejected(self):
+        config = self.sidecar_config(Format="xml")
+        result = self.convert(config=config, success=False)
+        self.assertIn("MetadataSidecars.Format", result.stdout + result.stderr)
+        self.assertFalse(self.output.exists())
 
     def test_existing_destination_and_sidecar(self):
         self.destination().mkdir(parents=True)

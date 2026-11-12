@@ -24,8 +24,9 @@ int main(int argc, char** argv) {
         const std::filesystem::path scratch = argv[2];
         const auto sidecar = scratch / "archive.flac-metadata";
         bool prepared = false;
-        require(FlacMetadata::Save(source, sidecar, scratch / "clean.flac", prepared), "Save failed");
-        require(FlacMetadata::Verify(source, sidecar), "Valid archive rejected");
+        const auto binary = MetadataSidecarFormat::Binary;
+        require(FlacMetadata::Save(source, sidecar, binary, "", scratch / "clean.flac", prepared), "Save failed");
+        require(FlacMetadata::Verify(source, sidecar, binary), "Valid archive rejected");
         std::ifstream input(sidecar, std::ios::binary);
         std::string original((std::istreambuf_iterator<char>(input)), {});
         input.close();
@@ -38,13 +39,48 @@ int main(int argc, char** argv) {
         auto changed = original;
         changed.back() ^= 1;
         write(changed);
-        require(!FlacMetadata::Verify(source, sidecar), "Changed archive accepted");
+        require(!FlacMetadata::Verify(source, sidecar, binary), "Changed archive accepted");
         write(original.substr(0, original.size() - 1));
-        require(!FlacMetadata::Verify(source, sidecar), "Truncated archive accepted");
+        require(!FlacMetadata::Verify(source, sidecar, binary), "Truncated archive accepted");
         write(original + "extra");
-        require(!FlacMetadata::Verify(source, sidecar), "Extra archive bytes accepted");
+        require(!FlacMetadata::Verify(source, sidecar, binary), "Extra archive bytes accepted");
         write(original);
-        require(FlacMetadata::Verify(source, sidecar), "Restored archive rejected");
+        require(FlacMetadata::Verify(source, sidecar, binary), "Restored archive rejected");
+        require(!FlacMetadata::Verify(source, sidecar, MetadataSidecarFormat::Json), "Binary read as JSON");
+
+        const auto json = MetadataSidecarFormat::Json;
+        const auto jsonSidecar = scratch / "archive.flac-metadata.json";
+        require(FlacMetadata::SidecarPath(scratch / "a.flac", json) == scratch / "a.flac.flac-metadata.json",
+            "Unexpected JSON sidecar path");
+        require(FlacMetadata::Save(source, jsonSidecar, json, "{\"title\":\"x\"}", scratch / "clean.flac", prepared),
+            "JSON save failed");
+        require(FlacMetadata::Verify(source, jsonSidecar, json), "Valid JSON archive rejected");
+        std::ifstream jsonInput(jsonSidecar, std::ios::binary);
+        const std::string jsonText((std::istreambuf_iterator<char>(jsonInput)), {});
+        jsonInput.close();
+        require(jsonText.find("\"title\"") != std::string::npos, "Readable metadata missing");
+        const auto writeJson = [&](const std::string& data) {
+            std::ofstream output(jsonSidecar, std::ios::binary | std::ios::trunc);
+            output.write(data.data(), static_cast<std::streamsize>(data.size()));
+            output.close();
+            require(static_cast<bool>(output), "Cannot write JSON fixture");
+        };
+        const auto data = jsonText.find("\"data\"");
+        require(data != std::string::npos, "JSON archive data missing");
+        auto tampered = jsonText;
+        const auto value = tampered.find('"', tampered.find(':', data)) + 1;
+        tampered[value] = tampered[value] == 'A' ? 'B' : 'A';
+        writeJson(tampered);
+        require(!FlacMetadata::Verify(source, jsonSidecar, json), "Changed JSON archive accepted");
+        writeJson(jsonText.substr(0, jsonText.size() / 2));
+        require(!FlacMetadata::Verify(source, jsonSidecar, json), "Truncated JSON accepted");
+        writeJson(jsonText);
+        require(FlacMetadata::Verify(source, jsonSidecar, json), "Restored JSON archive rejected");
+
+        require(FlacMetadata::SidecarPath(scratch / "a.flac", MetadataSidecarFormat::None).empty(),
+            "None format must have no sidecar path");
+        require(FlacMetadata::Save(source, {}, MetadataSidecarFormat::None, "", scratch / "clean.flac", prepared),
+            "None-format preparation failed");
         require(PreservationAudit::VerifyCopy(sidecar, sidecar), "Identical copy rejected");
         require(!PreservationAudit::VerifyCopy(source, sidecar), "Changed copy accepted");
         require(PreservationAudit::Compare(source, source, true).ok, "Identical resources rejected");

@@ -150,6 +150,8 @@ bool writeAudit(const FolderConversionPlan& plan, const fs::path& output,
     text("source", CommonUtils::path_to_utf8(plan.input));
     text("output", CommonUtils::path_to_utf8(output));
     text("target", plan.options.target == AudioTarget::Mp3 ? "MP3" : "FLAC");
+    text("metadataSidecars", plan.options.sidecarFormat == MetadataSidecarFormat::Json ? "json" :
+        plan.options.sidecarFormat == MetadataSidecarFormat::Binary ? "binary" : "none");
     text("status", errorType.empty() ? "completed" : "failed");
     text("errorType", errorType);
     std::size_t installedAudio = 0, installedCompanions = 0;
@@ -191,10 +193,10 @@ bool writeAudit(const FolderConversionPlan& plan, const fs::path& output,
         text("kind", entry.kind);
         text("status", entry.status);
         const bool audio = std::string_view(entry.kind) == "audio";
-        if (audio && (plan.options.target == AudioTarget::Mp3 ||
-            MediaTrack::FileExtension(entry.file->source) == u8".flac")) {
-            auto archive = entry.file->target.lexically_relative(plan.output);
-            archive += ".flac-metadata";
+        if (audio && plan.options.sidecarFormat != MetadataSidecarFormat::None &&
+            FlacMetadata::AppliesTo(entry.file->source, plan.options)) {
+            const auto archive = FlacMetadata::SidecarPath(
+                entry.file->target.lexically_relative(plan.output), plan.options.sidecarFormat);
             text("metadataArchive", CommonUtils::path_to_utf8(archive));
         }
         writer.Key("preservationChecked"); writer.Bool(!entry.resources.entries.empty());
@@ -538,11 +540,9 @@ int FolderConvert::PrepareConversion(
             spdlog::error("Refusing to overwrite a source file: {}", CommonUtils::path_to_utf8(source));
             return -1;
         }
-        fs::path sidecar = target;
-        sidecar += ".flac-metadata";
         if (!preflight(target, source) ||
-            ((options.target == AudioTarget::Mp3 || MediaTrack::FileExtension(source) == u8".flac") &&
-                !preflight(sidecar, source))) {
+            (options.sidecarFormat != MetadataSidecarFormat::None && FlacMetadata::AppliesTo(source, options) &&
+                !preflight(FlacMetadata::SidecarPath(target, options.sidecarFormat), source))) {
             return -1;
         }
 
@@ -724,9 +724,10 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
             return finish("INCOMPLETE");
         }
         if (std::string_view(record.kind) == "audio" &&
-            (plan.options.target == AudioTarget::Mp3 || MediaTrack::FileExtension(record.file->source) == u8".flac")) {
-            auto sidecar = record.file->target; sidecar += ".flac-metadata";
-            if (!FlacMetadata::Verify(record.file->source, sidecar)) {
+            plan.options.sidecarFormat != MetadataSidecarFormat::None &&
+            FlacMetadata::AppliesTo(record.file->source, plan.options)) {
+            const auto sidecar = FlacMetadata::SidecarPath(record.file->target, plan.options.sidecarFormat);
+            if (!FlacMetadata::Verify(record.file->source, sidecar, plan.options.sidecarFormat)) {
                 record.resources.ok = false;
                 record.resources.entries.push_back({ PreservationAudit::Status::MissingOrChanged,
                     "metadata-archive", "installed archive", "Final installed archive verification failed.", true });

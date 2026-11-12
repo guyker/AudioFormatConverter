@@ -25,7 +25,7 @@ It runs either as explicit CLI commands or, with no arguments, as a legacy inter
 | Conversion options | `include/ConversionOptions.h` | `AudioTarget` (Flac/Mp3), MP3 quality, downmix flag |
 | Folder conversion | `src/FolderConvert.cpp`, `include/FolderConvert.h` | `FolderConvert::PrepareConversion` (plan) and `FolderConvert::ExecuteConversion` (run, audit report, markers) |
 | File conversion | `src/MediaConvertionTask.cpp`, `include/MediaConvertionTask.h` | `MediaConvertionTask`: quality gate, FFmpeg child process, output verification, sidecar, audit, installation |
-| Metadata archive | `src/FlacMetadata.cpp`, `include/FlacMetadata.h` | `FlacMetadata::Save` / `FlacMetadata::Verify` byte-exact `.flac-metadata` sidecar |
+| Metadata archive | `src/FlacMetadata.cpp`, `include/FlacMetadata.h` | `FlacMetadata::Save` / `FlacMetadata::Verify` byte-exact archive as binary `.flac-metadata` or `.flac-metadata.json` (readable scan-schema metadata + Base64 archive; only the archive is verified) |
 | Preservation audit | `src/PreservationAudit.cpp`, `include/PreservationAudit.h` | `PreservationAudit::Compare` (tags, pictures, chapters, opaque blocks), `PreservationAudit::VerifyCopy` |
 | FFmpeg library access | `src/ffmpeg.cpp`, `include/ffmpeg.h`, `include/FFmpegWrapper.h` | `FFmpeg::GetFFprobeMetadataAPI` (libav probe), audio metrics, the process-wide log callback, `FFmpeg::GetJsonMetadataShell` (ffprobe executable) |
 | Track/album model | `src/MediaTrack.cpp`, `include/MediaTrack.h`, `include/MediaInformation.h`, `include/MediaAlbum.h` | `MediaTrack` (probe parsing, JSON, comparison, SQLite row), `FFprobeOutput`, `MediaAlbum` |
@@ -105,10 +105,20 @@ Per file, `MediaConvertionTask::ConvertFile`:
 1. probes the source (`FFmpeg::GetFFprobeMetadataAPI`) and rejects it below 16-bit / 44.1 kHz or if unverifiable
    (`isAtLeastCDQuality`, K-013); MP3 also requires FLAC codec and mono/stereo unless downmix is enabled (K-016);
 2. rejects destinations that alias the source or pre-existing temporaries;
-3. for MP3 or native FLAC sources writes and verifies the metadata sidecar to a temporary (K-015, K-028);
+3. for MP3 or native FLAC sources (`FlacMetadata::AppliesTo`), writes and verifies a metadata sidecar to a
+   temporary when the run's `ConversionOptions::sidecarFormat` is not `None` (K-038); with format `None` it
+   only prepares a clean input when appended tags must be removed;
 4. runs `ffmpeg` via `runFFmpeg` with `conversionArguments` (K-014, K-017);
 5. verifies output codec, rate, depth/channels and duration (±0.15 s);
-6. verifies the archive again and runs `PreservationAudit::Compare` (K-029).
+6. verifies the archive again (when written) and runs `PreservationAudit::Compare` (K-029); without an archive,
+   differences that would otherwise be `SidecarOnly` are fatal (fail-closed).
+
+**Sidecar policy.** `MetadataSidecarSettings::Resolve` turns the configured `MetadataSidecars` policy for the target
+(`ConvertToFlac` / `ConvertToMp3`) and the run's disable request into the effective format: `disabled` (default) → none;
+`optional` → `Format` unless the menu prompt answers NO or the CLI passes `--no-metadata-sidecar`; `required` →
+`Format`, and a CLI disable request is a configuration error. Menu options 1 and 6 and CLI `convert` resolve it
+before planning; scan, duplicates and DB import never write sidecars. `conversion-audit.json` is always written and
+records the effective `metadataSidecars` value.
 
 `MediaConvertionTask::InstallTemporaryOutput` installs the sidecar first (backing up an existing one when
 overwriting), then the audio; on audio failure it restores or removes the sidecar and leaves the temporary in place
@@ -177,6 +187,8 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | `RecursionDirectorySearchDepth` | 10 | Discovery |
 | `AlbumsSplitThreshold` | 2000 (>0) | JSON batch size |
 | `FLACSettings.ffmpeg_exe_name` | `ffmpeg` | Conversion executable; the other `FLACSettings` strings are not used at runtime |
+| `MetadataSidecars.Format` | `binary` (`binary`\|`json`) | Sidecar encoding for conversions |
+| `MetadataSidecars.ConvertToFlac`, `MetadataSidecars.ConvertToMp3` | `disabled` (`disabled`\|`optional`\|`required`) | Per-target sidecar policy; invalid values fail loading |
 | `MediaDirectoryList[]` | – | `{ isActive, mediaPath, mediaName }`; `mediaName` must be a single directory name |
 
 `DatabaseFileName`, `resultPath` and `dbPath` are not used for output naming.
@@ -186,7 +198,7 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | Artefact | Location | Writer |
 |---|---|---|
 | Converted audio | `<root>/FLAC\|MP3/<name>/<relative path>.flac\|.mp3` | `MediaConvertionTask` |
-| Metadata sidecar | `<audio file>.flac-metadata` (MP3 and native-FLAC sources) | `FlacMetadata::Save` |
+| Metadata sidecar | `<audio file>.flac-metadata` (binary) or `<audio file>.flac-metadata.json` (MP3 and native-FLAC sources, per `MetadataSidecars`) | `FlacMetadata::Save` |
 | Unchanged file copies | Same relative path; non-converted regular files outside skipped subtrees for FLAC, non-audio companions for MP3 | `FolderConvert::ExecuteConversion` |
 | Audit report | `<library output>/conversion-audit.json` | `writeAudit` in `FolderConvert.cpp` |
 | In-progress marker | `<library output>/.conversion-in-progress/` (directory) | `FolderConvert::ExecuteConversion` |
@@ -289,5 +301,5 @@ prompt, and `ShowConversionPreview`.
 
 ## Knowledge links
 
-Conversion safety: K-003, K-013, K-014, K-029, K-030, K-032. Formats: K-015, K-016, K-017, K-028, K-031. Manual menu: K-024, K-025, K-026, K-027. Catalog/DB: K-005, K-011. Platform/build: K-006, K-007, K-009, K-010, K-033.
+Conversion safety: K-003, K-013, K-014, K-029, K-030, K-032, K-038. Formats: K-016, K-017, K-031. Manual menu: K-024, K-025, K-026, K-027. Catalog/DB: K-005, K-011. Platform/build: K-006, K-007, K-009, K-010, K-033.
 Only live entries are listed; superseded history is in `docs/knowledge/index.md` under "Closed".

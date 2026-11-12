@@ -14,6 +14,7 @@
 #include <stdexcept>
 
 #include "CommonUtils.h"
+#include "ConversionOptions.h"
 // RapidJSON headers
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
@@ -42,6 +43,43 @@ struct FLACEncodingSettings
 	std::wstring ffmpeg_exe_name;
 	std::wstring ffmpeg_convert_24bit_flac;
 	std::wstring ffmpeg_get_metadata_tags;
+};
+
+// disabled: never write sidecars; optional: write by default, the run may turn them off;
+// required: always write, a request to turn them off is rejected.
+enum class MetadataSidecarPolicy { Disabled, Optional, Required };
+
+struct MetadataSidecarSettings
+{
+	MetadataSidecarFormat Format{ MetadataSidecarFormat::Binary }; // Binary or Json
+	MetadataSidecarPolicy ConvertToFlac{ MetadataSidecarPolicy::Disabled };
+	MetadataSidecarPolicy ConvertToMp3{ MetadataSidecarPolicy::Disabled };
+
+	MetadataSidecarPolicy PolicyFor(AudioTarget target) const
+	{
+		return target == AudioTarget::Mp3 ? ConvertToMp3 : ConvertToFlac;
+	}
+
+	// Effective format for one run; nullopt (with errorMessage) when a required sidecar is turned off.
+	std::optional<MetadataSidecarFormat> Resolve(AudioTarget target, bool disableRequested,
+		std::string& errorMessage) const
+	{
+		switch (PolicyFor(target)) {
+		case MetadataSidecarPolicy::Disabled:
+			return MetadataSidecarFormat::None;
+		case MetadataSidecarPolicy::Optional:
+			return disableRequested ? MetadataSidecarFormat::None : Format;
+		default:
+			if (disableRequested) {
+				errorMessage = std::string("Metadata sidecars are required for ") +
+					(target == AudioTarget::Mp3 ? "MP3" : "FLAC") +
+					" conversion by MetadataSidecars." +
+					(target == AudioTarget::Mp3 ? "ConvertToMp3" : "ConvertToFlac") + " in the configuration.";
+				return std::nullopt;
+			}
+			return Format;
+		}
+	}
 };
 
 struct MediaDirectoryElement
@@ -141,6 +179,7 @@ struct AppSettingsJson
 
 	FLACEncodingSettings FLACSettings{};
 	std::vector<MediaDirectoryElement> MediaDirectoryList{};
+	MetadataSidecarSettings MetadataSidecars{};
 
 	//APP Setting properties - END
 
@@ -180,6 +219,7 @@ struct AppSettingsJson
 				{true, "\\\\?\\R:\\tmp\\24\\flac", "flac"},
 				{true, "\\\\?\\R:\\tmp\\24\\mp3", "mp3"}
 			},
+			{}, // MetadataSidecars: binary, disabled for both targets
 		};
 
 		return appSettingsJson;

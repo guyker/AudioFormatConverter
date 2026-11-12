@@ -3,7 +3,8 @@ id: K-028
 kind: decision
 title: "Preserve FLAC source metadata alongside CD-profile FLAC output"
 area: [FlacConvert]
-status: active
+status: superseded
+superseded_by: K-037
 created: 2026-10-11
 reviewed: 2026-11-10
 cites:

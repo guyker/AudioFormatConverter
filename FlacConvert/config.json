@@ -24,6 +24,18 @@
       "mediaName": "flac_tracks2"
     }
   ],
+  // Original FLAC metadata archives are used by conversion runs only (menu 1/6 and CLI convert).
+  "MetadataSidecars": {
+    // "binary" writes .flac-metadata.
+    // "json" writes .flac-metadata.json (readable metadata plus the exact archive as Base64).
+    "Format": "binary",
+    // "disabled" never writes a sidecar; "optional" writes by default; "required" always writes one.
+    // For optional, the menu prompts and CLI --no-metadata-sidecar turns it off; required rejects that flag.
+    // Without a sidecar, conversion fails rather than lose metadata the output format cannot represent.
+    // These defaults disable sidecars for both target formats.
+    "ConvertToFlac": "disabled",
+    "ConvertToMp3": "disabled"
+  },
   "LogLevel": 1,
   "UseAsyncFFmpegCalls": true,
   "MetadataScanMaxThreads": 0,

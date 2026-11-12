@@ -21,6 +21,7 @@ struct CommandLineOptions
     bool outputDirectorySpecified{ false };
     bool configPathSpecified{ false };
     bool overwrite{ false };
+    bool noMetadataSidecar{ false };
     bool openDuplicateFolders{ false };
     ConversionOptions conversion;
 };
