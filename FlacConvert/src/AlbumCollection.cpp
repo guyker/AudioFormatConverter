@@ -352,6 +352,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
             std::filesystem::path path;
             FFprobeOutput* mediaInfo;
             std::optional<std::wstring>* mediaInfoString;
+            std::optional<std::string>* lastError;
         };
         std::vector<MetadataTarget> metadataTargets;
         if (bAsync)
@@ -370,15 +371,17 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
                     metadataTargets.push_back({
                         trackPath.lexically_normal(),
                         &mediaInfo,
-                        &mediaInfoString
+                        &mediaInfoString,
+                        &lastError
                     });
                 }
                 else
                 {
-                    auto [mi_ret, jsonString_ret] = MediaTrack::ReadMetadataInfoFromFile(
+                    auto result = MediaTrack::ReadMetadataInfoFromFile(
                         trackPath.lexically_normal().native(), bIncludeAudioQualityMetrics);
-                    mediaInfoString = jsonString_ret;
-                    mediaInfo = mi_ret;
+                    mediaInfoString = std::move(result.rawJson);
+                    mediaInfo = std::move(result.mediaInfo);
+                    lastError = std::move(result.error);
                     CommonUtils::show_progress_bar(progressInfoPtr, CommonUtils::ProgressBarType::SubProgress);
                 }
             }
@@ -397,10 +400,11 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
                 const bool bIncludeAudioQualityMetrics = settings->ExtraAudioQualityMetrics;
                 BoundedTaskRunner::ForEach(metadataTargets.size(), threadLimit, [&](size_t targetIndex) {
                     auto& target = metadataTargets[targetIndex];
-                    auto [mediaInfo, mediaInfoString] = MediaTrack::ReadMetadataInfoFromFile(
+                    auto result = MediaTrack::ReadMetadataInfoFromFile(
                         target.path.native(), bIncludeAudioQualityMetrics);
-                    *target.mediaInfo = std::move(mediaInfo);
-                    *target.mediaInfoString = std::move(mediaInfoString);
+                    *target.mediaInfo = std::move(result.mediaInfo);
+                    *target.mediaInfoString = std::move(result.rawJson);
+                    *target.lastError = std::move(result.error);
                 });
             }
         }
@@ -1205,6 +1209,35 @@ bool AlbumCollection::ExportToDatabase(std::shared_ptr<DirectoryContentEntryList
         sqlite3_close(db);
         return false;
     }
+
+    sqlite3_stmt* deleteAlbumStmt = nullptr;
+    rc = sqlite3_prepare_v2(db, "DELETE FROM TracksDB WHERE album_path = ?;", -1,
+        &deleteAlbumStmt, nullptr);
+    if (rc != SQLITE_OK) {
+        spdlog::error("Failed to prepare album replacement statement: {}", sqlite3_errmsg(db));
+        sqlite3_finalize(stmt);
+        sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        sqlite3_close(db);
+        return false;
+    }
+
+    for (const auto& album : *albums) {
+        const std::string albumPath = PlatformUtils::wstringToUtf8_ver2(album.path.path().wstring());
+        sqlite3_bind_text(deleteAlbumStmt, 1, albumPath.c_str(), -1, SQLITE_TRANSIENT);
+        rc = sqlite3_step(deleteAlbumStmt);
+        if (rc != SQLITE_DONE) {
+            spdlog::error("Failed to replace database records for album '{}': {}",
+                albumPath, sqlite3_errmsg(db));
+            sqlite3_finalize(deleteAlbumStmt);
+            sqlite3_finalize(stmt);
+            sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+            sqlite3_close(db);
+            return false;
+        }
+        sqlite3_reset(deleteAlbumStmt);
+        sqlite3_clear_bindings(deleteAlbumStmt);
+    }
+    sqlite3_finalize(deleteAlbumStmt);
 
     for (const auto& [dirPath, trackList] : *albums) {
         std::wstring albumPath = dirPath.path().wstring();

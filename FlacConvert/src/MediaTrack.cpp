@@ -12,11 +12,13 @@
 #include <codecvt>
 #include <charconv>
 #include <cmath>
+#include <format>
 #include <limits>
 
 #include <spdlog/spdlog.h>
 
 #include "MediaTrack.h"
+#include "rapidjson/error/en.h"
 #include "FFmpeg.h"
 #include "PlatformUtils.h"
 #include "JsonUtils.h"
@@ -87,37 +89,43 @@ std::optional<std::string> parseStringMember(const rapidjson::Value& object, con
 }
 
 //returns media information (json string and media objec) from a media file (on file system)
-std::tuple<FFprobeOutput, std::optional<std::wstring>> MediaTrack::ReadMetadataInfoFromFile(std::filesystem::path mediaFilePath, const bool bIncludeAudioQualityMetrics)
+MetadataReadResult MediaTrack::ReadMetadataInfoFromFile(
+    std::filesystem::path mediaFilePath, const bool bIncludeAudioQualityMetrics)
 {
     try
     {
         if (AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI)
         {
-            auto mediaInfo = FFmpeg::GetFFprobeMetadataAPI(mediaFilePath, bIncludeAudioQualityMetrics);
-            //return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(sonString(mediaInfo)));
-            return std::make_tuple(mediaInfo, std::nullopt);
+            std::string error;
+            auto mediaInfo = FFmpeg::GetFFprobeMetadataAPI(
+                mediaFilePath, bIncludeAudioQualityMetrics, &error);
+            return { std::move(mediaInfo), std::nullopt,
+                error.empty() ? std::nullopt : std::optional<std::string>{std::move(error)} };
         }
         else
         {
-            auto jsonString = FFmpeg::GetJsonMetadataShell(mediaFilePath);
-            auto mediaInfo = MediaTrack::ParseFFprobeInformation(jsonString);
-            return std::make_tuple(mediaInfo, jsonString);
+            std::string error;
+            auto jsonString = FFmpeg::GetJsonMetadataShell(mediaFilePath, &error);
+            if (!error.empty()) {
+                return { {}, std::nullopt, std::move(error) };
+            }
+            rapidjson::Document document;
+            const std::string utf8Json = PlatformUtils::wstringToUtf8_ver2(jsonString);
+            document.Parse(utf8Json.c_str());
+            if (document.HasParseError()) {
+                throw std::runtime_error(std::format("Invalid ffprobe JSON: {} at offset {}",
+                    rapidjson::GetParseError_En(document.GetParseError()), document.GetErrorOffset()));
+            }
+            auto mediaInfo = MediaTrack::ParseFFprobeInformation(document);
+            return { std::move(mediaInfo), std::move(jsonString), std::nullopt };
         }
     }
     catch (const std::exception& ex) {
-		spdlog::error("Error in ReadMetadataInfoFromFile: {}", ex.what());
-        //try
-        //{
-        //    auto mediaInfo = FFmpeg::GetFFprobeMetadataShell(mediaFilePath);
-        //    spdlog::info("Fixed by shell execution (ReadMetadataInfoFromFile-#2)");
-        //    return std::make_tuple(mediaInfo, CommonUtils::utf8ToWstring(toJsonString(mediaInfo)));
-        //}
-        //catch (const std::exception& ex) {
-        //    spdlog::error("Error (ReadMetadataInfoFromFile-#2): ", ex.what());
-        //}
+        const std::string error = ex.what();
+        spdlog::error("Metadata extraction failed for '{}': {}",
+            CommonUtils::path_to_utf8(mediaFilePath), error);
+        return { {}, std::nullopt, error };
     }
-
-    return std::make_tuple(FFprobeOutput{}, std::nullopt);
 }
 
 
@@ -532,7 +540,6 @@ FFprobeOutput MediaTrack::ParseFFprobeInformation(std::wstring jsonString)
 
     if (doc.HasParseError()) {
         std::cerr << "Error parsing JSON: " << doc.GetParseError() << std::endl;
-
         return FFprobeOutput{};
     }
 

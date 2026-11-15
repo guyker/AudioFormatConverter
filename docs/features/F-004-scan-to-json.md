@@ -29,6 +29,7 @@ JSON, leaving the previous generated files unchanged.
 - [ ] A failed scan leaves the previous `media_out_*.json` files unchanged.
 - [ ] Supported extensions are matched case-insensitively; chapters and attached-picture disposition are retained.
 - [ ] A malformed or unusable accepted track fails the scan instead of installing an incomplete catalog.
+- [ ] An FFmpeg/ffprobe extraction failure reports the source path and underlying diagnostic.
 - [ ] Output directory overlapping the source library is rejected.
 - [ ] Batch count = ceil(albums / `AlbumsSplitThreshold`).
 - [ ] With async metadata reads enabled, scan succeeds when the configured worker cap is lower than the album's track count.

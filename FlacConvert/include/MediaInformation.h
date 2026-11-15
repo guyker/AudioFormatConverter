@@ -232,5 +232,11 @@ struct FFprobeOutput {
     std::optional<AudioAnalysisInfo> audio_quality;
 };
 
+struct MetadataReadResult {
+    FFprobeOutput mediaInfo;
+    std::optional<std::wstring> rawJson;
+    std::optional<std::string> error;
+};
+
 
 

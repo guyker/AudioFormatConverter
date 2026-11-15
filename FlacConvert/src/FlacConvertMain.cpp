@@ -1047,16 +1047,16 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
             uintmax_t trackNumber = 0;
             for (auto& furure_ret : asyncFutureList1)
             {
-                auto [mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
-				mediaAlbum1.trackList.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
+                auto result = furure_ret.get();
+				mediaAlbum1.trackList.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, result.mediaInfo });
              //   mediaInfoList1.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
 
             }
             trackNumber = 0;
             for (auto& furure_ret : asyncFutureList2)
             {
-                auto [  mediaInfo_ret, mediaInfoString_ret] = furure_ret.get();
-                mediaAlbum2.trackList.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
+                auto result = furure_ret.get();
+                mediaAlbum2.trackList.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, result.mediaInfo });
                 //   mediaInfoList2.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
             }
 

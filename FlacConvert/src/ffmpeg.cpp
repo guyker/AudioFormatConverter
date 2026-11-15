@@ -78,8 +78,17 @@ std::wstring quoteWindowsArgument(const std::wstring& argument)
     return quoted;
 }
 
-std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath)
+std::optional<std::string> runFFprobe(
+    const std::filesystem::path& mediaFilePath, std::string* errorMessage)
 {
+    const auto setError = [&](std::string message) {
+        if (errorMessage) {
+            *errorMessage = message;
+        }
+        spdlog::error("ffprobe failed for '{}': {}",
+            CommonUtils::path_to_utf8(mediaFilePath), message);
+    };
+
     SECURITY_ATTRIBUTES securityAttributes{};
     securityAttributes.nLength = sizeof(securityAttributes);
     securityAttributes.bInheritHandle = TRUE;
@@ -87,20 +96,20 @@ std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath
     HANDLE readPipeRaw = INVALID_HANDLE_VALUE;
     HANDLE writePipeRaw = INVALID_HANDLE_VALUE;
     if (!CreatePipe(&readPipeRaw, &writePipeRaw, &securityAttributes, 0)) {
-        spdlog::error("Failed to create ffprobe output pipe: {}",
+        setError("Failed to create ffprobe output pipe: " +
             std::system_category().message(static_cast<int>(GetLastError())));
         return std::nullopt;
     }
     ScopedHandle readPipe(readPipeRaw);
     ScopedHandle writePipe(writePipeRaw);
     if (!SetHandleInformation(readPipe.get(), HANDLE_FLAG_INHERIT, 0)) {
-        spdlog::error("Failed to configure ffprobe output pipe: {}",
+        setError("Failed to configure ffprobe output pipe: " +
             std::system_category().message(static_cast<int>(GetLastError())));
         return std::nullopt;
     }
 
     const std::vector<std::wstring> arguments{
-        L"ffprobe.exe", L"-v", L"quiet", L"-print_format", L"json",
+        L"ffprobe.exe", L"-v", L"quiet", L"-show_error", L"-print_format", L"json",
         L"-show_format", L"-show_streams", L"-show_chapters", L"-i",
         PlatformUtils::WindowsLongPath(mediaFilePath)
     };
@@ -121,7 +130,7 @@ std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath
     PROCESS_INFORMATION processInfo{};
     if (!CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
         nullptr, nullptr, &startupInfo, &processInfo)) {
-        spdlog::error("Failed to launch ffprobe: {}",
+        setError("Failed to launch ffprobe: " +
             std::system_category().message(static_cast<int>(GetLastError())));
         return std::nullopt;
     }
@@ -137,7 +146,7 @@ std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath
         if (!ReadFile(readPipe.get(), buffer.data(), static_cast<DWORD>(buffer.size()), &bytesRead, nullptr)) {
             const DWORD error = GetLastError();
             if (error != ERROR_BROKEN_PIPE) {
-                spdlog::error("Failed to read ffprobe output: {}",
+                setError("Failed to read ffprobe output: " +
                     std::system_category().message(static_cast<int>(error)));
                 readFailed = true;
             }
@@ -150,13 +159,13 @@ std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath
     }
 
     if (WaitForSingleObject(process.get(), INFINITE) != WAIT_OBJECT_0) {
-        spdlog::error("Failed while waiting for ffprobe: {}",
+        setError("Failed while waiting for ffprobe: " +
             std::system_category().message(static_cast<int>(GetLastError())));
         return std::nullopt;
     }
     DWORD exitCode = 0;
     if (!GetExitCodeProcess(process.get(), &exitCode)) {
-        spdlog::error("Failed to get ffprobe exit code: {}",
+        setError("Failed to get ffprobe exit code: " +
             std::system_category().message(static_cast<int>(GetLastError())));
         return std::nullopt;
     }
@@ -164,16 +173,26 @@ std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath
         return std::nullopt;
     }
     if (exitCode != 0) {
-        spdlog::error("ffprobe exited with status {}", exitCode);
+        setError("ffprobe exited with status " + std::to_string(exitCode) +
+            (output.empty() ? std::string{} : ": " + output));
         return std::nullopt;
     }
     return output;
 }
 #else
-std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath)
+std::optional<std::string> runFFprobe(
+    const std::filesystem::path& mediaFilePath, std::string* errorMessage)
 {
+    const auto setError = [&](std::string message) {
+        if (errorMessage) {
+            *errorMessage = message;
+        }
+        spdlog::error("ffprobe failed for '{}': {}",
+            CommonUtils::path_to_utf8(mediaFilePath), message);
+    };
+
     std::vector<std::string> arguments{
-        "ffprobe", "-v", "quiet", "-print_format", "json",
+        "ffprobe", "-v", "quiet", "-show_error", "-print_format", "json",
         "-show_format", "-show_streams", "-show_chapters", "-i", mediaFilePath.string()
     };
     std::vector<char*> pointers;
@@ -185,7 +204,7 @@ std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath
 
     int outputPipe[2];
     if (pipe(outputPipe) == -1) {
-        spdlog::error("Failed to create ffprobe output pipe: {}", std::system_category().message(errno));
+        setError("Failed to create ffprobe output pipe: " + std::system_category().message(errno));
         return std::nullopt;
     }
 
@@ -194,7 +213,7 @@ std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath
         const int error = errno;
         close(outputPipe[0]);
         close(outputPipe[1]);
-        spdlog::error("Failed to launch ffprobe: {}", std::system_category().message(error));
+        setError("Failed to launch ffprobe: " + std::system_category().message(error));
         return std::nullopt;
     }
     if (child == 0) {
@@ -221,7 +240,7 @@ std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath
             break;
         }
         else if (errno != EINTR) {
-            spdlog::error("Failed to read ffprobe output: {}", std::system_category().message(errno));
+            setError("Failed to read ffprobe output: " + std::system_category().message(errno));
             readFailed = true;
             break;
         }
@@ -231,7 +250,7 @@ std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath
     int status = 0;
     while (waitpid(child, &status, 0) == -1) {
         if (errno != EINTR) {
-            spdlog::error("Failed while waiting for ffprobe: {}", std::system_category().message(errno));
+            setError("Failed while waiting for ffprobe: " + std::system_category().message(errno));
             return std::nullopt;
         }
     }
@@ -240,7 +259,8 @@ std::optional<std::string> runFFprobe(const std::filesystem::path& mediaFilePath
     }
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
         const int exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
-        spdlog::error("ffprobe exited with status {}", exitCode);
+        setError("ffprobe exited with status " + std::to_string(exitCode) +
+            (output.empty() ? std::string{} : ": " + output));
         return std::nullopt;
     }
     return output;
@@ -376,23 +396,20 @@ namespace FFmpeg {
 
 
     //create a media file (on filesystem) from a media track
-    std::wstring GetJsonMetadataShell(std::filesystem::path mediaFilePath)
+    std::wstring GetJsonMetadataShell(
+        std::filesystem::path mediaFilePath, std::string* errorMessage)
     {
-        try
-        {
-            const auto result = runFFprobe(mediaFilePath);
-            if (!result) {
-                return L"";
+        if (errorMessage) {
+            errorMessage->clear();
+        }
+        const auto result = runFFprobe(mediaFilePath, errorMessage);
+        if (!result) {
+            if (errorMessage && errorMessage->empty()) {
+                *errorMessage = "ffprobe did not return metadata.";
             }
-            return CommonUtils::utf8ToWstring(*result);
-
+            return L"";
         }
-        catch (const std::exception& e) {
-            //std::wcout << " ### COMMAND INFO EXCEOTION :" << mediaFilePath.generic_wstring() << std::endl << e.what() << std::endl;
-            spdlog::error("Error (GetJsonMetadataShell): {}", e.what());
-        }
-
-        return L"**ERROR***";
+        return CommonUtils::utf8ToWstring(*result);
     }
 
 
@@ -409,7 +426,9 @@ namespace FFmpeg {
 
 
 
-    FFprobeOutput GetFFprobeMetadataAPI(const std::filesystem::path filePath, const bool bIncludeAudioQualityMetrics)
+    FFprobeOutput GetFFprobeMetadataAPI(
+        const std::filesystem::path filePath, const bool bIncludeAudioQualityMetrics,
+        std::string* errorMessage)
     {
         // Initialize FFmpeg (not needed in newer versions, but safe to call)
         // av_register_all();
@@ -428,7 +447,11 @@ namespace FFmpeg {
         //AVFormatContext* fmt_ctx = nullptr;
         AVFormatContext* fmt_ctx = avformat_alloc_context();
         if (!fmt_ctx) {
-            spdlog::error("Failed to allocate AVFormatContext");
+            const std::string error = "Failed to allocate AVFormatContext";
+            if (errorMessage) {
+                *errorMessage = error;
+            }
+            spdlog::error("{} for '{}'", error, CommonUtils::path_to_utf8(filePath));
             return output;
         }
 
@@ -440,12 +463,25 @@ namespace FFmpeg {
         if (ret < 0) {
             char errbuf[128];
             av_strerror(ret, errbuf, sizeof(errbuf));
-            std::cerr << "Failed to open " << utf8Path.c_str() << ": " << errbuf << " (" << ret << ")\n";
+            const std::string error = "Failed to open input: " + std::string(errbuf) +
+                " (" + std::to_string(ret) + ")";
+            if (errorMessage) {
+                *errorMessage = error;
+            }
+            spdlog::error("{}: {}", CommonUtils::path_to_utf8(filePath), error);
             return output;
         }
 
-        if (avformat_find_stream_info(fmt_ctx, nullptr) < 0) {
-            std::cerr << "Could not find stream info\n";
+        ret = avformat_find_stream_info(fmt_ctx, nullptr);
+        if (ret < 0) {
+            char errbuf[128];
+            av_strerror(ret, errbuf, sizeof(errbuf));
+            const std::string error = "Could not find stream info: " + std::string(errbuf) +
+                " (" + std::to_string(ret) + ")";
+            if (errorMessage) {
+                *errorMessage = error;
+            }
+            spdlog::error("{}: {}", CommonUtils::path_to_utf8(filePath), error);
             avformat_close_input(&fmt_ctx);
             return output;
         }

@@ -1,5 +1,7 @@
 #include "MediaTrack.h"
 
+#include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 
@@ -59,6 +61,26 @@ int main() {
             "Stream rational fields did not round-trip");
         require(roundTripped.chapters.size() == 1 && roundTripped.chapters[0].tags->at("title") == "Chapter",
             "Chapter tags did not round-trip");
+
+        std::string settingsError;
+        auto settings = AppSettingsJson::LoadForCommandLine(std::nullopt, settingsError);
+        require(settings != nullptr, "Could not initialize test settings");
+        settings->UseFFmpegLibraryAPI = true;
+        const auto missingFile = std::filesystem::temp_directory_path() /
+            ("afc-metadata-error-" +
+                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".flac");
+        const auto failedRead = MediaTrack::ReadMetadataInfoFromFile(missingFile);
+        require(failedRead.error.has_value(), "Metadata read error was discarded");
+        require(failedRead.error->find("Failed to open input") != std::string::npos,
+            "Metadata read did not preserve the FFmpeg failure reason");
+
+        settings->UseFFmpegLibraryAPI = false;
+        const auto failedProbe = MediaTrack::ReadMetadataInfoFromFile(missingFile);
+        require(failedProbe.error.has_value(), "ffprobe error was discarded");
+        require(failedProbe.error->find("ffprobe exited with status") != std::string::npos,
+            "ffprobe failure status was not preserved");
+        require(failedProbe.error->find("No such file or directory") != std::string::npos,
+            "ffprobe diagnostic was not preserved");
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

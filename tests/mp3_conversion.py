@@ -1154,6 +1154,31 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(row[5:9], (0, "flac", "44100", 2))
         self.assertAlmostEqual(row[9], 0.25)
 
+        data = json.loads(json_file.read_text(encoding="utf-8"))
+        data[0]["Tracks"][0]["format"]["tags"] = {"title": "Updated title"}
+        json_file.write_text(json.dumps(data), encoding="utf-8")
+        result = run(ARGS.converter, "db", "import", json_directory, "--output-dir", database_output)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        with closing(sqlite3.connect(database)) as connection:
+            row_count, title = connection.execute(
+                "SELECT COUNT(*), MAX(title) FROM TracksDB").fetchone()
+        self.assertEqual(row_count, 1)
+        self.assertEqual(title, "Updated title")
+
+        with closing(sqlite3.connect(database)) as connection:
+            connection.execute(
+                "CREATE TRIGGER reject_refresh BEFORE INSERT ON TracksDB "
+                "BEGIN SELECT RAISE(ABORT, 'test refresh failure'); END")
+        data[0]["Tracks"][0]["format"]["tags"] = {"title": "Failed refresh"}
+        json_file.write_text(json.dumps(data), encoding="utf-8")
+        result = run(ARGS.converter, "db", "import", json_directory, "--output-dir", database_output)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        with closing(sqlite3.connect(database)) as connection:
+            row_count, title = connection.execute(
+                "SELECT COUNT(*), MAX(title) FROM TracksDB").fetchone()
+        self.assertEqual(row_count, 1)
+        self.assertEqual(title, "Updated title")
+
     def test_database_import_rejects_malformed_track_without_partial_rows(self):
         json_directory = self.work / "malformed-metadata"
         json_directory.mkdir()

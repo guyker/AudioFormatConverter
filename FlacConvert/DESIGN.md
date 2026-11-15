@@ -131,7 +131,9 @@ import metadata (`AlbumCollection::ImportMetadata`, parallel when `UseAsyncFFmpe
 each batch to a staging sibling directory (`AlbumCollection::SaveAlbumsToJSON`), then `installGeneratedFiles` swaps
 only `media_out_*.json` files into `OutDirectory/<mediaName>/`, with backup and rollback (K-005). An accepted audio
 track with extraction/JSON errors or no usable audio stream fails the scan before installation, preserving the prior
-generated JSON. The menu preview discovers albums without reading track metadata and reuses the discovered batches.
+generated JSON. Extraction failures retain the source path and FFmpeg/ffprobe diagnostic through the metadata-read
+result and are reported by the scan. The menu preview discovers albums without reading track metadata and reuses
+the discovered batches.
 
 ### Duplicates (menu 3, `duplicates`)
 
@@ -142,9 +144,11 @@ quality comparison (`MediaTrack::GenerateComparisonReport`). Read-only; folders 
 ### Database import (menu 4, `db import`)
 
 `ExportJSONToDB` (menu, per library, one transaction per JSON batch) or `ImportJsonDirectoryToDatabase` (CLI, one
-transaction): `AlbumCollection::ExportToDatabase` creates `TracksDB` if needed and inserts one row per track.
+transaction): `AlbumCollection::ExportToDatabase` creates `TracksDB` if needed, replaces all existing rows for each
+imported album path, and inserts one row per track. Re-importing refreshes those albums without duplicating rows;
+tracks removed since the previous scan are removed from the database. Other album paths remain untouched.
 Malformed album/track structure fails loading instead of silently importing a partial JSON batch. The row id is
-bound as NULL, so each import **appends** rows; re-importing the same JSON duplicates them.
+bound as NULL, so rows inserted by a refresh receive new SQLite row ids.
 
 ## Contracts and invariants
 
