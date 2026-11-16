@@ -258,8 +258,8 @@ void validateAlbumTags(TrackInfoList& tracks)
                     }
                 }
             }
-            if (!hasValidTrackNumber) discsWithUnnumberedTracks.insert(discNumber);
         }
+        if (!hasValidTrackNumber) discsWithUnnumberedTracks.insert(discNumber);
     }
 
     if (duplicateTrackNumber) {
@@ -344,8 +344,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
 
     long long folderCount = 0;
     // First pass: Find all folders - Discove folders
-    for (const auto& entry : fs::recursive_directory_iterator(
-        albumCollectionDirPath, fs::directory_options::skip_permission_denied)) {
+    for (const auto& entry : fs::recursive_directory_iterator(albumCollectionDirPath)) {
         // Progress update
         std::cout << "\rScanning folders, Please wait... " << ++folderCount;
 
@@ -371,11 +370,10 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     // Second pass: Collect files one level deep
     std::cout << "Scanning albums, Please wait... ";
     for (auto& [folderPath, trackList] : albumMap) {
-        for (const auto& entry : fs::directory_iterator(
-            folderPath, fs::directory_options::skip_permission_denied)) {
+        for (const auto& entry : fs::directory_iterator(folderPath)) {
             if (entry.is_regular_file() && MediaTrack::IsFileAcceptedAudioFile(entry)) {
                 uintmax_t fileSize = fs::file_size(entry.path());
-                trackList.push_back({ entry.path().filename().wstring(), fileSize, FFprobeOutput{}, std::nullopt, std::nullopt });
+                trackList.push_back({ entry.path().filename(), fileSize, FFprobeOutput{}, std::nullopt, std::nullopt });
             }
         }
         // Progress update
@@ -505,7 +503,7 @@ MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollect
                             spdlog::error("Error getting file size for {}: {}", CommonUtils::utf8string_to_string(entry.path().u8string()), e.what());
                         }
 
-                        trackList.push_back({ entry.path().filename().wstring(), fileSize, FFprobeOutput{}, std::nullopt, std::nullopt });
+                        trackList.push_back({ entry.path().filename(), fileSize, FFprobeOutput{}, std::nullopt, std::nullopt });
                     }
                 }
             }
@@ -1001,14 +999,14 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
 
     // Save the JSON string to a file
     std::ofstream file(path);
-    if (file.is_open()) {
-        file << json;
-        file.close();
-
-        //std::wcout << std::endl << std::format(L"====> Document saved to: {}", path.generic_wstring()) << std::endl;
+    if (!file.is_open()) {
+        spdlog::error("Unable to open JSON file for writing: {}", CommonUtils::path_to_utf8(path));
+        return false;
     }
-    else {
-        spdlog::error("Unable to open file for writing");
+    file << json;
+    file.close();
+    if (!file) {
+        spdlog::error("Failed to write or close JSON file: {}", CommonUtils::path_to_utf8(path));
         return false;
     }
 
@@ -1041,15 +1039,13 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
     std::stringstream buffer;
     buffer << file.rdbuf();
     std::string utf8_data = buffer.str();
-	std::wstring json = CommonUtils::utf8ToWstring(utf8_data);
     // Read the entire file into a string 
     //std::wstring json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
     rapidjson::Document doc;
 
     // Parse the JSON data 
-    std::string utf8Json = PlatformUtils::wstringToUtf8_ver2(json);
-    doc.Parse(utf8Json.c_str());
+    doc.Parse(utf8_data.c_str());
 
     // Check for parse errors 
     if (doc.HasParseError()) {
@@ -1102,14 +1098,11 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
         }
 
         std::string albumPathStr = albumVal["Album Path"].GetString();
-        std::wstring albumpath = CommonUtils::utf8ToWstring(albumPathStr);
+        fs::path albumpath = CommonUtils::path_from_utf8(albumPathStr);
         std::optional<std::filesystem::path> libraryRoot;
         if (albumVal.HasMember("Library Root") && albumVal["Library Root"].IsString()) {
-            libraryRoot = CommonUtils::utf8ToWstring(albumVal["Library Root"].GetString());
+            libraryRoot = CommonUtils::path_from_utf8(albumVal["Library Root"].GetString());
         }
-
-        std::string albumFolderStr = albumVal["Folder"].GetString();
-        std::wstring albumFolder = CommonUtils::utf8ToWstring(albumFolderStr);
 
 
         // Updated logging to reflect new album name source
@@ -1139,7 +1132,7 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
                         i, albumPathStr, parseError);
                     return nullptr;
                 }
-                std::filesystem::path relativePath = CommonUtils::utf8ToWstring(record->relativePath);
+                std::filesystem::path relativePath = CommonUtils::path_from_utf8(record->relativePath);
                 MediaTrack track{
                     relativePath,
                     record->sizeBytes,
@@ -1166,9 +1159,9 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
                 return nullptr;
             }
             //Derive track filename from FFprobeOutput or use fallback
-            std::wstring trackFilename = mi.format.filename.empty() ?
-                L"track_" + std::to_wstring(i) :
-                std::filesystem::path(CommonUtils::utf8ToWstring(mi.format.filename)).filename().wstring();
+            fs::path trackFilename = mi.format.filename.empty() ?
+                fs::path("track_" + std::to_string(i)) :
+                CommonUtils::path_from_utf8(mi.format.filename).filename();
             trackList.push_back({
                 trackFilename,
                 mi.format.fs_file_size.value_or(0),
@@ -1268,8 +1261,8 @@ void AlbumCollection::SortAlbums(std::shared_ptr<std::vector<MediaAlbum>> albumL
             int result = 0;
             switch (criterion) {
             case SortBy::AlbumName: {
-                const auto& nameA = a.path.path().filename().wstring();
-                const auto& nameB = b.path.path().filename().wstring();
+                const auto nameA = CommonUtils::path_to_utf8(a.path.path().filename());
+                const auto nameB = CommonUtils::path_to_utf8(b.path.path().filename());
                 result = compareLex(nameA, nameB);
                 break;
             }
@@ -1391,8 +1384,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
         try {
             if (fs::exists(dirEntry.path()) && dirEntry.is_directory()) {
                 // Use wstring to avoid UTF-8 conversion issues
-                std::wstring wName = dirEntry.path().filename().wstring();
-                albumName = PlatformUtils::wstringToUtf8_ver2(wName); // Use your safe conversion
+                albumName = CommonUtils::path_to_utf8(dirEntry.path().filename());
                 // Sanitize
                 bool invalid = false;
                 for (char c : albumName) {
@@ -1432,8 +1424,24 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
             if (const auto album = tags.find("album"); album != tags.end() && !album->second.empty()) {
                 albumName = album->second.front();
             }
-            if (const auto artists = tags.find("artists"); artists != tags.end() && !artists->second.empty()) {
-                artist = artists->second.front();
+            std::set<std::string> albumArtists;
+            std::set<std::string> artists;
+            for (const auto& track : trackList) {
+                if (!track.catalogRecord) continue;
+                const auto& trackTags = track.catalogRecord->tags;
+                for (const auto& [key, values] : trackTags) {
+                    auto* destination = key == "albumArtists" ? &albumArtists :
+                        key == "artists" ? &artists : nullptr;
+                    if (destination) {
+                        for (const auto& value : values) {
+                            if (!value.empty()) destination->insert(value);
+                        }
+                    }
+                }
+            }
+            const auto& identity = albumArtists.empty() ? artists : albumArtists;
+            for (const auto& value : identity) {
+                artist += std::to_string(value.size()) + ":" + value;
             }
         }
         else if (firstTrack.formatInfo.format.tags &&
@@ -1458,7 +1466,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
             }
             if (invalidAlbum) {
                 try {
-                    albumName = PlatformUtils::wstringToUtf8_ver2(dirEntry.path().filename().wstring());
+                    albumName = CommonUtils::path_to_utf8(dirEntry.path().filename());
                 }
                 catch (...) {
                     albumName = "sanitized_album_" + std::to_string(std::distance(albumListPtr->cbegin(), it));
@@ -1529,7 +1537,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
                         key.album.empty() ? "(unknown)" : key.album,
                         key.artist.empty() ? "(unknown)" : key.artist);
 
-                    duplicatedAlbumList.push_back({ dir1.path().wstring(), dir2.path().wstring() });
+                    duplicatedAlbumList.push_back({ dir1.path(), dir2.path() });
                 }
             }
         }

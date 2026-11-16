@@ -440,10 +440,13 @@ void readFlac(MediaRecord& record, TagLib::FileRef& file)
     }
     auto* properties = flac->audioProperties();
     if (properties != nullptr) {
-        record.totalSamples = properties->sampleFrames();
+        if (properties->sampleFrames() > 0) {
+            record.totalSamples = properties->sampleFrames();
+        }
         record.declaredBitsPerSample = properties->bitsPerSample();
         const auto signature = properties->signature();
-        if (!signature.isEmpty()) {
+        if (!signature.isEmpty() &&
+            std::any_of(signature.begin(), signature.end(), [](char byte) { return byte != 0; })) {
             static constexpr char hex[] = "0123456789abcdef";
             std::string digest;
             digest.reserve(signature.size() * 2);
@@ -590,6 +593,10 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
         if (extension == ".flac") readFlac(record, file);
         if (extension == ".mp3") readMp3(record, file);
     }
+    if (extension == ".flac" && !record.totalSamples &&
+        record.durationSeconds && *record.durationSeconds == 0) {
+        record.durationSeconds.reset();
+    }
     if (extension == ".flac" || extension == ".mp3") {
         std::string probeError;
         const auto probe = FFmpeg::GetFFprobeMetadataAPI(filePath, false, &probeError);
@@ -598,6 +605,9 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
         }
         if (probe.format.format_name && !probe.format.format_name->empty()) {
             record.format = *probe.format.format_name;
+        }
+        if (!record.durationSeconds && probe.format.duration && *probe.format.duration > 0) {
+            record.durationSeconds = *probe.format.duration;
         }
         record.chapterSupport = "supported";
         record.chapters.reserve(probe.chapters.size());

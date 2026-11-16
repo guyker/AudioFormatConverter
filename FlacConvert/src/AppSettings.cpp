@@ -58,7 +58,10 @@ fs::path promptForConfigDir(const fs::path& persistentFile) {
             << std::flush;
 
         std::string input;
-        std::getline(std::cin, input);
+        if (!std::getline(std::cin, input)) {
+            spdlog::error("Cannot read the configuration directory from standard input.");
+            return {};
+        }
 
         if (input.empty()) {
             spdlog::warn("No input provided; try again.");
@@ -119,6 +122,9 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting() {
     }
 
     fs::path configDir = findConfigDir();
+    if (configDir.empty()) {
+        return nullptr;
+    }
     fs::path configPath = configDir / AppSettingsJson::DefaultConfigFileName;
 
     bool isAppSettingLoaded = fs::exists(configPath);
@@ -319,6 +325,21 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
         std::cerr << "Error: Configuration must be a valid JSON object." << std::endl;
         return false;
     }
+    if (doc.HasMember("AlbumsSplitThreshold") &&
+        (!doc["AlbumsSplitThreshold"].IsInt() || doc["AlbumsSplitThreshold"].GetInt() <= 0)) {
+        spdlog::error("AlbumsSplitThreshold must be a positive integer.");
+        return false;
+    }
+    if (doc.HasMember("LogLevel") &&
+        (!doc["LogLevel"].IsInt() || doc["LogLevel"].GetInt() < 0 ||
+            doc["LogLevel"].GetInt() > 6)) {
+        spdlog::error("LogLevel must be an integer from 0 through 6.");
+        return false;
+    }
+    if (doc.HasMember("MediaDirectoryList") && !doc["MediaDirectoryList"].IsArray()) {
+        spdlog::error("MediaDirectoryList must be an array.");
+        return false;
+    }
     if (doc.HasMember("MetadataScanMaxThreads") &&
         (!doc["MetadataScanMaxThreads"].IsInt() || doc["MetadataScanMaxThreads"].GetInt() < 0)) {
         spdlog::error("MetadataScanMaxThreads must be a non-negative integer.");
@@ -436,6 +457,10 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
     if (doc.HasMember("MediaDirectoryList") && doc["MediaDirectoryList"].IsArray()) {
         MediaDirectoryList.clear();
         for (const auto& mediaObj : doc["MediaDirectoryList"].GetArray()) {
+            if (!mediaObj.IsObject()) {
+                spdlog::error("MediaDirectoryList entries must be objects.");
+                return false;
+            }
             MediaDirectoryElement media{};
             if (mediaObj.HasMember("isActive") && mediaObj["isActive"].IsBool()) {
                 media.isActive = mediaObj["isActive"].GetBool();
@@ -473,6 +498,10 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
     if (doc.HasMember("UseAsyncMetadataReads") && doc["UseAsyncMetadataReads"].IsBool()) {
         UseAsyncMetadataReads = doc["UseAsyncMetadataReads"].GetBool();
     }
+    else if (!doc.HasMember("UseAsyncMetadataReads") &&
+        doc.HasMember("UseAsyncFFmpegCalls") && doc["UseAsyncFFmpegCalls"].IsBool()) {
+        UseAsyncMetadataReads = doc["UseAsyncFFmpegCalls"].GetBool();
+    }
     if (doc.HasMember("Incremental")) {
         if (!doc["Incremental"].IsBool()) {
             spdlog::error("Incremental must be a boolean.");
@@ -482,9 +511,6 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
     }
     if (doc.HasMember("ScanTier")) {
         ScanTier = doc["ScanTier"].GetString();
-    }
-    else if (doc.HasMember("UseAsyncFFmpegCalls") && doc["UseAsyncFFmpegCalls"].IsBool()) {
-        UseAsyncMetadataReads = doc["UseAsyncFFmpegCalls"].GetBool();
     }
     if (doc.HasMember("MetadataScanMaxThreads")) {
         MetadataScanMaxThreads = doc["MetadataScanMaxThreads"].GetInt();

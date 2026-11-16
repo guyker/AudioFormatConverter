@@ -40,6 +40,7 @@ Without `--overwrite`, existing targets are never replaced. Exit code 0 only if 
 - [ ] Explicit `--overwrite` writes a formerly skipped folder completely once it gains a conversion.
 
 ## Known limitations
+- K-047: replacing an output directory with a link after planning can redirect conversion writes into a source tree.
 - Sequential; stops at the first error, earlier outputs remain (K-024).
 - Lossy sources (`.m4a` AAC) are re-encoded to FLAC without quality gain.
 - Skipping is per folder subtree: an MP3-only `CD2` beside a converted `CD1` is skipped and only listed.

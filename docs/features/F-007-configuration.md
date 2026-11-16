@@ -14,7 +14,7 @@ JSON comments to explain these options. `disabled` never writes a sidecar; `opti
 be disabled for a run; `required` always writes and rejects disable requests. The menu may prompt for a config
 directory and offer to create a default file.
 `UseAsyncMetadataReads` controls parallel TagLib reads during scan; the previous `UseAsyncFFmpegCalls` key remains
-accepted as an alias. `CatalogExtensions` defaults to `.flac` and `.mp3`; additional supported TagLib formats can be
+accepted as an alias when the new key is absent. `CatalogExtensions` defaults to `.flac` and `.mp3`; additional supported TagLib formats can be
 enabled explicitly. `UseFFmpegLibraryAPI` is deprecated, ignored with a warning, and omitted when configuration is
 saved.
 
@@ -30,6 +30,7 @@ saved.
 - [ ] `--config missing.json` exits non-zero with a clear message.
 - [ ] With no config file, `convert` works using defaults.
 - [ ] `AlbumsSplitThreshold: 0` is rejected.
+- [ ] `MediaDirectoryList` must contain objects, and a closed input stream exits the configuration prompt.
 - [ ] `MetadataScanMaxThreads: -1` is rejected; `0` selects automatic concurrency.
 - [ ] `CatalogExtensions` accepts only supported extensions and matching is case-insensitive.
 - [ ] A legacy `UseFFmpegLibraryAPI` setting is ignored and not written back.

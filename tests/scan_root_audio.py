@@ -280,6 +280,26 @@ def main():
             raise AssertionError("Import accepted an incompatible pre-existing database")
         if hashlib.sha256(foreign_database.read_bytes()).hexdigest() != foreign_database_hash:
             raise AssertionError("Rejected import modified an incompatible database")
+        incomplete_output = root / "incomplete-database"
+        incomplete_directory = incomplete_output / library.name
+        incomplete_directory.mkdir(parents=True)
+        incomplete_database = incomplete_directory / "catalog-v2.sqlite"
+        with closing(sqlite3.connect(incomplete_database)) as connection:
+            for name in ("libraries", "albums", "files", "tags", "raw_tags", "pictures",
+                         "chapters", "chapter_tags", "measurements", "findings",
+                         "schema_docs", "enum_docs", "catalog_meta"):
+                connection.execute(f"CREATE TABLE {name}(record_json TEXT)")
+            for name in ("v_tracks", "v_findings", "v_albums"):
+                connection.execute(f"CREATE VIEW {name} AS SELECT 1")
+            connection.execute("PRAGMA user_version=2")
+        incomplete_hash = hashlib.sha256(incomplete_database.read_bytes()).hexdigest()
+        rejected_import = subprocess.run(
+            [converter, "db", "import", str(extended_output / library.name),
+             "--output-dir", str(incomplete_output)], capture_output=True,
+        )
+        if rejected_import.returncode == 0 or hashlib.sha256(
+                incomplete_database.read_bytes()).hexdigest() != incomplete_hash:
+            raise AssertionError("Incompatible version-2 database was accepted or modified")
         unsupported_config = root / "unsupported-catalog-extension.json"
         unsupported_config.write_text(json.dumps({
             "CatalogExtensions": [".wma"],
@@ -309,6 +329,18 @@ def main():
                  str(numbering_album / filename)],
                 check=True,
             )
+        partial_numbering_album = numbering_library / "partially-numbered"
+        partial_numbering_album.mkdir()
+        for filename, number_options in (
+            ("numbered.flac", ["-metadata", "track=1/2"]),
+            ("unnumbered.flac", []),
+        ):
+            subprocess.run(
+                [ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i",
+                 "sine=frequency=997:sample_rate=44100:duration=1", "-c:a", "flac",
+                 "-metadata", "album=Partial numbering", *number_options,
+                 str(partial_numbering_album / filename)], check=True,
+            )
         numbering_output = root / "numbering-output"
         subprocess.run(
             [converter, "scan", str(numbering_library),
@@ -317,8 +349,14 @@ def main():
         )
         numbering_json = next(
             (numbering_output / numbering_library.name).glob("media_out_*.json"))
-        numbering_records = json.loads(
-            numbering_json.read_text(encoding="utf-8"))[0]["Tracks"]
+        numbering_albums = json.loads(numbering_json.read_text(encoding="utf-8"))
+        numbering_records = next(album["Tracks"] for album in numbering_albums
+                                 if album["Folder"] == "numbered-album")
+        partial_records = next(album["Tracks"] for album in numbering_albums
+                               if album["Folder"] == "partially-numbered")
+        if any(finding["code"] == "TRACK_TOTAL_MISMATCH"
+               for record in partial_records for finding in record["findings"]):
+            raise AssertionError("Missing track number caused a misleading total mismatch")
         numbering_findings = {
             finding["code"]
             for record in numbering_records
@@ -371,6 +409,11 @@ def main():
             if tier == "analysis":
                 database_output = root / "analysis-database"
                 subprocess.run(
+                    [converter, "db", "import", str(output / library.name),
+                     "--output-dir", str(database_output)],
+                    check=True,
+                )
+                subprocess.run(
                     [converter, "db", "import", str(tier_output / library.name),
                      "--output-dir", str(database_output)],
                     check=True,
@@ -380,6 +423,7 @@ def main():
                     measurements = connection.execute(
                         "SELECT kind,status FROM measurements ORDER BY kind").fetchall()
                     scan_tier = connection.execute("SELECT scan_tier FROM files").fetchone()[0]
+                    hashes = connection.execute("SELECT sha256,pcm_hash FROM files").fetchone()
                     undocumented_findings = connection.execute(
                         "SELECT DISTINCT f.code FROM findings f "
                         "LEFT JOIN enum_docs e ON e.domain='finding_code' AND e.value=f.code "
@@ -404,6 +448,9 @@ def main():
                     raise AssertionError(f"Analysis measurements were not imported: {measurements}")
                 if scan_tier != "analysis":
                     raise AssertionError("Database did not retain the requested scan tier")
+                if hashes != (tier_record["integrity"]["fileSha256"],
+                              tier_record["integrity"]["pcmSha256"]):
+                    raise AssertionError("Database hash projections did not update on re-import")
                 if undocumented_findings:
                     raise AssertionError(
                         f"Finding codes are missing AI documentation: {undocumented_findings}")
@@ -422,6 +469,148 @@ def main():
              "--output-dir", str(root / "database-output")],
             check=True,
         )
+        unsafe_import = subprocess.run(
+            [converter, "db", "import", str(output / library.name), "--output-dir", str(root)],
+            capture_output=True,
+        )
+        if unsafe_import.returncode == 0 or (library / "catalog-v2.sqlite").exists():
+            raise AssertionError("Import wrote a database inside the source library")
+
+        for value in ({"AlbumsSplitThreshold": 0}, {"MediaDirectoryList": [5]}):
+            invalid_config = root / "invalid-config.json"
+            invalid_config.write_text(json.dumps(value), encoding="utf-8")
+            invalid = subprocess.run(
+                [converter, "scan", str(library), "--config", str(invalid_config),
+                 "--output-dir", str(root / "invalid-output")],
+                capture_output=True, timeout=15,
+            )
+            if invalid.returncode == 0:
+                raise AssertionError(f"Invalid configuration was accepted: {value}")
+
+        eof = subprocess.run([converter], stdin=subprocess.DEVNULL, cwd=root,
+                             capture_output=True, timeout=15)
+        if eof.returncode == 0:
+            raise AssertionError("Menu succeeded without a configuration or input")
+
+        unknown_library = root / "unknown-flac"
+        unknown_library.mkdir()
+        unknown_track = unknown_library / "unknown.flac"
+        data = bytearray(track.read_bytes())
+        if data[:4] != b"fLaC" or data[4] & 0x7f != 0:
+            raise AssertionError("Generated FLAC does not begin with STREAMINFO")
+        # STREAMINFO's last 36 packed bits are total samples; all-zero MD5 is unknown.
+        data[21] &= 0xf0
+        data[22:26] = b"\0" * 4
+        data[26:42] = b"\0" * 16
+        unknown_track.write_bytes(data)
+        unknown_output = root / "unknown-output"
+        subprocess.run(
+            [converter, "scan", str(unknown_library), "--output-dir", str(unknown_output),
+             "--tier", "integrity"],
+            check=True,
+        )
+        unknown_json = next((unknown_output / unknown_library.name).glob("media_out_*.json"))
+        unknown_record = json.loads(unknown_json.read_text(encoding="utf-8"))[0]["Tracks"][0]
+        if unknown_record["integrity"]["status"] != "ok":
+            raise AssertionError("Unknown FLAC STREAMINFO values caused an integrity failure")
+        if unknown_record["technical"].get("totalSamples") == 0 or \
+                unknown_record["technical"].get("flacMd5") == "0" * 32:
+            raise AssertionError("Unknown FLAC STREAMINFO values were treated as real values")
+
+        menu_output = root / "menu-output"
+        menu_json = menu_output / library.name
+        menu_json.mkdir(parents=True)
+        fixture_json = files[0].read_bytes()
+        for index in (1, 3, 1000):
+            (menu_json / f"media_out_{library.name}_{index}.json").write_bytes(fixture_json)
+        menu_config_dir = root / "menu-config"
+        menu_config_dir.mkdir()
+        (menu_config_dir / "config.json").write_text(json.dumps({
+            "OutDirectory": str(menu_output),
+            "ScanTier": "catalog",
+            "UseAsyncFFmpegCalls": False,
+            "MediaDirectoryList": [{"isActive": True, "mediaPath": str(library),
+                                    "mediaName": ""}],
+        }), encoding="utf-8")
+        (root / "AppSettingsJsonPersistent.txt").write_text(
+            "UTF8:" + str(menu_config_dir), encoding="utf-8")
+        menu = subprocess.run([converter], input="4\nRUN\n", cwd=root,
+                              capture_output=True, text=True, timeout=30)
+        if menu.returncode != 0 or "JSON input files: 3" not in menu.stdout:
+            raise AssertionError(f"Menu did not import all sparse batches: {menu.stdout}\n{menu.stderr}")
+        if "Use Async Metadata Reads: false" not in menu.stdout:
+            raise AssertionError("Legacy async setting was ignored with ScanTier present")
+        menu_duplicates = subprocess.run(
+            [converter], input="3\nBACK\n0\n", cwd=root,
+            capture_output=True, text=True, timeout=30,
+        )
+        if "JSON input files: 3" not in menu_duplicates.stdout:
+            raise AssertionError("Menu duplicate preview did not use the fallback library name")
+
+        duplicates_library = root / "duplicates-音楽"
+        albums = [duplicates_library / "copy-one", duplicates_library / "copy-two"]
+        for album in albums:
+            album.mkdir(parents=True)
+        fixtures = (
+            (albums[0], "a.flac", 1, 44100, "Alice"),
+            (albums[0], "b.flac", 2, 44100, "Bob"),
+            (albums[1], "z.flac", 1, 48000, "Alice"),
+            (albums[1], "a.flac", 2, 44100, "Bob"),
+        )
+        for album, filename, duration, rate, artist in fixtures:
+            subprocess.run(
+                [ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i",
+                 f"sine=frequency=997:sample_rate={rate}:duration={duration}",
+                 "-c:a", "flac", "-metadata", "album=Compilation",
+                 "-metadata", f"artist={artist}", "-metadata", f"title=Track {duration}",
+                 str(album / filename)], check=True,
+            )
+        nested_album = albums[0] / "nested"
+        nested_album.mkdir()
+        subprocess.run(
+            [ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i",
+             "sine=frequency=500:sample_rate=44100:duration=1", "-c:a", "flac",
+             "-metadata", "album=Different album", str(nested_album / "nested.flac")],
+            check=True,
+        )
+        duplicate_output = root / "duplicate-output"
+        subprocess.run([converter, "scan", str(duplicates_library),
+                        "--output-dir", str(duplicate_output)], check=True)
+        duplicate_run = subprocess.run(
+            [converter, "duplicates", str(duplicate_output / duplicates_library.name)],
+            capture_output=True, text=True, timeout=30,
+        )
+        if duplicate_run.returncode != 0 or "Found 1 duplicated albums" not in duplicate_run.stdout:
+            raise AssertionError(f"Compilation duplicate was not found: {duplicate_run.stdout}")
+        if "Different number of tracks" in duplicate_run.stdout or \
+                "Album duration check (album1/2)" in duplicate_run.stdout:
+            raise AssertionError("Nested or unordered tracks caused a false mismatch")
+        if "44100" not in duplicate_run.stdout or "48000" not in duplicate_run.stdout:
+            raise AssertionError("Basic audio property difference was not reported")
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel.CreateFileW.argtypes = [
+                wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+            ]
+            kernel.CreateFileW.restype = wintypes.HANDLE
+            kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+            handle = kernel.CreateFileW(
+                str(albums[0] / "a.flac"), 0x80000000, 0, None, 3, 0x80, None)
+            if handle == wintypes.HANDLE(-1).value:
+                raise OSError(ctypes.get_last_error(), "Could not lock disposable fixture")
+            try:
+                failed_probe = subprocess.run(
+                    [converter, "duplicates", str(duplicate_output / duplicates_library.name)],
+                    capture_output=True, timeout=30,
+                )
+                if failed_probe.returncode == 0:
+                    raise AssertionError("Duplicate comparison ignored a locked track")
+            finally:
+                kernel.CloseHandle(handle)
         if any(hashlib.sha256(track.read_bytes()).hexdigest() != source_hash
                for track, source_hash in source_hashes.items()):
             raise AssertionError("A scan changed one or more source files")

@@ -395,6 +395,11 @@ std::optional<MediaRecord> ParseMediaRecord(const rapidjson::Value& value, std::
             output = member.GetInt();
             return true;
         });
+    if ((record.sampleRateHz && *record.sampleRateHz <= 0) ||
+        (record.channels && *record.channels <= 0)) {
+        fail(error, "Sample rate and channel count must be positive when present.");
+        return std::nullopt;
+    }
     record.declaredBitsPerSample = optionalMember<int>(technical->value, "declaredBitsPerSample",
         [](const rapidjson::Value& member, int& output) {
             if (!member.IsInt()) return false;

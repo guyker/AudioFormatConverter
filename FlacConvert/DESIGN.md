@@ -146,7 +146,8 @@ Tag validation records missing title/artist/album tags, malformed track/disc num
 MusicBrainz UUIDs, ISRCs and EAN/UPC/GTIN check digits, and album-level inconsistencies for album, album artist,
 release date, and label. Album validation also flags duplicate/gapped per-disc track numbers and inconsistent or
 mismatched declared track/disc totals without treating the folder as proof of album completeness.
-Unavailable properties are omitted. An accepted audio track with a read/JSON error or
+Unavailable properties are omitted, including unknown FLAC STREAMINFO sample counts and MD5 signatures.
+An inaccessible discovered directory, an output write/close error, or an accepted audio track with a read/JSON error or
 without usable sample-rate/channel data fails the scan before installation, preserving the prior generated JSON
 (K-035). TagLib reads use a read-only stream. The menu preview discovers albums without reading track metadata and
 reuses the discovered batches. `ScanTier` selects `catalog` (default), `integrity`, or `analysis`; CLI `scan --tier`
@@ -157,8 +158,11 @@ record without discarding successfully read tags. `ExtraAudioQualityMetrics` is 
 ### Duplicates (menu 3, `duplicates`)
 
 `ScanFolderProcessJSONAndFindDuplicates`: load all batches, sort by track count, `AlbumCollection::FindDuplicateAlbums`
-(track count, then sorted durations / size threshold), then re-probe both source folders in parallel and print a
-quality comparison (`MediaTrack::GenerateComparisonReport`). Re-probed track counts may differ; missing tracks are
+(track count, album identity, then sorted durations within the legacy `SizeMatchPercentageThreshold` percentage).
+Album artist tags form the artist identity when present; otherwise the set of track artists is used. It re-probes
+immediate audio files in both source folders in parallel and orders them by duration before printing
+a stream-property and tag comparison (`MediaTrack::GenerateComparisonReport`). Probe errors fail the operation.
+Re-probed track counts may differ; missing tracks are
 reported and paired duration/tag comparisons use only tracks present in both lists. Read-only; folders are opened
 only when requested.
 
@@ -169,7 +173,9 @@ one transaction): `CatalogDatabase::Import` writes catalog schema v2 to
 `OutDirectory/<name>/catalog-v2.sqlite`, leaving any prior `.db` database untouched. File identity is
 `(library_id, relative_path)` (K-040); records upsert without duplicating files, and missing tracks are deleted only from
 albums included in the import. Albums absent from the import remain untouched. Imports require schema-v2 JSON with a
-consistent `"Library Root"`; incompatible existing databases are rejected before catalog writes. The transaction
+consistent `"Library Root"`; database paths inside that library are rejected before directory creation. Existing
+version-2 databases must have the application-defined table and view definitions; incompatible databases are rejected
+before catalog writes. The transaction
 includes all imported albums and rolls back completely on any failure. `schema_docs`, `enum_docs`, and
 `catalog_meta.ai_guide` describe the schema and safe interpretation of measured versus claimed data.
 CLI import reads through the supplied directory path and names the output after that directory, without resolving
@@ -177,7 +183,9 @@ directory aliases; a trailing separator does not change the name.
 
 ## Contracts and invariants
 
-- **Sources are never modified.** Every write target is outside the source tree; overlap is rejected at plan time.
+- **Sources must never be modified.** Every write target must be outside the source tree; overlap is rejected at
+  plan time. Known defect K-047: replacing an output directory after validation can redirect conversion or scan
+  writes into a source tree; the current pathname checks do not provide race-free enforcement.
 - **Install only after success.** Output is written to a unique temporary, verified and audited, then moved into place
   (`installFile`: `MoveFileExW` on Windows; rename or hard-link/copy elsewhere). Without overwrite an existing
   target is never replaced (K-041).

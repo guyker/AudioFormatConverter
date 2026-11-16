@@ -96,6 +96,12 @@ int main(int argc, char** argv)
             "Unsupported catalog schema version should be rejected");
 
         document["schemaVersion"].SetInt(2);
+        document["technical"]["sampleRateHz"].SetInt(0);
+        require(!ParseMediaRecord(document, &error), "Zero sample rate should be rejected");
+        document["technical"]["sampleRateHz"].SetInt(48000);
+        document["technical"]["channels"].SetInt(0);
+        require(!ParseMediaRecord(document, &error), "Zero channel count should be rejected");
+        document["technical"]["channels"].SetInt(2);
         document["technical"]["sampleRateHz"].SetString("48000", document.GetAllocator());
         require(!ParseMediaRecord(document, &error),
             "Invalid optional technical types should be rejected, not silently omitted");

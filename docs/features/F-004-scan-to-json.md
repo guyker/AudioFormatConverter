@@ -22,7 +22,7 @@ backup and rollback; databases and sources are not touched. The RapidJSON writer
 omits unavailable optional fields instead of fabricating zero values. The configured `ScanTier` defaults to
 `catalog`; `scan --tier catalog|integrity|analysis` selects metadata-only, full-decode integrity, or decode plus
 signal-statistics analysis. Decode failures are retained in the record without discarding successfully read tags.
-If any accepted track has a read error or lacks usable audio technical metadata, the scan fails
+If discovery cannot read a directory, writing a JSON batch fails, or any accepted track has a read error or lacks usable audio technical metadata, the scan fails
 before installing staged JSON, leaving the previous generated files unchanged.
 Album objects include the source `"Library Root"` for stable downstream database identity. With `Incremental=true`,
 unchanged records are reused only when the source path, file size, full-precision modification time match and the cached tier is the requested tier or higher;
@@ -43,6 +43,7 @@ unchanged records are reused only when the source path, file size, full-precisio
 ## Acceptance checks
 - [ ] Output JSON validates against the v2 schema and contains one object per album with non-empty `Tracks`.
 - [ ] A failed scan leaves the previous `media_out_*.json` files unchanged.
+- [ ] An unreadable album directory or failed JSON write fails the scan without replacing previous batches.
 - [ ] Supported extensions are matched case-insensitively.
 - [ ] Repeated tag values remain separate array values; raw tag scope and ID3 frame identities are retained where available.
 - [ ] Embedded FLAC/MP3 picture descriptors are present without duplicating image payload bytes; chapter timing and tags are retained when supported.
@@ -53,6 +54,7 @@ unchanged records are reused only when the source path, file size, full-precisio
 - [ ] Control characters in tag names/values round-trip through generated JSON.
 - [ ] Missing optional values remain absent; catalog-tier integrity and analysis statuses are `not_run`.
 - [ ] Integrity scans report decode status, decoded samples, and file/PCM SHA-256; decode failures retain a failure position when available.
+- [ ] FLAC STREAMINFO zero sample counts and all-zero MD5 signatures are treated as unknown, not corruption.
 - [ ] Analysis scans emit per-channel signal measurements and report zero-padded-hi-res evidence without claiming universal quality.
 - [ ] Generated sine, leading/trailing silence, and full-scale integer fixtures verify loudness, silence, and clipping measurements within tolerances.
 - [ ] A malformed or unusable accepted track fails the scan instead of installing an incomplete catalog.
@@ -63,6 +65,7 @@ unchanged records are reused only when the source path, file size, full-precisio
 - [ ] Same-size source edits within one second invalidate incremental cache records, and album-level findings are recomputed after cache reuse.
 
 ## Known limitations
+- K-047: replacing an output directory with a link after validation can redirect scan installation into a source tree.
 - `CatalogExtensions` defaults to `.flac` and `.mp3`; other formats require explicit opt-in.
 - `rawTags` contains decoded tag entries, not byte-exact source metadata. Native metadata inventory is partial for FLAC/MP3 and unsupported for additional formats; the JSON catalog is not a byte-exact archive.
 - Files and paths skipped because their extensions are not configured are not currently emitted in a separate discovery inventory.

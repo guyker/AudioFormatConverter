@@ -29,7 +29,7 @@ struct MediaAlbum
 	std::vector<MediaTrack> trackList;
 };
 
-using SimilarDirectoryEntryList = std::vector<std::tuple <std::wstring, std::wstring>>;
+using SimilarDirectoryEntryList = std::vector<std::tuple<fs::path, fs::path>>;
 using MediaLoadingFuture = std::future<MetadataReadResult>;
 using TrackInfoList = std::vector<MediaTrack>;
 using DirectoryContentEntryList = std::vector<MediaAlbum>;

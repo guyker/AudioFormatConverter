@@ -127,9 +127,12 @@ bool isGeneratedJsonOutput(const fs::directory_entry& entry, std::error_code& ec
     if (!entry.is_regular_file(ec) || ec) {
         return false;
     }
-    const auto filename = CommonUtils::ToLower(entry.path().filename().wstring());
-    return filename.starts_with(L"media_out_") &&
-        CommonUtils::ToLower(entry.path().extension().wstring()) == L".json";
+    auto filename = CommonUtils::path_to_utf8(entry.path().filename());
+    std::ranges::transform(filename, filename.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return filename.starts_with("media_out_") &&
+        MediaTrack::FileExtension(entry.path()) == u8".json";
 }
 
 bool installGeneratedFiles(const fs::path& stagedDirectory, const fs::path& targetDirectory)
@@ -280,12 +283,15 @@ std::vector<fs::path> findJsonFiles(const fs::path& directory)
     }
 
     for (const auto& entry : fs::directory_iterator(directory)) {
-        if (!entry.is_regular_file() || CommonUtils::ToLower(entry.path().extension().wstring()) != L".json") {
+        if (!entry.is_regular_file() || MediaTrack::FileExtension(entry.path()) != u8".json") {
             continue;
         }
-        const auto filename = CommonUtils::ToLower(entry.path().filename().wstring());
-        if (filename.starts_with(L"media_out_") &&
-            !filename.ends_with(L"_error.json")) {
+        auto filename = CommonUtils::path_to_utf8(entry.path().filename());
+        std::ranges::transform(filename, filename.begin(), [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+        if (filename.starts_with("media_out_") &&
+            !filename.ends_with("_error.json")) {
             files.push_back(entry.path());
         }
     }
@@ -334,10 +340,10 @@ std::vector<fs::path> findConfiguredJsonFiles(
 {
     std::vector<fs::path> files;
     for (const auto& mediaEntry : mediaList) {
-        auto generator = mediaEntry.getMediaJsonPathCo(outputRoot);
-        while (generator.resume()) {
-            files.push_back(generator.value());
-        }
+        const auto name = mediaEntry.mediaName && !mediaEntry.mediaName->empty()
+            ? *mediaEntry.mediaName : directoryNameUtf8(pathFromUtf8(mediaEntry.mediaPath));
+        const auto jsonFiles = findJsonFiles(outputRoot / pathFromUtf8(name));
+        files.insert(files.end(), jsonFiles.begin(), jsonFiles.end());
     }
     return files;
 }
@@ -1041,6 +1047,16 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
             spdlog::error("Failed to load album JSON: {}", pathToUtf8(jsonFile));
             return 1;
         }
+        for (const auto& album : *albumListChunk) {
+            for (const auto& track : album.trackList) {
+                if (track.catalogRecord &&
+                    (!track.catalogRecord->sampleRateHz || !track.catalogRecord->channels)) {
+                    spdlog::error("Duplicate input has no usable audio properties: '{}'.",
+                        pathToUtf8(album.path.path() / track.trackPath));
+                    return 1;
+                }
+            }
+        }
         albumListPtr->insert(albumListPtr->end(), albumListChunk->begin(), albumListChunk->end());
     }
     if (jsonFiles.empty()) {
@@ -1073,7 +1089,7 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
         try {
             std::vector<MediaLoadingFuture> asyncFutureList1;
             std::vector<MediaLoadingFuture> asyncFutureList2;
-            for (const auto& entry : fs::recursive_directory_iterator(dir1)) {
+            for (const auto& entry : fs::directory_iterator(dir1)) {
                 //if (fs::is_regular_file(entry.status())) {
                 if (MediaTrack::IsValidMedia(entry)) {
 
@@ -1081,7 +1097,7 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
                     asyncFutureList1.push_back(std::move(miFuture));
                 }
             }
-            for (const auto& entry : fs::recursive_directory_iterator(dir2)) {
+            for (const auto& entry : fs::directory_iterator(dir2)) {
                 if (MediaTrack::IsValidMedia(entry)) {
                     auto miFuture = std::async(std::launch::async, MediaTrack::ReadMetadataInfoFromFile, entry.path(), bIncludeAudioQualityMetrics);
                     asyncFutureList2.push_back(std::move(miFuture));
@@ -1096,6 +1112,12 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
             for (auto& furure_ret : asyncFutureList1)
             {
                 auto result = furure_ret.get();
+                if (result.error || !std::ranges::any_of(result.mediaInfo.streams,
+                    [](const Stream& stream) { return stream.codec_type == "audio"; })) {
+                    spdlog::error("Duplicate comparison could not read an audio track: {}",
+                        result.error.value_or("No audio stream found."));
+                    return 1;
+                }
 				mediaAlbum1.trackList.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, result.mediaInfo });
              //   mediaInfoList1.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
 
@@ -1104,9 +1126,32 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
             for (auto& furure_ret : asyncFutureList2)
             {
                 auto result = furure_ret.get();
+                if (result.error || !std::ranges::any_of(result.mediaInfo.streams,
+                    [](const Stream& stream) { return stream.codec_type == "audio"; })) {
+                    spdlog::error("Duplicate comparison could not read an audio track: {}",
+                        result.error.value_or("No audio stream found."));
+                    return 1;
+                }
                 mediaAlbum2.trackList.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, result.mediaInfo });
                 //   mediaInfoList2.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
             }
+            const auto trackOrder = [](const MediaTrack& left, const MediaTrack& right) {
+                const auto durationLeft = left.formatInfo.format.duration.value_or(-1);
+                const auto durationRight = right.formatInfo.format.duration.value_or(-1);
+                if (durationLeft != durationRight) return durationLeft < durationRight;
+                const auto tag = [](const MediaTrack& track, const char* name) {
+                    if (!track.formatInfo.format.tags) return std::string{};
+                    const auto& tags = *track.formatInfo.format.tags;
+                    const auto found = tags.find(name);
+                    return found == tags.end() ? std::string{} : found->second;
+                };
+                const auto titleLeft = tag(left, "title");
+                const auto titleRight = tag(right, "title");
+                if (titleLeft != titleRight) return titleLeft < titleRight;
+                return left.formatInfo.format.filename < right.formatInfo.format.filename;
+            };
+            std::ranges::sort(mediaAlbum1.trackList, trackOrder);
+            std::ranges::sort(mediaAlbum2.trackList, trackOrder);
 
 			similarAlbumList.push_back(std::make_tuple(mediaAlbum1, mediaAlbum2));
 
@@ -1122,7 +1167,7 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
 			//Print album size check
             bool btime_different = false;
             std::ostringstream oss;
-            oss << "Album size check (album1/2): ";
+            oss << "Album duration check (album1/2): ";
 
 
 			auto tagCompareResult = std::string{"N/A"};
@@ -1134,23 +1179,16 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
                 const auto tSize1 = mediaAlbum1.trackList[i].formatInfo.format.duration.value_or(-1);
                 const auto tSize2 = mediaAlbum2.trackList[i].formatInfo.format.duration.value_or(-1);
 
-                // Format with 2 decimal places
+                auto tags1 = mediaAlbum1.trackList[i].formatInfo.format.tags.value_or(JsonUtils::Tags{});
+                auto tags2 = mediaAlbum2.trackList[i].formatInfo.format.tags.value_or(JsonUtils::Tags{});
+                tagCompareResult = compareAndPrintTagsTable(tags1, tags2);
+                if (encoder1.empty() && tags1.contains("encoder")) encoder1 = tags1.at("encoder");
+                if (encoder2.empty() && tags2.contains("encoder")) encoder2 = tags2.at("encoder");
+
                 if (tSize1 != tSize2)
                 {
                     oss << std::fixed << std::setprecision(2);
                     oss << (i + 1) << ": " << tSize1 << "/" << tSize2 << " [" << (tSize2 - tSize1) << "] ";
-
-                    auto tags1 = mediaAlbum1.trackList[i].formatInfo.format.tags.value_or(JsonUtils::Tags{});
-                    auto tags2 = mediaAlbum2.trackList[i].formatInfo.format.tags.value_or(JsonUtils::Tags{});
-
-					tagCompareResult = compareAndPrintTagsTable(tags1, tags2);
-
-                    if (encoder1.empty() && tags1.contains("encoder")) {
-                        encoder1 = tags1.at("encoder");
-                    }
-                    if (encoder2.empty() && tags2.contains("encoder")) {
-                        encoder2 = tags2.at("encoder");
-                    }
 
                     btime_different = true; // You can re-add the conditional check if needed
                 }
@@ -1163,7 +1201,7 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
             spdlog::info("encoder1: {} encoder1: {}", encoder1.c_str(), encoder2.c_str());
 
             spdlog::info("Potentially duplicated albums [{}/{}]:\n\tAlbum1: \"{}\"\n\tAlbum2: \"{}\"",
-                iCurrent, dupList.size(), CommonUtils::wstring_to_utf8(dir1), CommonUtils::wstring_to_utf8(dir2));
+                iCurrent, dupList.size(), pathToUtf8(dir1), pathToUtf8(dir2));
 
 		//	spdlog::info("{}", tagCompareResult.c_str());
 
@@ -1221,9 +1259,9 @@ int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList,
             {}
         };
         summary.outputs.push_back(plan.database);
-        auto generator = normalizedEntry.getMediaJsonPathCo(pathFromUtf8(appSettingPtr->OutDirectory));
-        while (generator.resume()) {
-            plan.json.push_back(absoluteDisplayPath(generator.value()));
+        for (const auto& json : findJsonFiles(
+            pathFromUtf8(appSettingPtr->OutDirectory) / pathFromUtf8(normalizedEntry.mediaName.value()))) {
+            plan.json.push_back(absoluteDisplayPath(json));
         }
         std::error_code ec;
         const auto key = fs::weakly_canonical(plan.database, ec);
@@ -1314,12 +1352,6 @@ int ImportJsonDirectoryToDatabase(const fs::path& jsonDirectory, const fs::path&
     }
     library.mediaName = directoryNameUtf8(nameDirectory);
     const fs::path databasePath = library.getMediaDBPath(outputRoot);
-    fs::create_directories(databasePath.parent_path(), ec);
-    if (ec) {
-        spdlog::error("Cannot create database directory '{}': {}", pathToUtf8(databasePath.parent_path()), ec.message());
-        return 1;
-    }
-
     spdlog::info("Importing {} JSON file(s) into '{}'.", jsonFiles.size(), pathToUtf8(databasePath));
     return albumCollection.ExportToDatabase(albums, databasePath) ? 0 : 1;
 }

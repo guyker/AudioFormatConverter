@@ -1,4 +1,5 @@
 #include "CommonUtils.h"
+#include "MediaTrack.h"
 #include "ffmpeg.h"
 
 #include <cmath>
@@ -47,6 +48,25 @@ static void check_log_callback_context() {
     const auto& logs = FFmpeg::get_ffmpeg_logs();
     require(!logs.empty(), "Opaque FFmpeg context was not logged");
     require(logs.back().url == "WarningRegressionContext", "Opaque FFmpeg context was misidentified");
+}
+
+static void check_audio_comparison_without_analysis() {
+    MediaTrack first;
+    MediaTrack second;
+    Stream left;
+    left.codec_type = "audio";
+    left.codec_name = "flac";
+    left.sample_rate = "44100";
+    left.channels = 2;
+    Stream right = left;
+    right.sample_rate = "48000";
+    first.formatInfo.streams.push_back(left);
+    second.formatInfo.streams.push_back(right);
+    require(!MediaTrack::CompareAudioTracks({first}, {second}),
+        "Different stream properties were ignored without optional analysis");
+    const auto report = MediaTrack::GenerateComparisonReport({first}, {second});
+    require(report.find("44100") != std::string::npos && report.find("48000") != std::string::npos,
+        "Basic sample rates were missing from the comparison report");
 }
 
 static void check_recording(const char* filename, bool silent) {
@@ -106,6 +126,7 @@ int main(int argc, char** argv) {
         require(render_progress(10, 5, 20, subProgress).find("Current Batch:      [                    ] 0%")
             != std::string::npos, "Empty sub-progress failed");
         check_log_callback_context();
+        check_audio_comparison_without_analysis();
         check_recording(argv[1], false);
         check_recording(argv[2], true);
         return 0;

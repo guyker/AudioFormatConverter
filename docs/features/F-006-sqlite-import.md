@@ -10,7 +10,7 @@ library root is carried by each album JSON object. Re-imports update existing fi
 remove tracks missing from albums included in the import; albums absent from the import remain untouched. All JSON
 batches for a menu library or the complete CLI directory import share one transaction and roll back together on
 failure. The old `.db` file is never migrated, overwritten, or deleted; incompatible files at the new catalog path
-are rejected without modification.
+are rejected without modification. The destination must be outside the recorded source library.
 
 ## Entry points
 - `FlacConvert db import <json dir> [--output-dir]` → `FlacConvertMain.cpp#ImportJsonDirectoryToDatabase`
@@ -30,6 +30,8 @@ are rejected without modification.
 - [ ] Non-ASCII and >260-character database paths open on Windows.
 - [ ] CLI import through a directory alias uses the supplied directory name for its output, with or without a trailing separator.
 - [ ] An incompatible catalog database is refused without modification; the old `.db` remains untouched.
+- [ ] Import into the recorded source library is rejected before creating the database.
+- [ ] Re-importing analysis records updates the scan tier and both available SHA-256 projections.
 
 ## Known limitations
 - Only schema-v2 catalog JSON is accepted; legacy JSON must be regenerated with `scan`.

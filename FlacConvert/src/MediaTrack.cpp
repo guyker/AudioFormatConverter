@@ -531,6 +531,22 @@ bool MediaTrack::CompareAudioTracks(const std::vector<MediaTrack>& mediaInfoList
         const auto& info1 = mediaInfoList1[i].formatInfo;
         const auto& info2 = mediaInfoList2[i].formatInfo;
 
+        const auto audioStream = [](const FFprobeOutput& info) -> const Stream* {
+            const auto it = std::ranges::find_if(info.streams,
+                [](const Stream& stream) { return stream.codec_type == "audio"; });
+            return it == info.streams.end() ? nullptr : &*it;
+        };
+        const auto* stream1 = audioStream(info1);
+        const auto* stream2 = audioStream(info2);
+        if (stream1 && stream2 &&
+            (stream1->codec_name != stream2->codec_name ||
+             stream1->sample_rate != stream2->sample_rate ||
+             stream1->channels != stream2->channels ||
+             stream1->bits_per_sample != stream2->bits_per_sample ||
+             stream1->bit_rate != stream2->bit_rate)) {
+            bAllSame = false;
+        }
+
         //spdlog::info("Comparing Track #{}, \"{}\" vs \"{}\"", i + 1, info1.format.filename, info2.format.filename);
 
         if (!info1.audio_metrics.has_value() || !info2.audio_metrics.has_value()) {
@@ -635,6 +651,28 @@ std::string MediaTrack::GenerateComparisonReport(
 
         const auto& info1 = mediaInfoList1[i].formatInfo;
         const auto& info2 = mediaInfoList2[i].formatInfo;
+
+        const auto audioStream = [](const FFprobeOutput& info) -> const Stream* {
+            const auto it = std::ranges::find_if(info.streams,
+                [](const Stream& stream) { return stream.codec_type == "audio"; });
+            return it == info.streams.end() ? nullptr : &*it;
+        };
+        const auto* stream1 = audioStream(info1);
+        const auto* stream2 = audioStream(info2);
+        if (stream1 && stream2) {
+            const auto print = [&](const char* label, const std::string& left, const std::string& right) {
+                report << std::setw(30) << label << std::setw(35) << left << std::setw(35) << right
+                    << (left == right ? "Yes" : "No") << "\n";
+            };
+            const auto integer = [](const auto& value) {
+                return value ? std::to_string(*value) : std::string("unknown");
+            };
+            print("Codec", stream1->codec_name.value_or("unknown"), stream2->codec_name.value_or("unknown"));
+            print("Sample Rate (Hz)", stream1->sample_rate.value_or("unknown"), stream2->sample_rate.value_or("unknown"));
+            print("Channels", integer(stream1->channels), integer(stream2->channels));
+            print("Bits per sample", integer(stream1->bits_per_sample), integer(stream2->bits_per_sample));
+            print("Bitrate", integer(stream1->bit_rate), integer(stream2->bit_rate));
+        }
 
         if (!info1.audio_metrics.has_value() || !info2.audio_metrics.has_value()) {
             report << "  Audio analysis not run; metric comparison skipped.\n\n";

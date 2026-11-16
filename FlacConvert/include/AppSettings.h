@@ -103,23 +103,6 @@ struct MediaDirectoryElement
 		return name;
 	}
 
-	CommonUtils::Generator<std::filesystem::path> getMediaJsonPathCo(std::filesystem::path outDir) const
-	{
-		int index = 0;
-		while (++index < 1000) {
-			auto path = getMediaJsonPath(outDir, index);
-			if (fs::exists(path)) {
-				co_yield path;
-			}
-			else
-			{
-				co_return;
-			}
-		}
-
-		co_return;
-	}
-
 	std::filesystem::path getMediaJsonPath(const std::filesystem::path& outDir, int count) const
 	{
 		std::string fileName = outputName();
@@ -174,7 +157,7 @@ struct AppSettingsJson
 	int DecodeWorkers{ 0 };
 	bool ExtraAudioQualityMetrics{ false };
 	int MinMatchingTracksForDuplicate{ 1 };
-	int SizeMatchPercentageThreshold{ 3 }; // tracks are identical if the size difference is less than 3%
+	int SizeMatchPercentageThreshold{ 3 }; // legacy name; maximum track-duration difference in percent
 	int RecursionDirectorySearchDepth{ 10 }; // max depth for recursive search
 	int AlbumsSplitThreshold{ 2000 }; // max number of album in each chunk (this help with memory usage and performance)
 

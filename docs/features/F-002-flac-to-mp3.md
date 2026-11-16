@@ -33,5 +33,6 @@ Non-FLAC audio is reported as skipped; companions are copied.
 - [ ] `--mp3-quality 10` is rejected by the CLI (`CommandLine.cpp#ParseCommandLine`).
 
 ## Known limitations
+- K-047: replacing an output directory with a link after planning can redirect conversion writes into a source tree.
 - Requires an `ffmpeg` build with `libmp3lame`.
 - Only FLAC input; other lossless formats are skipped, not converted.

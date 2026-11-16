@@ -137,6 +137,23 @@ std::string pathUtf8(const std::filesystem::path& path)
     return CommonUtils::path_to_utf8(path);
 }
 
+bool isSameOrChildPath(const std::filesystem::path& candidate, const std::filesystem::path& base)
+{
+    auto candidatePart = candidate.begin();
+    for (auto basePart = base.begin(); basePart != base.end(); ++basePart, ++candidatePart) {
+        if (candidatePart == candidate.end()) return false;
+#ifdef _WIN32
+        const auto& left = candidatePart->native();
+        const auto& right = basePart->native();
+        if (CompareStringOrdinal(left.c_str(), static_cast<int>(left.size()),
+                right.c_str(), static_cast<int>(right.size()), TRUE) != CSTR_EQUAL) return false;
+#else
+        if (*candidatePart != *basePart) return false;
+#endif
+    }
+    return true;
+}
+
 std::string pathString(const std::filesystem::path& path)
 {
     auto value = pathUtf8(path);
@@ -617,9 +634,9 @@ void insertRecord(sqlite3* db, std::int64_t libraryId, std::int64_t albumId,
 INSERT INTO files(
  library_id,album_id,relative_path,format,size_bytes,modified_utc,duration_seconds,bit_rate_kbps,
  sample_rate_hz,channels,declared_bits_per_sample,total_samples,flac_md5,tag_vendor,support_tags,
- native_inventory_support,decode_support,chapter_support,analysis_status,scan_tier,scanned_utc,
+ native_inventory_support,decode_support,chapter_support,analysis_status,scan_tier,sha256,pcm_hash,scanned_utc,
  last_seen_scan_id,record_json)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(library_id,relative_path) DO UPDATE SET
  album_id=excluded.album_id,format=excluded.format,size_bytes=excluded.size_bytes,
  modified_utc=excluded.modified_utc,duration_seconds=excluded.duration_seconds,
@@ -628,7 +645,8 @@ ON CONFLICT(library_id,relative_path) DO UPDATE SET
  total_samples=excluded.total_samples,flac_md5=excluded.flac_md5,tag_vendor=excluded.tag_vendor,
  support_tags=excluded.support_tags,native_inventory_support=excluded.native_inventory_support,
  decode_support=excluded.decode_support,chapter_support=excluded.chapter_support,
- analysis_status=excluded.analysis_status,scanned_utc=excluded.scanned_utc,
+ analysis_status=excluded.analysis_status,scan_tier=excluded.scan_tier,
+ sha256=excluded.sha256,pcm_hash=excluded.pcm_hash,scanned_utc=excluded.scanned_utc,
  last_seen_scan_id=excluded.last_seen_scan_id,record_json=excluded.record_json;
 )sql");
     checkSqlite(sqlite3_bind_int64(upsert.handle, 1, libraryId), db, "Binding library id");
@@ -652,9 +670,11 @@ ON CONFLICT(library_id,relative_path) DO UPDATE SET
     bindText(db, upsert.handle, 18, record.chapterSupport);
     bindText(db, upsert.handle, 19, record.analysisStatus);
     bindText(db, upsert.handle, 20, record.scanTier);
-    bindText(db, upsert.handle, 21, scannedUtc);
-    bindText(db, upsert.handle, 22, scanId);
-    bindText(db, upsert.handle, 23, recordJson);
+    bindOptionalText(db, upsert.handle, 21, record.integrity.fileSha256);
+    bindOptionalText(db, upsert.handle, 22, record.integrity.pcmSha256);
+    bindText(db, upsert.handle, 23, scannedUtc);
+    bindText(db, upsert.handle, 24, scanId);
+    bindText(db, upsert.handle, 25, recordJson);
     stepDone(db, upsert.handle, "Upserting catalog file");
 
     const std::int64_t fileId = findFileId(db, libraryId, relativePath);
@@ -787,31 +807,30 @@ void validateSchema(sqlite3* db)
             "enum_docs", "catalog_meta"
         };
         static constexpr std::array requiredViews{ "v_tracks", "v_findings", "v_albums" };
-        for (const char* table : requiredTables) {
-            if (!hasObject(db, "table", table)) {
-                throw std::runtime_error("The catalog-v2.sqlite file has an incomplete schema.");
+        Database reference;
+        checkSqlite(sqlite3_open(":memory:", &reference.handle), reference.handle,
+            "Creating schema reference");
+        createSchema(reference.handle);
+        const auto definition = [](sqlite3* database, const char* type, const char* name) {
+            auto statement = prepare(database,
+                "SELECT sql FROM sqlite_schema WHERE type=? AND name=?;");
+            bindText(database, statement.handle, 1, type);
+            bindText(database, statement.handle, 2, name);
+            const int result = sqlite3_step(statement.handle);
+            if (result == SQLITE_DONE) return std::string{};
+            if (result != SQLITE_ROW) checkSqlite(result, database, "Validating schema definition");
+            const auto* text = sqlite3_column_text(statement.handle, 0);
+            return text ? std::string(reinterpret_cast<const char*>(text)) : std::string{};
+        };
+        const auto checkObject = [&](const char* type, const char* name) {
+            if (!hasObject(db, type, name) ||
+                definition(db, type, name) != definition(reference.handle, type, name)) {
+                throw std::runtime_error(
+                    std::string("The catalog-v2.sqlite file has an incompatible ") + type + ": " + name);
             }
-        }
-        for (const char* view : requiredViews) {
-            if (!hasObject(db, "view", view)) {
-                throw std::runtime_error("The catalog-v2.sqlite file has an incomplete schema.");
-            }
-        }
-        auto columns = prepare(db, "PRAGMA table_info(files);");
-        bool hasRecordJson = false;
-        while (true) {
-            const int result = sqlite3_step(columns.handle);
-            if (result == SQLITE_DONE) break;
-            if (result != SQLITE_ROW) {
-                checkSqlite(result, db, "Validating catalog file columns");
-            }
-            const auto* name = sqlite3_column_text(columns.handle, 1);
-            if (name != nullptr && std::string_view(
-                reinterpret_cast<const char*>(name)) == "record_json") {
-                hasRecordJson = true;
-            }
-        }
-        if (!hasRecordJson) throw std::runtime_error("The catalog-v2.sqlite file is incomplete.");
+        };
+        for (const char* table : requiredTables) checkObject("table", table);
+        for (const char* view : requiredViews) checkObject("view", view);
         return;
     }
     if (version != 0) {
@@ -879,6 +898,18 @@ bool CatalogDatabase::Import(const DirectoryContentEntryList& albums,
         if (requestedLibraryRoot &&
             std::filesystem::absolute(*requestedLibraryRoot).lexically_normal() != libraryRoot) {
             throw std::runtime_error("Configured library root does not match the root recorded in JSON.");
+        }
+        std::error_code ec;
+        const auto canonicalLibraryRoot = std::filesystem::weakly_canonical(libraryRoot, ec);
+        if (ec) throw std::runtime_error("Cannot resolve source library root: " + ec.message());
+        const auto canonicalDatabase = std::filesystem::weakly_canonical(databasePath, ec);
+        if (ec) throw std::runtime_error("Cannot resolve database destination: " + ec.message());
+        if (isSameOrChildPath(canonicalDatabase, canonicalLibraryRoot)) {
+            throw std::runtime_error("Database destination must not be inside the source library.");
+        }
+        if (!databasePath.parent_path().empty()) {
+            std::filesystem::create_directories(databasePath.parent_path(), ec);
+            if (ec) throw std::runtime_error("Cannot create database directory: " + ec.message());
         }
         const std::string libraryRootUtf8 = pathUtf8(libraryRoot);
         Database database;

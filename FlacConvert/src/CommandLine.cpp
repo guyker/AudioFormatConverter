@@ -30,7 +30,7 @@ const std::string kConfigurationHelp =
     "  DecodeWorkers (integer >=0, default 0): separate full-decode worker cap; 0 uses at most 4 workers.\n"
     "  ExtraAudioQualityMetrics (bool, default false): deprecated compatibility setting; use ScanTier analysis.\n"
     "  MinMatchingTracksForDuplicate (integer, default 1): minimum matching tracks for a duplicate candidate.\n"
-    "  SizeMatchPercentageThreshold (integer, default 3): track-size matching tolerance, in percent.\n"
+    "  SizeMatchPercentageThreshold (integer, default 3): track-duration matching tolerance, in percent.\n"
     "  RecursionDirectorySearchDepth (integer, default 10): maximum directory depth for scans.\n"
     "  AlbumsSplitThreshold (integer, default 2000): maximum albums per metadata batch.";
 
