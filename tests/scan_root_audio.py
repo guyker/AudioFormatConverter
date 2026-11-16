@@ -611,6 +611,85 @@ def main():
                     raise AssertionError("Duplicate comparison ignored a locked track")
             finally:
                 kernel.CloseHandle(handle)
+        (albums[0] / "a.flac").rename(albums[0] / "renamed.flac")
+        (albums[0] / "added.flac").write_bytes((albums[0] / "b.flac").read_bytes())
+        (albums[0] / "b.flac").write_bytes((albums[1] / "z.flac").read_bytes())
+        changed_tracks = {path: hashlib.sha256(path.read_bytes()).hexdigest()
+                          for album in albums for path in album.glob("*.flac")}
+        changed_run = subprocess.run(
+            [converter, "duplicates", str(duplicate_output / duplicates_library.name)],
+            capture_output=True, text=True, timeout=30,
+        )
+        if changed_run.returncode != 0:
+            raise AssertionError(f"Changed duplicate comparison failed: {changed_run.stdout}\n"
+                                 f"{changed_run.stderr}")
+        for expected in ("Scanned track is missing:", "a.flac",
+                         "Track added since scan;", "renamed.flac", "added.flac",
+                         "Scanned track changed since scan:", "b.flac",
+                         "Track missing in one of the albums.",
+                         "Album duration check (album1/2), track 2:"):
+            if expected not in changed_run.stdout:
+                raise AssertionError(f"Changed duplicate report missing {expected!r}: "
+                                     f"{changed_run.stdout}")
+        comparisons = [line for line in changed_run.stdout.splitlines()
+                       if "Comparing scanned tracks:" in line]
+        if len(comparisons) != 1 or str(Path("copy-one") / "b.flac") not in comparisons[0] or \
+                str(Path("copy-two") / "a.flac") not in comparisons[0]:
+            raise AssertionError(f"Changed tracks were paired with the wrong scan entries: {comparisons}")
+        legacy_dir = root / "legacy-duplicates"
+        legacy_dir.mkdir()
+        scanned_json = next((duplicate_output / duplicates_library.name).glob("media_out_*.json"))
+        legacy_albums = json.loads(scanned_json.read_text(encoding="utf-8"))
+        for album in legacy_albums:
+            for index, record in enumerate(album["Tracks"]):
+                tags = {key: values[0] for key, values in record["tags"].items() if values}
+                if "artists" in tags:
+                    tags["artist"] = tags.pop("artists")
+                album["Tracks"][index] = {
+                    "format": {
+                        "filename": str(Path(album["Album Path"]) / record["file"]["relativePath"]),
+                        "duration": record["technical"]["durationSeconds"],
+                        "tags": tags,
+                    },
+                    "streams": [{"codec_type": "audio"}],
+                }
+        (legacy_dir / "media_out_legacy.json").write_text(json.dumps(legacy_albums), encoding="utf-8")
+        legacy_run = subprocess.run(
+            [converter, "duplicates", str(legacy_dir)], capture_output=True, text=True, timeout=30,
+        )
+        if legacy_run.returncode != 0 or "Scanned track is missing:" not in legacy_run.stdout or \
+                "Album duration check (album1/2), track 2:" not in legacy_run.stdout:
+            raise AssertionError(f"Legacy duplicate reconciliation failed: {legacy_run.stdout}\n"
+                                 f"{legacy_run.stderr}")
+        mixed_dir = root / "mixed-duplicates"
+        mixed_dir.mkdir()
+        mixed_albums = json.loads(scanned_json.read_text(encoding="utf-8"))
+        mixed_index = next(index for index, album in enumerate(mixed_albums)
+                           if Path(album["Album Path"]).name == "copy-one")
+        mixed_albums[mixed_index] = legacy_albums[mixed_index]
+        (mixed_dir / "media_out_mixed.json").write_text(json.dumps(mixed_albums), encoding="utf-8")
+        mixed_run = subprocess.run(
+            [converter, "duplicates", str(mixed_dir)], capture_output=True, text=True, timeout=30,
+        )
+        if mixed_run.returncode != 0 or "Found 1 duplicated albums" not in mixed_run.stdout or \
+                "Scanned track is missing:" not in mixed_run.stdout:
+            raise AssertionError(f"Mixed catalog duplicate reconciliation failed: {mixed_run.stdout}\n"
+                                 f"{mixed_run.stderr}")
+        invalid_dir = root / "invalid-duplicate-path"
+        invalid_dir.mkdir()
+        invalid_albums = json.loads(scanned_json.read_text(encoding="utf-8"))
+        invalid_index = next(index for index, album in enumerate(invalid_albums)
+                             if Path(album["Album Path"]).name == "copy-one")
+        invalid_albums[invalid_index]["Tracks"][0]["file"]["relativePath"] = "../outside.flac"
+        (invalid_dir / "media_out_invalid.json").write_text(json.dumps(invalid_albums), encoding="utf-8")
+        invalid_run = subprocess.run(
+            [converter, "duplicates", str(invalid_dir)], capture_output=True, text=True, timeout=30,
+        )
+        if invalid_run.returncode == 0 or "Invalid or repeated track path" not in invalid_run.stdout:
+            raise AssertionError(f"Unsafe duplicate track path was not rejected: {invalid_run.stdout}")
+        if any(hashlib.sha256(path.read_bytes()).hexdigest() != digest
+               for path, digest in changed_tracks.items()):
+            raise AssertionError("Duplicate comparison changed a source track")
         if any(hashlib.sha256(track.read_bytes()).hexdigest() != source_hash
                for track, source_hash in source_hashes.items()):
             raise AssertionError("A scan changed one or more source files")

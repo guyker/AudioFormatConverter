@@ -80,7 +80,7 @@ public:
 	//compare
 //	void SortAlbums(std::shared_ptr<std::vector<MediaAlbum>>, bool ascending = true);
 	void SortAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr, const std::vector<std::pair<SortBy, bool>>& criteria);
-	SimilarDirectoryEntryList FindDuplicateAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr);
+	SimilarAlbumIndexPairs FindDuplicateAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr);
 
 	
 private:
@@ -89,7 +89,7 @@ private:
 	void SaveAlbumsToJSON_LasrError(std::list<MediaTrack>& mediaTracks, std::filesystem::path outPath);
 
 	//sort and find duplications
-	SimilarDirectoryEntryList FindDuplicationInGroup(std::shared_ptr<DirectoryContentEntryList> albumListPtr, const std::vector<DirectoryContentEntryList::const_iterator>& group);
+	SimilarAlbumIndexPairs FindDuplicationInGroup(std::shared_ptr<DirectoryContentEntryList> albumListPtr, const std::vector<DirectoryContentEntryList::const_iterator>& group);
 
 	//private Helpers
 	std::pair<long long, long long> GetNumberOfItemsInFolder(std::filesystem::path path, int depth);

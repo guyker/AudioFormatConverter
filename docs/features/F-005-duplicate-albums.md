@@ -4,8 +4,11 @@ Status: active
 
 ## Behaviour
 Loads generated album JSON v2 (and legacy ffprobe-style batches), finds album pairs with matching track counts and
-track durations within `SizeMatchPercentageThreshold` (the legacy setting name does not mean file size), then re-probes immediate audio files in both folders and logs stream-property/tag
-comparisons per pair. Signal-quality
+track durations within `SizeMatchPercentageThreshold` (the legacy setting name does not mean file size), then
+re-probes the cataloged tracks and logs stream-property/tag comparisons per pair. Added and missing tracks are reported,
+not substituted into the comparison. For v2 records, changes in size or available modification time are flagged, but do
+not prove file identity; legacy records do not have this check. Candidate selection reflects the scan, not subsequent
+changes. Signal-quality
 metrics are not currently computed; the report explicitly says analysis was not run. Read-only.
 Malformed album/track structures or catalog records without usable audio technical metadata fail JSON loading rather
 than being silently skipped. With `--open` (CLI) or always in the menu, both folders are opened in the file manager.
@@ -29,6 +32,7 @@ than being silently skipped. With `--open` (CLI) or always in the menu, both fol
 - [ ] Unreadable re-probed tracks fail the command rather than producing a successful comparison.
 - [ ] Compilations with the same track artists and different filename order remain candidates; nested album tracks are not included in their parent comparison.
 - [ ] If source track counts have changed since scanning (including an empty folder), comparison reports the mismatch without crashing or changing files.
+- [ ] Renamed or added tracks are not substituted for cataloged tracks; a missing track does not shift later comparisons.
 
 ## Known limitations
 - Results are logged, not written to a file.

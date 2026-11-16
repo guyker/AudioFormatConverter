@@ -1304,11 +1304,11 @@ void AlbumCollection::SortAlbums(std::shared_ptr<std::vector<MediaAlbum>> albumL
 
 
 
-SimilarDirectoryEntryList AlbumCollection::FindDuplicateAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr) {
+SimilarAlbumIndexPairs AlbumCollection::FindDuplicateAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr) {
     auto logger = spdlog::get("console");
     if (!logger) logger = spdlog::stdout_color_mt("console");
 
-    SimilarDirectoryEntryList duplicatedAlbumList;
+    SimilarAlbumIndexPairs duplicatedAlbumList;
     if (albumListPtr->size() < 2) {
         logger->info("Album list too small: {}", albumListPtr->size());
         return duplicatedAlbumList;
@@ -1343,13 +1343,13 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicateAlbums(std::shared_ptr<D
 
 
 
-SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_ptr<DirectoryContentEntryList> albumListPtr, const std::vector<DirectoryContentEntryList::const_iterator>& group) {
+SimilarAlbumIndexPairs AlbumCollection::FindDuplicationInGroup(std::shared_ptr<DirectoryContentEntryList> albumListPtr, const std::vector<DirectoryContentEntryList::const_iterator>& group) {
     //auto logger = spdlog::get("console");
     //if (!logger) {
     //    logger = spdlog::stdout_color_mt("console");
     //}
 
-    SimilarDirectoryEntryList duplicatedAlbumList;
+    SimilarAlbumIndexPairs duplicatedAlbumList;
 
     if (group.size() < 2) {
         spdlog::warn("Group too small for duplicates: {} albums", group.size());
@@ -1366,7 +1366,8 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
             return std::tie(album, artist) < std::tie(other.album, other.artist);
         }
     };
-    std::map<AlbumKey, std::vector<std::pair<fs::directory_entry, std::vector<double>>>> albumGroups;
+    std::map<AlbumKey, std::vector<std::pair<DirectoryContentEntryList::const_iterator,
+        std::vector<double>>>> albumGroups;
 
     for (const auto& it : group) {
         if (it == albumListPtr->end()) {
@@ -1424,12 +1425,16 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
             if (const auto album = tags.find("album"); album != tags.end() && !album->second.empty()) {
                 albumName = album->second.front();
             }
-            std::set<std::string> albumArtists;
-            std::set<std::string> artists;
-            for (const auto& track : trackList) {
-                if (!track.catalogRecord) continue;
-                const auto& trackTags = track.catalogRecord->tags;
-                for (const auto& [key, values] : trackTags) {
+        }
+        else if (firstTrack.formatInfo.format.tags &&
+            firstTrack.formatInfo.format.tags->contains("album")) {
+            albumName = firstTrack.formatInfo.format.tags->at("album");
+        }
+        std::set<std::string> albumArtists;
+        std::set<std::string> artists;
+        for (const auto& track : trackList) {
+            if (track.catalogRecord) {
+                for (const auto& [key, values] : track.catalogRecord->tags) {
                     auto* destination = key == "albumArtists" ? &albumArtists :
                         key == "artists" ? &artists : nullptr;
                     if (destination) {
@@ -1439,17 +1444,18 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
                     }
                 }
             }
-            const auto& identity = albumArtists.empty() ? artists : albumArtists;
-            for (const auto& value : identity) {
-                artist += std::to_string(value.size()) + ":" + value;
+            else if (track.formatInfo.format.tags) {
+                const auto& tags = *track.formatInfo.format.tags;
+                for (const auto& [key, destination] :
+                    { std::pair{ "album_artist", &albumArtists }, std::pair{ "artist", &artists } }) {
+                    const auto value = tags.find(key);
+                    if (value != tags.end() && !value->second.empty()) destination->insert(value->second);
+                }
             }
         }
-        else if (firstTrack.formatInfo.format.tags &&
-            firstTrack.formatInfo.format.tags->contains("album")) {
-            albumName = firstTrack.formatInfo.format.tags->at("album");
-            if (firstTrack.formatInfo.format.tags->contains("artist")) {
-                artist = firstTrack.formatInfo.format.tags->at("artist");
-            }
+        const auto& identity = albumArtists.empty() ? artists : albumArtists;
+        for (const auto& value : identity) {
+            artist += std::to_string(value.size()) + ":" + value;
         }
         const auto& trackName = firstTrack.trackPath;
         const auto& lastError = firstTrack.LastErroString;
@@ -1497,7 +1503,7 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
         }
         std::ranges::sort(durations);
 
-        albumGroups[{albumName, artist}].emplace_back(dirEntry, std::move(durations));
+        albumGroups[{albumName, artist}].emplace_back(it, std::move(durations));
     }
 
     // Find duplicates by comparing durations
@@ -1506,8 +1512,8 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
 
         for (size_t i = 0; i < albums.size(); ++i) {
             for (size_t j = i + 1; j < albums.size(); ++j) {
-                const auto& [dir1, durations1] = albums[i];
-                const auto& [dir2, durations2] = albums[j];
+                const auto& [album1, durations1] = albums[i];
+                const auto& [album2, durations2] = albums[j];
 
                 bool isDuplicate = durations1.size() == durations2.size();
                 if (isDuplicate) {
@@ -1532,12 +1538,14 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
 
                 if (isDuplicate) {
                     spdlog::info("Duplicate albums: {} and {} (album: {}, artist: {})",
-                        CommonUtils::utf8string_to_string(dir1.path().u8string()), 
-                        CommonUtils::utf8string_to_string(dir2.path().u8string()),
+                        CommonUtils::path_to_utf8(album1->path.path()),
+                        CommonUtils::path_to_utf8(album2->path.path()),
                         key.album.empty() ? "(unknown)" : key.album,
                         key.artist.empty() ? "(unknown)" : key.artist);
 
-                    duplicatedAlbumList.push_back({ dir1.path(), dir2.path() });
+                    duplicatedAlbumList.push_back({
+                        static_cast<std::size_t>(std::distance(albumListPtr->cbegin(), album1)),
+                        static_cast<std::size_t>(std::distance(albumListPtr->cbegin(), album2)) });
                 }
             }
         }

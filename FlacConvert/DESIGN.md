@@ -159,12 +159,13 @@ record without discarding successfully read tags. `ExtraAudioQualityMetrics` is 
 
 `ScanFolderProcessJSONAndFindDuplicates`: load all batches, sort by track count, `AlbumCollection::FindDuplicateAlbums`
 (track count, album identity, then sorted durations within the legacy `SizeMatchPercentageThreshold` percentage).
-Album artist tags form the artist identity when present; otherwise the set of track artists is used. It re-probes
-immediate audio files in both source folders in parallel and orders them by duration before printing
-a stream-property and tag comparison (`MediaTrack::GenerateComparisonReport`). Probe errors fail the operation.
-Re-probed track counts may differ; missing tracks are
-reported and paired duration/tag comparisons use only tracks present in both lists. Read-only; folders are opened
-only when requested.
+Album artist tags form the artist identity when present; otherwise the set of track artists is used. It pairs
+cataloged tracks in scanned duration/title order and re-probes those paths in parallel before printing a
+stream-property and tag comparison (`MediaTrack::GenerateComparisonReport`). Missing tracks retain their positions;
+new immediate files are reported but not substituted. For v2 records, changed size or available modification time
+is reported, but these attributes cannot prove file identity; legacy records lack this check and candidate selection
+still reflects the scan. Probe errors fail the operation.
+The operation is read-only; folders are opened only when requested.
 
 ### Database import (menu 4, `db import`)
 

@@ -1071,147 +1071,137 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
     auto dupList = albumCollection.FindDuplicateAlbums(albumListPtr);
 
 
-    std::vector<std::tuple<MediaAlbum, MediaAlbum>> similarAlbumList;
-
-
-	//Step 3
-	//compare audio quality of the duplicated albums
-    auto iCount = dupList.size();
-    spdlog::info("Found {} duplicated albums", iCount);
+    spdlog::info("Found {} duplicated albums", dupList.size());
     int iCurrent = 0;
-    for (auto entry : dupList)
+    for (const auto& entry : dupList)
     {
-        bool bSimilarAudioMetrics = false;
         iCurrent++;
-        auto [dir1, dir2] = entry;
+        const auto [albumIndex1, albumIndex2] = entry;
+        const auto* album1 = &albumListPtr->at(albumIndex1);
+        const auto* album2 = &albumListPtr->at(albumIndex2);
+        const auto& dir1 = album1->path.path();
+        const auto& dir2 = album2->path.path();
 
         const bool bIncludeAudioQualityMetrics = AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics;
         try {
-            std::vector<MediaLoadingFuture> asyncFutureList1;
-            std::vector<MediaLoadingFuture> asyncFutureList2;
-            for (const auto& entry : fs::directory_iterator(dir1)) {
-                //if (fs::is_regular_file(entry.status())) {
-                if (MediaTrack::IsValidMedia(entry)) {
-
-                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMetadataInfoFromFile, entry.path(), bIncludeAudioQualityMetrics);
-                    asyncFutureList1.push_back(std::move(miFuture));
-                }
-            }
-            for (const auto& entry : fs::directory_iterator(dir2)) {
-                if (MediaTrack::IsValidMedia(entry)) {
-                    auto miFuture = std::async(std::launch::async, MediaTrack::ReadMetadataInfoFromFile, entry.path(), bIncludeAudioQualityMetrics);
-                    asyncFutureList2.push_back(std::move(miFuture));
-                }
-            }
-
-         //   std::vector<MediaTrack> mediaInfoList1;
-         //   std::vector<MediaTrack> mediaInfoList2;
-			MediaAlbum mediaAlbum1;
-			MediaAlbum mediaAlbum2;
-            uintmax_t trackNumber = 0;
-            for (auto& furure_ret : asyncFutureList1)
-            {
-                auto result = furure_ret.get();
-                if (result.error || !std::ranges::any_of(result.mediaInfo.streams,
-                    [](const Stream& stream) { return stream.codec_type == "audio"; })) {
-                    spdlog::error("Duplicate comparison could not read an audio track: {}",
-                        result.error.value_or("No audio stream found."));
-                    return 1;
-                }
-				mediaAlbum1.trackList.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, result.mediaInfo });
-             //   mediaInfoList1.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
-
-            }
-            trackNumber = 0;
-            for (auto& furure_ret : asyncFutureList2)
-            {
-                auto result = furure_ret.get();
-                if (result.error || !std::ranges::any_of(result.mediaInfo.streams,
-                    [](const Stream& stream) { return stream.codec_type == "audio"; })) {
-                    spdlog::error("Duplicate comparison could not read an audio track: {}",
-                        result.error.value_or("No audio stream found."));
-                    return 1;
-                }
-                mediaAlbum2.trackList.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, result.mediaInfo });
-                //   mediaInfoList2.push_back(MediaTrack{ std::filesystem::path{}, ++trackNumber, mediaInfo_ret });
-            }
-            const auto trackOrder = [](const MediaTrack& left, const MediaTrack& right) {
-                const auto durationLeft = left.formatInfo.format.duration.value_or(-1);
-                const auto durationRight = right.formatInfo.format.duration.value_or(-1);
-                if (durationLeft != durationRight) return durationLeft < durationRight;
-                const auto tag = [](const MediaTrack& track, const char* name) {
-                    if (!track.formatInfo.format.tags) return std::string{};
-                    const auto& tags = *track.formatInfo.format.tags;
-                    const auto found = tags.find(name);
+            const auto trackOrder = [](const MediaTrack* left, const MediaTrack* right) {
+                const auto leftDuration = left->formatInfo.format.duration.value_or(-1);
+                const auto rightDuration = right->formatInfo.format.duration.value_or(-1);
+                if (leftDuration != rightDuration) return leftDuration < rightDuration;
+                const auto title = [](const MediaTrack* track) {
+                    if (!track->formatInfo.format.tags) return std::string{};
+                    const auto& tags = *track->formatInfo.format.tags;
+                    const auto found = tags.find("title");
                     return found == tags.end() ? std::string{} : found->second;
                 };
-                const auto titleLeft = tag(left, "title");
-                const auto titleRight = tag(right, "title");
-                if (titleLeft != titleRight) return titleLeft < titleRight;
-                return left.formatInfo.format.filename < right.formatInfo.format.filename;
+                const auto leftTitle = title(left);
+                const auto rightTitle = title(right);
+                if (leftTitle != rightTitle) return leftTitle < rightTitle;
+                return left->trackPath < right->trackPath;
             };
-            std::ranges::sort(mediaAlbum1.trackList, trackOrder);
-            std::ranges::sort(mediaAlbum2.trackList, trackOrder);
-
-			similarAlbumList.push_back(std::make_tuple(mediaAlbum1, mediaAlbum2));
-
-            bSimilarAudioMetrics = MediaTrack::CompareAudioTracks(mediaAlbum1.trackList, mediaAlbum2.trackList);
-//			spdlog::info("Audio quality matches: {}", bSimilarAudioMetrics ? "Similar metrics" : "Different quality");
-
-            if (!bSimilarAudioMetrics)
-            {
-                spdlog::info("Audio Metrics:\n{}", MediaTrack::GenerateComparisonReport(mediaAlbum1.trackList, mediaAlbum2.trackList));
-            }
-
-
-			//Print album size check
-            bool btime_different = false;
-            std::ostringstream oss;
-            oss << "Album duration check (album1/2): ";
-
-
-			auto tagCompareResult = std::string{"N/A"};
-            std::string encoder1{};
-            std::string encoder2{};
-
-            const auto commonTrackCount = std::min(mediaAlbum1.trackList.size(), mediaAlbum2.trackList.size());
-            for (size_t i = 0; i < commonTrackCount; i++) {
-                const auto tSize1 = mediaAlbum1.trackList[i].formatInfo.format.duration.value_or(-1);
-                const auto tSize2 = mediaAlbum2.trackList[i].formatInfo.format.duration.value_or(-1);
-
-                auto tags1 = mediaAlbum1.trackList[i].formatInfo.format.tags.value_or(JsonUtils::Tags{});
-                auto tags2 = mediaAlbum2.trackList[i].formatInfo.format.tags.value_or(JsonUtils::Tags{});
-                tagCompareResult = compareAndPrintTagsTable(tags1, tags2);
-                if (encoder1.empty() && tags1.contains("encoder")) encoder1 = tags1.at("encoder");
-                if (encoder2.empty() && tags2.contains("encoder")) encoder2 = tags2.at("encoder");
-
-                if (tSize1 != tSize2)
-                {
-                    oss << std::fixed << std::setprecision(2);
-                    oss << (i + 1) << ": " << tSize1 << "/" << tSize2 << " [" << (tSize2 - tSize1) << "] ";
-
-                    btime_different = true; // You can re-add the conditional check if needed
+            const auto reProbe = [&](const MediaAlbum& album,
+                std::vector<std::optional<MediaTrack>>& results, std::size_t& currentCount) {
+                std::vector<const MediaTrack*> tracks;
+                std::set<fs::path> scannedNames;
+                for (const auto& track : album.trackList) {
+                    if (track.trackPath.empty() || track.trackPath.has_root_path() ||
+                        track.trackPath.has_parent_path() || track.trackPath == "." ||
+                        track.trackPath == ".." || !scannedNames.insert(track.trackPath).second) {
+                        throw std::runtime_error("Invalid or repeated track path in duplicate catalog.");
+                    }
+                    tracks.push_back(&track);
                 }
+                std::ranges::sort(tracks, trackOrder);
+                for (const auto& current : fs::directory_iterator(album.path.path())) {
+                    if (MediaTrack::IsValidMedia(current)) {
+                        ++currentCount;
+                        if (!scannedNames.contains(current.path().filename())) {
+                            spdlog::warn("Track added since scan; not compared: '{}'.",
+                                pathToUtf8(current.path()));
+                        }
+                    }
+                }
+                std::vector<MediaLoadingFuture> futures(tracks.size());
+                results.resize(tracks.size());
+                for (std::size_t i = 0; i < tracks.size(); ++i) {
+                    const auto path = album.path.path() / tracks[i]->trackPath;
+                    std::error_code ec;
+                    const auto status = fs::status(path, ec);
+                    if (ec == std::errc::no_such_file_or_directory || (!ec && !fs::exists(status))) {
+                        spdlog::warn("Scanned track is missing: '{}'.", pathToUtf8(path));
+                        continue;
+                    }
+                    if (ec || !fs::is_regular_file(status)) {
+                        throw std::runtime_error("Cannot access scanned track '" + pathToUtf8(path) +
+                            "': " + (ec ? ec.message() : "not a regular file"));
+                    }
+                    if (tracks[i]->catalogRecord) {
+                        const auto size = fs::file_size(path);
+                        const auto modified = CommonUtils::fileModificationTimeUtc(path);
+                        const auto& record = *tracks[i]->catalogRecord;
+                        if (size != record.sizeBytes ||
+                            (modified && record.modifiedUtc && modified != record.modifiedUtc)) {
+                            spdlog::warn("Scanned track changed since scan: '{}'; results use current metadata.",
+                                pathToUtf8(path));
+                        }
+                    }
+                    futures[i] = std::async(std::launch::async, MediaTrack::ReadMetadataInfoFromFile,
+                        path, bIncludeAudioQualityMetrics);
+                }
+                for (std::size_t i = 0; i < tracks.size(); ++i) {
+                    if (!futures[i].valid()) continue;
+                    auto result = futures[i].get();
+                    if (result.error || !std::ranges::any_of(result.mediaInfo.streams,
+                        [](const Stream& stream) { return stream.codec_type == "audio"; })) {
+                        throw std::runtime_error("Duplicate comparison could not read '" +
+                            pathToUtf8(album.path.path() / tracks[i]->trackPath) + "': " +
+                            result.error.value_or("No audio stream found."));
+                    }
+                    results[i] = MediaTrack{ tracks[i]->trackPath, 0, std::move(result.mediaInfo) };
+                }
+            };
+            std::vector<std::optional<MediaTrack>> tracks1;
+            std::vector<std::optional<MediaTrack>> tracks2;
+            std::size_t count1 = 0, count2 = 0;
+            reProbe(*album1, tracks1, count1);
+            reProbe(*album2, tracks2, count2);
+            if (count1 != count2) {
+                spdlog::warn("Album track count differs: {} vs {}", count1, count2);
             }
-
-            if (btime_different) {
-                spdlog::info("{}", oss.str());
+            const auto pairedCount = (std::max)(tracks1.size(), tracks2.size());
+            for (std::size_t i = 0; i < pairedCount; ++i) {
+                if (i >= tracks1.size() || i >= tracks2.size() || !tracks1[i] || !tracks2[i]) {
+                    spdlog::warn("Track missing in one of the albums. Scanned position: {}", i + 1);
+                    continue;
+                }
+                spdlog::info("Comparing scanned tracks: '{}' and '{}'.",
+                    pathToUtf8(dir1 / tracks1[i]->trackPath),
+                    pathToUtf8(dir2 / tracks2[i]->trackPath));
+                const std::vector<MediaTrack> left{ *tracks1[i] };
+                const std::vector<MediaTrack> right{ *tracks2[i] };
+                if (!MediaTrack::CompareAudioTracks(left, right)) {
+                    spdlog::info("Audio Metrics for scanned track {}:\n{}",
+                        i + 1, MediaTrack::GenerateComparisonReport(left, right));
+                }
+                const auto duration1 = left.front().formatInfo.format.duration;
+                const auto duration2 = right.front().formatInfo.format.duration;
+                if (duration1 && duration2 && *duration1 != *duration2) {
+                    spdlog::info("Album duration check (album1/2), track {}: {} / {}",
+                        i + 1, *duration1, *duration2);
+                }
+                compareAndPrintTagsTable(
+                    left.front().formatInfo.format.tags.value_or(JsonUtils::Tags{}),
+                    right.front().formatInfo.format.tags.value_or(JsonUtils::Tags{}));
             }
-
-            spdlog::info("encoder1: {} encoder1: {}", encoder1.c_str(), encoder2.c_str());
 
             spdlog::info("Potentially duplicated albums [{}/{}]:\n\tAlbum1: \"{}\"\n\tAlbum2: \"{}\"",
                 iCurrent, dupList.size(), pathToUtf8(dir1), pathToUtf8(dir2));
 
-		//	spdlog::info("{}", tagCompareResult.c_str());
-
-          //  if (!bSimilarAudioMetrics)
             if (openDuplicateFolders) {
-                PlatformUtils::OpenDirectory(fs::path(dir1));
-                PlatformUtils::OpenDirectory(fs::path(dir2));
+                PlatformUtils::OpenDirectory(dir1);
+                PlatformUtils::OpenDirectory(dir2);
             }
 
-            iCount--;
             if (summary) {
                 ++summary->completed;
             }
