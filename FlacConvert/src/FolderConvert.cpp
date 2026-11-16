@@ -2,6 +2,7 @@
 #include "MediaConvertionTask.h"
 #include "MediaConvertionAsyncTask.h"
 #include "FlacMetadata.h"
+#include "PlatformUtils.h"
 
 #include <iostream>
 #include <algorithm>
@@ -93,6 +94,17 @@ fs::path makeTemporaryOutputPath(const fs::path& targetPath, std::uint64_t seque
     return targetPath.parent_path() / filename;
 }
 
+fs::path anchoredOutputPath(const fs::path& path, const fs::path& outputRoot)
+{
+#ifdef _WIN32
+    if (path.is_absolute()) return PlatformUtils::WindowsLongPath(path);
+    return PlatformUtils::WindowsLongPath(outputRoot / path);
+#else
+    (void)outputRoot;
+    return path;
+#endif
+}
+
 constexpr const char* auditFilename = "conversion-audit.json";
 constexpr const char* markerFilename = ".conversion-in-progress";
 
@@ -137,8 +149,9 @@ struct FileAudit {
     PreservationAudit::Result resources;
 };
 
-bool writeAudit(const FolderConversionPlan& plan, const fs::path& output,
-    const std::vector<FileAudit>& files, const std::string& errorType)
+bool writeAudit(const FolderConversionPlan& plan, const fs::path& outputDirectory,
+    const fs::path& displayOutput, const std::vector<FileAudit>& files,
+    const std::string& errorType)
 {
     rapidjson::StringBuffer buffer;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
@@ -149,7 +162,7 @@ bool writeAudit(const FolderConversionPlan& plan, const fs::path& output,
     writer.StartObject();
     writer.Key("schemaVersion"); writer.Int(1);
     text("source", CommonUtils::path_to_utf8(plan.input));
-    text("output", CommonUtils::path_to_utf8(output));
+    text("output", CommonUtils::path_to_utf8(displayOutput));
     text("target", plan.options.target == AudioTarget::Mp3 ? "MP3" : "FLAC");
     text("metadataSidecars", plan.options.sidecarFormat == MetadataSidecarFormat::Json ? "json" :
         plan.options.sidecarFormat == MetadataSidecarFormat::Binary ? "binary" : "none");
@@ -216,7 +229,7 @@ bool writeAudit(const FolderConversionPlan& plan, const fs::path& output,
         writer.EndObject();
     }
     writer.EndArray(); writer.EndObject();
-    return writeTextOutput(output / auditFilename,
+    return writeTextOutput(outputDirectory / auditFilename,
         std::string_view(buffer.GetString(), buffer.GetSize()), true);
 }
 
@@ -585,54 +598,83 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
     files.reserve(plan.audio.size() + plan.companions.size());
     for (const auto& file : plan.audio) files.push_back({ &file, "audio" });
     for (const auto& file : plan.companions) files.push_back({ &file, "companion" });
+    PlatformUtils::ScopedCurrentDirectory outputDirectory;
+    bool owned = false;
+    if (!outputDirectory.EnterValidatedDirectory(plan.output, plan.input, true, &owned)) {
+        return -1;
+    }
+    const auto outputPath = [&](const fs::path& path) {
+        return outputDirectory.ResolvePath(path);
+    };
     std::error_code ec;
-    fs::create_directories(plan.output.parent_path(), ec);
-    if (ec) {
-        spdlog::error("Cannot create output parent: {}", ec.message());
-        return -1;
-    }
-    // create_directory's return value establishes ownership at execution, not preview time.
-    const bool owned = fs::create_directory(plan.output, ec);
-    if (ec) {
-        spdlog::error("Cannot create library output: {}", ec.message());
-        return -1;
-    }
     fs::path actualOutput = plan.output;
     const auto finish = [&](std::string errorType) {
-        bool reportOk = writeAudit(plan, actualOutput, files, errorType);
+        bool reportOk = writeAudit(plan, outputPath("."), actualOutput, files, errorType);
+        bool markerPresent = fs::exists(outputPath(markerFilename), ec) && !ec;
         if (!reportOk) errorType = "IO";
         if (errorType.empty() && reportOk) {
-            if (fs::remove(actualOutput / markerFilename, ec) && !ec) return 0;
-            spdlog::error("Cannot clear conversion-in-progress marker: {}", ec.message());
-            errorType = "IO";
-            reportOk = writeAudit(plan, actualOutput, files, errorType);
+            if (!outputDirectory.IsAnchored(actualOutput)) {
+                spdlog::error("Output directory changed during conversion; retaining its in-progress marker.");
+                errorType = "IO";
+                actualOutput = outputPath(".");
+                reportOk = writeAudit(plan, outputPath("."), actualOutput, files, errorType);
+                markerPresent = fs::exists(outputPath(markerFilename), ec) && !ec;
+            }
+            else {
+                if (fs::remove(outputPath(markerFilename), ec) && !ec) return 0;
+                spdlog::error("Cannot clear conversion-in-progress marker: {}", ec.message());
+                errorType = "IO";
+                reportOk = writeAudit(plan, outputPath("."), actualOutput, files, errorType);
+                markerPresent = fs::exists(outputPath(markerFilename), ec) && !ec;
+            }
         }
         if (!errorType.empty() && owned) {
-            const std::string prefix = errorType == "INCOMPLETE" ? "INCOMPLETE_" : "ERROR_" + errorType + "_";
-            fs::path base = actualOutput.parent_path() / fs::path(prefix);
-            base += actualOutput.filename().native();
-            fs::path renamed = base;
-            for (std::size_t suffix = 1; fs::exists(renamed, ec) && !ec; ++suffix) {
-                renamed = base; renamed += "-" + std::to_string(suffix);
+            if (!outputDirectory.IsAnchored(actualOutput)) {
+                spdlog::error("Cannot safely rename failed output '{}'; its path changed during execution.",
+                    CommonUtils::path_to_utf8(actualOutput));
             }
-            if (!ec) fs::rename(actualOutput, renamed, ec);
-            if (ec) {
-                spdlog::error("Cannot mark failed output folder '{}': {}",
-                    CommonUtils::path_to_utf8(actualOutput), ec.message());
-            } else {
-                actualOutput = renamed;
-                reportOk = writeAudit(plan, actualOutput, files, errorType);
-                spdlog::error("Incomplete output retained at '{}'.", CommonUtils::path_to_utf8(actualOutput));
+            else {
+                const std::string prefix = errorType == "INCOMPLETE"
+                    ? "INCOMPLETE_" : "ERROR_" + errorType + "_";
+                fs::path base = actualOutput.parent_path() / fs::path(prefix);
+                base += actualOutput.filename().native();
+                fs::path renamed = base;
+                for (std::size_t suffix = 1;
+                     fs::exists(anchoredOutputPath(renamed, plan.output), ec) && !ec; ++suffix) {
+                    renamed = base;
+                    renamed += "-" + std::to_string(suffix);
+                }
+                bool renamedOk = false;
+                if (!ec) {
+                    if (outputDirectory.Restore()) {
+                        fs::rename(anchoredOutputPath(actualOutput, plan.output),
+                            anchoredOutputPath(renamed, plan.output), ec);
+                        renamedOk = !ec;
+                    }
+                }
+                if (!renamedOk) {
+                    spdlog::error("Cannot mark failed output folder '{}': {}",
+                        CommonUtils::path_to_utf8(actualOutput),
+                        ec ? ec.message() : "cannot restore the original working directory");
+                }
+                else {
+                    actualOutput = renamed;
+                    if (outputDirectory.EnterValidatedDirectory(actualOutput, plan.input, false)) {
+                        reportOk = writeAudit(plan, outputPath("."), actualOutput, files, errorType);
+                        markerPresent = fs::exists(outputPath(markerFilename), ec) && !ec;
+                        spdlog::error("Incomplete output retained at '{}'.",
+                            CommonUtils::path_to_utf8(actualOutput));
+                    }
+                }
             }
         }
         if (progress) progress->actualOutput = actualOutput;
-        const bool markerPresent = fs::exists(actualOutput / markerFilename, ec);
         spdlog::error("Conversion failed ({}); output '{}'; in-progress marker {}.",
             errorType, CommonUtils::path_to_utf8(actualOutput),
-            markerPresent && !ec ? "retained" : "could not be confirmed");
+            markerPresent ? "retained" : "could not be confirmed");
         return -1;
     };
-    if (!fs::create_directory(plan.output / markerFilename, ec)) {
+    if (!fs::create_directory(outputPath(markerFilename), ec)) {
         spdlog::error("Cannot reserve in-progress marker (possibly another active run): {}", ec.message());
         if (ec) return finish("IO");
         return -1;
@@ -644,7 +686,15 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
     }
     try {
     for (const auto& directory : plan.directories) {
-        fs::create_directories(directory, ec);
+        const fs::path relativeDirectory = directory == plan.output
+            ? fs::path(".") : directory.lexically_relative(plan.output);
+        if (relativeDirectory.empty() ||
+            (!relativeDirectory.empty() && *relativeDirectory.begin() == "..")) {
+            spdlog::error("Output directory escaped the anchored library: {}",
+                CommonUtils::path_to_utf8(directory));
+            return finish("IO");
+        }
+        fs::create_directories(anchoredOutputPath(relativeDirectory, plan.output), ec);
         if (ec) {
             spdlog::error("Cannot preserve source directory '{}': {}",
                 CommonUtils::path_to_utf8(directory), ec.message());
@@ -654,13 +704,27 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
     for (const auto& conversion : plan.audio) {
         auto& record = files[current++];
         record.status = "failed";
-        fs::create_directories(conversion.target.parent_path(), ec);
+        const auto relativeTarget = conversion.target.lexically_relative(plan.output);
+        const auto relativeTemporary = conversion.temporary.lexically_relative(plan.output);
+        if (relativeTarget.empty() || relativeTemporary.empty() ||
+            *relativeTarget.begin() == ".." || *relativeTemporary.begin() == "..") {
+            spdlog::error("Conversion destination escaped the anchored library.");
+            return finish("IO");
+        }
+        if (!relativeTarget.parent_path().empty()) {
+            fs::create_directories(anchoredOutputPath(relativeTarget.parent_path(), plan.output), ec);
+        }
         if (ec) {
-            spdlog::error("Cannot create output directory: {}", ec.message());
+            spdlog::error("Cannot create output directory '{}' for target '{}' under '{}': {}",
+                CommonUtils::path_to_utf8(relativeTarget.parent_path()),
+                CommonUtils::path_to_utf8(relativeTarget),
+                CommonUtils::path_to_utf8(plan.output), ec.message());
             return finish("IO");
         }
         auto task = std::make_shared<MediaConvertionTask>(
-            conversion.source, conversion.target, conversion.temporary, plan.overwrite, plan.options);
+            conversion.source, anchoredOutputPath(relativeTarget, plan.output),
+            anchoredOutputPath(relativeTemporary, plan.output),
+            plan.overwrite, plan.options);
         const int run = task->Run();
         record.resources = task->GetPreservationAudit();
         if (run != 0) return finish(task->GetFailureType());
@@ -670,7 +734,9 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
             return finish(task->GetFailureType());
         }
         record.status = "installed";
-        logAudit(conversion, record.resources);
+        PlannedFileConversion relativeConversion = conversion;
+        relativeConversion.target = relativeTarget;
+        logAudit(relativeConversion, record.resources);
         if (progress) {
             ++progress->converted;
         }
@@ -679,32 +745,48 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
     for (const auto& copy : plan.companions) {
         auto& record = files[current++];
         record.status = "failed";
-        fs::create_directories(copy.target.parent_path(), ec);
+        const auto relativeTarget = copy.target.lexically_relative(plan.output);
+        const auto relativeTemporary = copy.temporary.lexically_relative(plan.output);
+        if (relativeTarget.empty() || relativeTemporary.empty() ||
+            *relativeTarget.begin() == ".." || *relativeTemporary.begin() == "..") {
+            spdlog::error("Companion destination escaped the anchored library.");
+            return finish("IO");
+        }
+        if (!relativeTarget.parent_path().empty()) {
+            fs::create_directories(anchoredOutputPath(relativeTarget.parent_path(), plan.output), ec);
+        }
         if (ec) {
             spdlog::error("Cannot create companion directory: {}", ec.message());
             return finish("IO");
         }
-        if (fs::exists(copy.temporary, ec) || ec) {
-            spdlog::error("Cannot reserve companion temporary path: {}", CommonUtils::path_to_utf8(copy.temporary));
+        if (fs::exists(anchoredOutputPath(relativeTemporary, plan.output), ec) || ec) {
+            spdlog::error("Cannot reserve companion temporary path: {}",
+                CommonUtils::path_to_utf8(relativeTemporary));
             return finish("IO");
         }
-        if (!fs::copy_file(copy.source, copy.temporary, fs::copy_options::none, ec)) {
-            spdlog::error("Cannot copy companion '{}': {}", CommonUtils::path_to_utf8(copy.source), ec.message());
+        if (!fs::copy_file(copy.source, anchoredOutputPath(relativeTemporary, plan.output),
+                fs::copy_options::none, ec)) {
+            spdlog::error("Cannot copy companion '{}': {}",
+                CommonUtils::path_to_utf8(copy.source), ec.message());
             std::error_code cleanupError;
-            fs::remove(copy.temporary, cleanupError);
+            fs::remove(anchoredOutputPath(relativeTemporary, plan.output), cleanupError);
             if (cleanupError) {
                 spdlog::warn("Cannot clean temporary companion '{}': {}",
-                    CommonUtils::path_to_utf8(copy.temporary), cleanupError.message());
+                    CommonUtils::path_to_utf8(relativeTemporary), cleanupError.message());
             }
             return finish("COPY");
         }
-        if (!PreservationAudit::VerifyCopy(copy.source, copy.temporary)) {
-            fs::remove(copy.temporary, ec);
+        if (!PreservationAudit::VerifyCopy(
+                copy.source, anchoredOutputPath(relativeTemporary, plan.output))) {
+            fs::remove(anchoredOutputPath(relativeTemporary, plan.output), ec);
             if (ec) spdlog::warn("Cannot remove unverified companion: {}", ec.message());
             return finish("COPY");
         }
-        if (!MediaConvertionTask::InstallOutputFile(copy.temporary, copy.target, plan.overwrite)) {
-            spdlog::error("Companion copy remains recoverable at '{}'.", CommonUtils::path_to_utf8(copy.temporary));
+        if (!MediaConvertionTask::InstallOutputFile(
+                anchoredOutputPath(relativeTemporary, plan.output),
+                anchoredOutputPath(relativeTarget, plan.output), plan.overwrite)) {
+            spdlog::error("Companion copy remains recoverable at '{}'.",
+                CommonUtils::path_to_utf8(relativeTemporary));
             return finish("IO");
         }
         record.status = "installed";
@@ -715,7 +797,7 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
         }
         spdlog::info("Copied {}file unchanged: {}",
             plan.options.target == AudioTarget::Mp3 ? "companion " : "",
-            CommonUtils::path_to_utf8(copy.target));
+            CommonUtils::path_to_utf8(relativeTarget));
     }
 
     }
@@ -728,14 +810,17 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
         return finish("INCOMPLETE");
     }
     for (auto& record : files) {
-        if (record.status != "installed" || !fs::is_regular_file(record.file->target, ec) || ec) {
+        const auto relativeTarget = record.file->target.lexically_relative(plan.output);
+        if (record.status != "installed" ||
+            !fs::is_regular_file(anchoredOutputPath(relativeTarget, plan.output), ec) || ec) {
             spdlog::error("Expected installed output is missing: {}", CommonUtils::path_to_utf8(record.file->target));
             return finish("INCOMPLETE");
         }
         if (std::string_view(record.kind) == "audio" &&
             plan.options.sidecarFormat != MetadataSidecarFormat::None &&
             FlacMetadata::AppliesTo(record.file->source, plan.options)) {
-            const auto sidecar = FlacMetadata::SidecarPath(record.file->target, plan.options.sidecarFormat);
+            const auto sidecar = anchoredOutputPath(
+                FlacMetadata::SidecarPath(relativeTarget, plan.options.sidecarFormat), plan.output);
             if (!FlacMetadata::Verify(record.file->source, sidecar, plan.options.sidecarFormat)) {
                 record.resources.ok = false;
                 record.resources.entries.push_back({ PreservationAudit::Status::MissingOrChanged,
@@ -745,7 +830,9 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
         }
     }
     for (const auto& directory : plan.directories) {
-        if (!fs::is_directory(directory, ec) || ec) {
+        const fs::path relativeDirectory = directory == plan.output
+            ? fs::path(".") : directory.lexically_relative(plan.output);
+        if (!fs::is_directory(anchoredOutputPath(relativeDirectory, plan.output), ec) || ec) {
             spdlog::error("Expected output directory is missing: {}", CommonUtils::path_to_utf8(directory));
             return finish("INCOMPLETE");
         }

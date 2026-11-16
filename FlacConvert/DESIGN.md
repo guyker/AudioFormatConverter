@@ -182,11 +182,24 @@ includes all imported albums and rolls back completely on any failure. `schema_d
 CLI import reads through the supplied directory path and names the output after that directory, without resolving
 directory aliases; a trailing separator does not change the name.
 
+### Output-directory anchoring
+
+`PlatformUtils::ScopedCurrentDirectory` validates that an output root does not overlap its source before creating or
+installing files. For paths that fit the Windows current-directory limit, it enters the output directory so renames
+cannot redirect the active operation. For longer Windows paths, it stays in a short ancestor, opens each directory
+from that anchor with delete-sharing disabled, validates the opened directory's resolved path, and exposes absolute
+extended paths through `ResolvePath`. Conversion, scan installation, and catalog publication use these resolved
+paths and check `IsAnchored` before finalizing. `Restore` releases the directory locks before an owned failed
+conversion folder is renamed, preserving the ownership and marker behavior in K-030.
+`tests/scoped_current_directory.cpp` checks long-path anchoring and rename denial; generated conversion, scan, and
+database integration fixtures cover the corresponding output paths.
+
 ## Contracts and invariants
 
 - **Sources must never be modified.** Every write target must be outside the source tree; overlap is rejected at
-  plan time. Known defect K-047: replacing an output directory after validation can redirect conversion or scan
-  writes into a source tree; the current pathname checks do not provide race-free enforcement.
+  plan time and revalidated against the directory actually opened by the shared output anchor. The anchor prevents
+  the output path or its ancestors from being renamed into a source-library link while conversion, scan installation,
+  or catalog publication is active (K-047 fixed).
 - **Install only after success.** Output is written to a unique temporary, verified and audited, then moved into place
   (`installFile`: `MoveFileExW` on Windows; rename or hard-link/copy elsewhere). Without overwrite an existing
   target is never replaced (K-041).
@@ -307,9 +320,10 @@ conversion records its class in `MediaConvertionTask::GetFailureType`.
 ## Platform boundaries
 
 Portable core with narrow conditional blocks (K-006). Windows-specific code: `wmain`, console code pages,
-`PlatformUtils::WindowsLongPath`, `quoteWindowsArgument` + `_wspawnvp`, `MoveFileExW`, `CompareStringOrdinal`,
-SQLite `win32-longpath` VFS (K-042), default `C:\tmp` (K-007). POSIX branches: `fork`/`execvp`, rename/hard-link
-install, `sqlite3_open`. `JsonUtils::tryParseMember` uses the portable
+`PlatformUtils::WindowsLongPath`, `ScopedCurrentDirectory`'s long-path fallback (short working-directory anchor and
+directory handles opened without delete sharing), `quoteWindowsArgument` + `_wspawnvp`, `MoveFileExW`,
+`CompareStringOrdinal`, SQLite `win32-longpath` VFS (K-042), default `C:\tmp` (K-007). POSIX branches:
+`fork`/`execvp`, rename/hard-link install, `sqlite3_open`. `JsonUtils::tryParseMember` uses the portable
 `JsonUtils::caseInsensitiveEquals` helper for case-insensitive keys (K-033).
 
 ## Build and external dependencies

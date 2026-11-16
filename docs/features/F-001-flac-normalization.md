@@ -23,7 +23,8 @@ Without `--overwrite`, existing targets are never replaced. Exit code 0 only if 
 ## Design and knowledge
 - DESIGN: `FlacConvert/DESIGN.md` → Key flows / Conversion; Contracts and invariants
 - K-041 install after success, K-013 CD-quality gate, K-014 FFmpeg argument vector, K-038 sidecar policy,
-  K-032 configured vs canonical paths, K-026/K-031 output tree layout, K-036 complete folders, skipped unchanged folders
+  K-032 configured vs canonical paths, K-026/K-031 output tree layout, K-036 complete folders, skipped unchanged folders,
+  K-047 output-path safety
 
 ## Acceptance checks
 - [ ] Source tree byte-identical before and after (hash all files).
@@ -31,6 +32,7 @@ Without `--overwrite`, existing targets are never replaced. Exit code 0 only if 
 - [ ] A 24-bit/96 kHz source converts; an 8-bit or 22.05 kHz source is rejected with a non-zero exit.
 - [ ] Re-running without `--overwrite` on an existing output fails without changing it.
 - [ ] Non-ASCII and >260-character paths convert on Windows.
+- [ ] Replacing an output directory after validation cannot redirect writes into the source library.
 - [ ] `conversion-audit.json` exists with `status: completed` (see F-003).
 - [ ] A written folder retains unsupported audio, extensionless files and audio-free/empty subfolders byte-for-byte.
 - [ ] A folder with audio but no conversions is absent from output and listed once (topmost) with its counts.
@@ -40,7 +42,6 @@ Without `--overwrite`, existing targets are never replaced. Exit code 0 only if 
 - [ ] Explicit `--overwrite` writes a formerly skipped folder completely once it gains a conversion.
 
 ## Known limitations
-- K-047: replacing an output directory with a link after planning can redirect conversion writes into a source tree.
 - Sequential; stops at the first error, earlier outputs remain (K-024).
 - Lossy sources (`.m4a` AAC) are re-encoded to FLAC without quality gain.
 - Skipping is per folder subtree: an MP3-only `CD2` beside a converted `CD1` is skipped and only listed.

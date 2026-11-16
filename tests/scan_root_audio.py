@@ -3,6 +3,7 @@
 import json
 import hashlib
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -58,6 +59,25 @@ def main():
         if not expected_findings.issubset(finding_codes):
             raise AssertionError(
                 f"Tag validation findings were incomplete: {sorted(finding_codes)}")
+
+        if os.name == "nt":
+            long_output = root / "long-output" / ("a" * 90) / ("b" * 90)
+            try:
+                subprocess.run(
+                    [converter, "scan", str(library), "--output-dir", str(long_output)],
+                    check=True,
+                )
+                long_json = Path("\\\\?\\" + str(
+                    long_output / library.name / "media_out_library_1.json"))
+                if not long_json.is_file():
+                    raise AssertionError("Scan did not install JSON under a long Windows output path")
+                long_albums = json.loads(long_json.read_text(encoding="utf-8"))
+                if len(long_albums) != 1 or len(long_albums[0].get("Tracks", [])) != 1:
+                    raise AssertionError("Long-path scan output did not preserve the root-level track")
+            finally:
+                extended_output = "\\\\?\\" + str(long_output)
+                if os.path.exists(extended_output):
+                    shutil.rmtree(extended_output)
 
         incremental_library = root / "incremental-library"
         incremental_album = incremental_library / "same-album"

@@ -60,12 +60,12 @@ unchanged records are reused only when the source path, file size, full-precisio
 - [ ] A malformed or unusable accepted track fails the scan instead of installing an incomplete catalog.
 - [ ] A TagLib extraction failure reports the source path and underlying diagnostic.
 - [ ] Output directory overlapping the source library is rejected.
+- [ ] On Windows, scan installs valid schema-v2 JSON under an output path longer than `MAX_PATH`.
 - [ ] Batch count = ceil(albums / `AlbumsSplitThreshold`).
 - [ ] With async metadata reads enabled, scan succeeds when the configured worker cap is lower than the album's track count.
 - [ ] Same-size source edits within one second invalidate incremental cache records, and album-level findings are recomputed after cache reuse.
 
 ## Known limitations
-- K-047: replacing an output directory with a link after validation can redirect scan installation into a source tree.
 - `CatalogExtensions` defaults to `.flac` and `.mp3`; other formats require explicit opt-in.
 - `rawTags` contains decoded tag entries, not byte-exact source metadata. Native metadata inventory is partial for FLAC/MP3 and unsupported for additional formats; the JSON catalog is not a byte-exact archive.
 - Files and paths skipped because their extensions are not configured are not currently emitted in a separate discovery inventory.

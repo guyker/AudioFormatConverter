@@ -1,18 +1,23 @@
 #include "CatalogDatabase.h"
 
 #include "CommonUtils.h"
+#include "MediaConvertionTask.h"
 #include "MediaRecordJson.h"
 #include "MediaTrack.h"
+#include "PlatformUtils.h"
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cctype>
+#include <filesystem>
 #include <format>
 #include <limits>
 #include <map>
 #include <stdexcept>
 #include <string_view>
+#include <system_error>
 #include <tuple>
 #include <utility>
 
@@ -20,16 +25,35 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
-#ifdef _WIN32
-#include "PlatformUtils.h"
-#endif
-
 namespace {
 
 struct Database
 {
     sqlite3* handle{ nullptr };
-    ~Database() { if (handle != nullptr) sqlite3_close(handle); }
+    ~Database() { Close(); }
+
+    int Close()
+    {
+        if (handle == nullptr) return SQLITE_OK;
+        const int result = sqlite3_close(handle);
+        if (result == SQLITE_OK) handle = nullptr;
+        return result;
+    }
+};
+
+struct TemporaryDirectory
+{
+    std::filesystem::path path;
+    ~TemporaryDirectory()
+    {
+        if (path.empty()) return;
+        std::error_code ec;
+        std::filesystem::remove_all(path, ec);
+        if (ec) {
+            spdlog::warn("Cannot clean catalog import staging directory '{}': {}",
+                CommonUtils::path_to_utf8(path), ec.message());
+        }
+    }
 };
 
 struct Statement
@@ -67,6 +91,20 @@ void execute(sqlite3* db, const char* sql)
         sqlite3_free(error);
         throw std::runtime_error(message);
     }
+}
+
+void checkpointWal(sqlite3* db)
+{
+    Statement statement;
+    checkSqlite(sqlite3_prepare_v2(db, "PRAGMA wal_checkpoint(TRUNCATE);", -1,
+        &statement.handle, nullptr), db, "Preparing catalog WAL checkpoint");
+    const int result = sqlite3_step(statement.handle);
+    if (result != SQLITE_ROW) checkSqlite(result, db, "Checkpointing catalog WAL");
+    if (sqlite3_column_int(statement.handle, 0) != 0) {
+        throw std::runtime_error("Catalog WAL checkpoint is busy.");
+    }
+    const int finishResult = sqlite3_step(statement.handle);
+    if (finishResult != SQLITE_DONE) checkSqlite(finishResult, db, "Finishing catalog WAL checkpoint");
 }
 
 Statement prepare(sqlite3* db, const char* sql)
@@ -152,6 +190,115 @@ bool isSameOrChildPath(const std::filesystem::path& candidate, const std::filesy
 #endif
     }
     return true;
+}
+
+TemporaryDirectory makeStagingDirectory(const std::filesystem::path& libraryRoot)
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const auto tempRoot = fs::temp_directory_path(ec);
+    if (ec) throw std::runtime_error("Cannot locate a temporary directory: " + ec.message());
+    const auto canonicalTempRoot = fs::weakly_canonical(tempRoot, ec);
+    if (ec) throw std::runtime_error("Cannot validate the temporary directory: " + ec.message());
+    const auto canonicalLibraryRoot = fs::weakly_canonical(libraryRoot, ec);
+    if (ec) throw std::runtime_error("Cannot validate the source library: " + ec.message());
+    if (isSameOrChildPath(canonicalTempRoot, canonicalLibraryRoot)) {
+        throw std::runtime_error("The system temporary directory overlaps the source library.");
+    }
+
+    static std::atomic_uint64_t sequence{ 0 };
+    const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    for (unsigned attempt = 0; attempt < 128; ++attempt) {
+        const auto suffix = std::to_string(timestamp) + "-" +
+            std::to_string(++sequence) + "-" + std::to_string(attempt);
+        const auto candidate = tempRoot / ("afc-catalog-import-" + suffix);
+        if (!fs::create_directory(candidate, ec)) {
+            if (ec) throw std::runtime_error("Cannot create catalog import staging directory: " + ec.message());
+            continue;
+        }
+#ifndef _WIN32
+        fs::permissions(candidate, fs::perms::owner_all, fs::perm_options::replace, ec);
+        if (ec) {
+            std::error_code cleanupError;
+            fs::remove(candidate, cleanupError);
+            throw std::runtime_error("Cannot secure catalog import staging directory: " + ec.message());
+        }
+#endif
+        const auto canonicalCandidate = fs::weakly_canonical(candidate, ec);
+        if (ec || isSameOrChildPath(canonicalCandidate, canonicalLibraryRoot) ||
+            isSameOrChildPath(canonicalLibraryRoot, canonicalCandidate)) {
+            std::error_code cleanupError;
+            fs::remove(candidate, cleanupError);
+            throw std::runtime_error("Catalog import staging directory overlaps the source library.");
+        }
+        return { candidate };
+    }
+    throw std::runtime_error("Cannot reserve a unique catalog import staging directory.");
+}
+
+struct FileSnapshot
+{
+    bool exists{ false };
+    std::uintmax_t size{ 0 };
+    std::filesystem::file_time_type modified{};
+};
+
+FileSnapshot snapshotFile(const std::filesystem::path& path)
+{
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        if (ec) throw std::runtime_error("Cannot inspect catalog database file: " + ec.message());
+        return {};
+    }
+    if (!std::filesystem::is_regular_file(path, ec) || ec) {
+        throw std::runtime_error("Catalog database state is not a regular file.");
+    }
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec) throw std::runtime_error("Cannot inspect catalog database file size: " + ec.message());
+    const auto modified = std::filesystem::last_write_time(path, ec);
+    if (ec) throw std::runtime_error("Cannot inspect catalog database modification time: " + ec.message());
+    return { true, size, modified };
+}
+
+std::filesystem::path copyExistingDatabaseState(
+    const std::filesystem::path& databasePath,
+    const std::filesystem::path& databaseName,
+    const std::filesystem::path& stagingDirectory)
+{
+    namespace fs = std::filesystem;
+    std::vector<fs::path> sourcePaths{ databasePath };
+    auto wal = databasePath;
+    wal += "-wal";
+    sourcePaths.push_back(wal);
+    auto journal = databasePath;
+    journal += "-journal";
+    sourcePaths.push_back(journal);
+    std::vector<FileSnapshot> before;
+    before.reserve(sourcePaths.size());
+    for (const auto& source : sourcePaths) before.push_back(snapshotFile(source));
+
+    const auto stagedDatabase = stagingDirectory / databaseName;
+    if (before.front().exists && !fs::copy_file(databasePath, stagedDatabase, fs::copy_options::none)) {
+        throw std::runtime_error("Cannot snapshot the existing catalog database.");
+    }
+    if (before.front().exists) {
+        for (std::size_t i = 1; i < sourcePaths.size(); ++i) {
+            if (before[i].exists && !fs::copy_file(
+                    sourcePaths[i], stagingDirectory / sourcePaths[i].filename(),
+                    fs::copy_options::none)) {
+                throw std::runtime_error("Cannot snapshot catalog database recovery state.");
+            }
+        }
+    }
+    for (std::size_t i = 0; i < sourcePaths.size(); ++i) {
+        const auto after = snapshotFile(sourcePaths[i]);
+        if (after.exists != before[i].exists ||
+            (before[i].exists &&
+                (after.size != before[i].size || after.modified != before[i].modified))) {
+            throw std::runtime_error("Catalog database changed while its import snapshot was being copied.");
+        }
+    }
+    return stagedDatabase;
 }
 
 std::string pathString(const std::filesystem::path& path)
@@ -907,18 +1054,30 @@ bool CatalogDatabase::Import(const DirectoryContentEntryList& albums,
         if (isSameOrChildPath(canonicalDatabase, canonicalLibraryRoot)) {
             throw std::runtime_error("Database destination must not be inside the source library.");
         }
-        if (!databasePath.parent_path().empty()) {
-            std::filesystem::create_directories(databasePath.parent_path(), ec);
-            if (ec) throw std::runtime_error("Cannot create database directory: " + ec.message());
+        const auto absoluteDatabase = std::filesystem::absolute(databasePath, ec).lexically_normal();
+        if (ec || absoluteDatabase.filename().empty()) {
+            throw std::runtime_error("Cannot resolve database destination: " +
+                (ec ? ec.message() : std::string("missing file name")));
         }
+        const auto databaseName = absoluteDatabase.filename();
+        const auto databaseParent = absoluteDatabase.parent_path();
+        PlatformUtils::ScopedCurrentDirectory outputDirectory;
+        if (!outputDirectory.EnterValidatedDirectory(databaseParent, libraryRoot, true)) {
+            throw std::runtime_error("Cannot safely enter the database output directory.");
+        }
+        auto staging = makeStagingDirectory(libraryRoot);
+        const auto outputDatabasePath = outputDirectory.ResolvePath(databaseName);
+        const auto stagedDatabase = copyExistingDatabaseState(
+            outputDatabasePath, databaseName, staging.path);
         const std::string libraryRootUtf8 = pathUtf8(libraryRoot);
+        const auto importIntoStagingDatabase = [&] {
         Database database;
 #ifdef _WIN32
-        const auto databasePathUtf8 = pathUtf8(databasePath);
+        const auto databasePathUtf8 = pathUtf8(stagedDatabase);
         const int openResult = sqlite3_open_v2(databasePathUtf8.c_str(), &database.handle,
             SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, "win32-longpath");
 #else
-        const auto databasePathUtf8 = pathUtf8(databasePath);
+        const auto databasePathUtf8 = pathUtf8(stagedDatabase);
         const int openResult = sqlite3_open(databasePathUtf8.c_str(), &database.handle);
 #endif
         checkSqlite(openResult, database.handle, "Opening catalog database");
@@ -986,6 +1145,52 @@ bool CatalogDatabase::Import(const DirectoryContentEntryList& albums,
             sqlite3_exec(database.handle, "ROLLBACK;", nullptr, nullptr, nullptr);
             throw;
         }
+        checkpointWal(database.handle);
+        checkSqlite(database.Close(), database.handle, "Closing staged catalog database");
+        };
+        importIntoStagingDatabase();
+
+        auto stagedWal = stagedDatabase;
+        stagedWal += "-wal";
+        const bool walExists = std::filesystem::exists(stagedWal, ec);
+        if (ec) throw std::runtime_error("Cannot inspect staged catalog WAL: " + ec.message());
+        if (walExists && std::filesystem::file_size(stagedWal, ec) != 0) {
+            throw std::runtime_error("Staged catalog WAL was not fully checkpointed.");
+        }
+        if (ec) throw std::runtime_error("Cannot inspect staged catalog WAL size: " + ec.message());
+
+        if (!outputDirectory.IsAnchored(databaseParent)) {
+            throw std::runtime_error("Database output directory changed during import.");
+        }
+        static std::atomic_uint64_t publishSequence{ 0 };
+        const auto publishName = std::filesystem::path(".afc-catalog-publish-") +=
+            std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" +
+            std::to_string(++publishSequence);
+        const auto publishPath = outputDirectory.ResolvePath(publishName);
+        if (!std::filesystem::copy_file(stagedDatabase, publishPath,
+                std::filesystem::copy_options::none, ec) || ec) {
+            throw std::runtime_error("Cannot stage completed catalog database for installation: " +
+                (ec ? ec.message() : std::string("temporary path already exists")));
+        }
+        if (!outputDirectory.IsAnchored(databaseParent)) {
+            std::filesystem::remove(publishPath, ec);
+            throw std::runtime_error("Database output directory changed before installation.");
+        }
+        if (!MediaConvertionTask::InstallOutputFile(publishPath, outputDatabasePath, true)) {
+            std::filesystem::remove(publishPath, ec);
+            throw std::runtime_error("Cannot atomically install the completed catalog database.");
+        }
+        for (const auto* suffix : { "-wal", "-shm", "-journal" }) {
+            auto sidecar = outputDatabasePath;
+            sidecar += suffix;
+            if (std::filesystem::remove(sidecar, ec) && !ec) continue;
+            if (ec) {
+                spdlog::warn("Cannot remove stale catalog sidecar '{}': {}",
+                    pathUtf8(sidecar), ec.message());
+                ec.clear();
+            }
+        }
+        spdlog::info("Catalog database atomically installed at '{}'.", pathUtf8(databasePath));
         return true;
     }
     catch (const std::exception& error) {

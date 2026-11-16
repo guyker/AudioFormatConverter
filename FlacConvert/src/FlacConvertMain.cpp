@@ -93,6 +93,50 @@ fs::path uniqueSiblingPath(const fs::path& path, const char* marker)
     return path.parent_path() / filename;
 }
 
+bool isSameOrChildPath(const fs::path& candidate, const fs::path& base);
+
+fs::path makeScanStagingDirectory(const fs::path& sourceRoot)
+{
+    std::error_code ec;
+    const auto tempRoot = fs::temp_directory_path(ec);
+    if (ec) throw fs::filesystem_error("Cannot locate a temporary directory", ec);
+    const auto canonicalTempRoot = fs::weakly_canonical(tempRoot, ec);
+    if (ec) throw fs::filesystem_error("Cannot validate the temporary directory", ec);
+    const auto canonicalSource = fs::weakly_canonical(sourceRoot, ec);
+    if (ec) throw fs::filesystem_error("Cannot validate the source library", ec);
+    if (isSameOrChildPath(canonicalTempRoot, canonicalSource)) {
+        throw std::runtime_error("The system temporary directory overlaps the source library.");
+    }
+
+    static std::atomic_uint64_t sequence{ 0 };
+    const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    for (unsigned attempt = 0; attempt < 128; ++attempt) {
+        const auto candidate = tempRoot / ("afc-scan-" + std::to_string(timestamp) + "-" +
+            std::to_string(++sequence) + "-" + std::to_string(attempt));
+        if (!fs::create_directory(candidate, ec)) {
+            if (ec) throw fs::filesystem_error("Cannot create scan staging directory", candidate, ec);
+            continue;
+        }
+#ifndef _WIN32
+        fs::permissions(candidate, fs::perms::owner_all, fs::perm_options::replace, ec);
+        if (ec) {
+            std::error_code cleanupError;
+            fs::remove(candidate, cleanupError);
+            throw fs::filesystem_error("Cannot secure scan staging directory", candidate, ec);
+        }
+#endif
+        const auto canonicalCandidate = fs::weakly_canonical(candidate, ec);
+        if (ec || isSameOrChildPath(canonicalCandidate, canonicalSource) ||
+            isSameOrChildPath(canonicalSource, canonicalCandidate)) {
+            std::error_code cleanupError;
+            fs::remove(candidate, cleanupError);
+            throw std::runtime_error("Scan staging directory overlaps the source library.");
+        }
+        return candidate;
+    }
+    throw std::runtime_error("Cannot reserve a unique scan staging directory.");
+}
+
 bool isSameOrChildPath(const fs::path& candidate, const fs::path& base)
 {
     auto candidatePart = candidate.begin();
@@ -257,9 +301,16 @@ bool installGeneratedFiles(const fs::path& stagedDirectory, const fs::path& targ
 
     for (const auto& stagedFile : stagedFiles) {
         const fs::path installed = targetDirectory / stagedFile.filename();
-        fs::rename(stagedFile, installed, ec);
-        if (ec) {
-            spdlog::error("Cannot install generated JSON output '{}': {}", pathToUtf8(installed), ec.message());
+        const auto temporary = uniqueSiblingPath(targetDirectory, ".scan-install-");
+        if (!fs::copy_file(stagedFile, temporary, fs::copy_options::none, ec) || ec) {
+            spdlog::error("Cannot stage generated JSON output '{}': {}",
+                pathToUtf8(installed), ec ? ec.message() : "temporary path already exists");
+            rollback();
+            return false;
+        }
+        if (!MediaConvertionTask::InstallOutputFile(temporary, installed, false)) {
+            std::error_code cleanupError;
+            fs::remove(temporary, cleanupError);
             rollback();
             return false;
         }
@@ -823,9 +874,18 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             spdlog::error("Library name must be a single directory name: '{}'.", mediaEntry.mediaName.value());
             return 1;
         }
-        const fs::path targetDirectory = outputRoot / libraryName;
         std::error_code ec;
-        const fs::path canonicalLibrary = fs::weakly_canonical(libraryPath, ec);
+        const fs::path targetDirectory = fs::absolute(outputRoot / libraryName, ec);
+        if (ec) {
+            spdlog::error("Cannot resolve scan output directory: {}", ec.message());
+            return 1;
+        }
+        const fs::path libraryIoPath = fs::absolute(libraryPath, ec);
+        if (ec) {
+            spdlog::error("Cannot resolve library path: {}", ec.message());
+            return 1;
+        }
+        const fs::path canonicalLibrary = fs::weakly_canonical(libraryIoPath, ec);
         if (ec || !fs::is_directory(canonicalLibrary, ec) || ec) {
             spdlog::error("Library path is not a readable directory: {}", pathToUtf8(libraryPath));
             return 1;
@@ -843,17 +903,33 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         const auto settings = AppSettingsJson::AppSetting();
         const bool useIncrementalCache = settings->Incremental && !fullRescan;
         const auto cachedRecords = useIncrementalCache
-            ? loadCatalogCache(targetDirectory, libraryPath)
+            ? loadCatalogCache(targetDirectory, libraryIoPath)
             : std::map<std::string, MediaRecord>{};
         if (useIncrementalCache) {
             spdlog::info("Incremental scan cache contains {} catalog record(s).",
                 cachedRecords.size());
         }
-        const fs::path stagingRoot = uniqueSiblingPath(targetDirectory, ".staging-");
+        fs::path stagingRoot;
+        try {
+            stagingRoot = makeScanStagingDirectory(libraryIoPath);
+        }
+        catch (const std::exception& error) {
+            spdlog::error("Cannot create scan staging directory: {}", error.what());
+            return 1;
+        }
+        const auto cleanupStaging = [&] {
+            std::error_code cleanupError;
+            fs::remove_all(stagingRoot, cleanupError);
+            if (cleanupError) {
+                spdlog::warn("Cannot clean scan staging directory '{}': {}",
+                    pathToUtf8(stagingRoot), cleanupError.message());
+            }
+        };
         const fs::path stagedDirectory = stagingRoot / libraryName;
         fs::create_directories(stagedDirectory, ec);
         if (ec) {
             spdlog::error("Cannot create staging directory '{}': {}", pathToUtf8(stagedDirectory), ec.message());
+            cleanupStaging();
             return 1;
         }
 
@@ -869,7 +945,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                 }
                 ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
                 if (!ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(stagingRoot, ++count),
-                    pathFromUtf8(mediaEntry.mediaPath))) {
+                    libraryIoPath)) {
                     throw std::runtime_error("Failed to write an album JSON file.");
                 }
             };
@@ -881,34 +957,54 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             }
             else {
                 for (auto albums : ac.LoadAlbumsCo(
-                    libraryPath, false, settings->AlbumsSplitThreshold)) {
+                    libraryIoPath, false, settings->AlbumsSplitThreshold)) {
                     writeBatch(albums);
                 }
             }
         }
         catch (const std::filesystem::filesystem_error& e) {
             spdlog::error("Filesystem error: {}", e.what());
-            fs::remove_all(stagingRoot, ec);
+            cleanupStaging();
             return 1;
         }
         catch (const std::exception& e) {
             spdlog::error("General error: {}", e.what());
-            fs::remove_all(stagingRoot, ec);
+            cleanupStaging();
             return 1;
         }
         if (count == 0) {
             spdlog::error("No albums found; preserving existing output at '{}'.", pathToUtf8(targetDirectory));
-            fs::remove_all(stagingRoot, ec);
+            cleanupStaging();
             return 1;
         }
-        if (!installGeneratedFiles(stagedDirectory, targetDirectory)) {
-            fs::remove_all(stagingRoot, ec);
+        PlatformUtils::ScopedCurrentDirectory targetDirectoryAnchor;
+        bool createdTargetDirectory = false;
+        if (!targetDirectoryAnchor.EnterValidatedDirectory(
+                targetDirectory, libraryIoPath, true, &createdTargetDirectory)) {
+            cleanupStaging();
+            return 1;
+        }
+        const auto anchoredTargetDirectory = targetDirectoryAnchor.ResolvePath(".");
+        const bool installed = installGeneratedFiles(stagedDirectory, anchoredTargetDirectory);
+        const bool targetStillAnchored = targetDirectoryAnchor.IsAnchored(targetDirectory);
+        if (!targetDirectoryAnchor.Restore()) {
+            spdlog::error("Cannot restore the working directory after scan installation.");
+        }
+        if (!installed || !targetStillAnchored) {
+            if (!targetStillAnchored) {
+                spdlog::error("Scan output directory changed during installation.");
+            }
+            if (createdTargetDirectory) {
+                std::error_code cleanupError;
+                fs::remove(anchoredTargetDirectory, cleanupError);
+            }
+            cleanupStaging();
             return 1;
         }
         if (summary) {
             summary->completed += count;
         }
-        fs::remove_all(stagingRoot, ec);
+        cleanupStaging();
         spdlog::info("Wrote {} JSON part(s) to '{}'; scan took {} ms.",
             count,
             pathToUtf8(targetDirectory),

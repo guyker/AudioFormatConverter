@@ -10,24 +10,30 @@ copies are verified byte-for-byte, including unsupported audio retained by FLAC 
 denotes the library root. While running, a
 `.conversion-in-progress` marker exists; it is removed on success.
 On failure the report is still written and, if this run created the library folder, the folder is renamed
-`ERROR_<AUDIO|PRESERVATION|COPY|IO>_<name>` or `INCOMPLETE_<name>`.
+`ERROR_<AUDIO|PRESERVATION|COPY|IO>_<name>` or `INCOMPLETE_<name>`. If the rename is not possible (for example,
+because the prefixed name exceeds the Windows component-length limit), the report and marker remain at the original
+output path and the failure is logged.
 
 ## Entry points
 - `FolderConvert.cpp#FolderConvert::ExecuteConversion` (marker, finish, rename), `FolderConvert.cpp#writeAudit`
 - `PreservationAudit.cpp#PreservationAudit::Compare`, `PreservationAudit.cpp#PreservationAudit::VerifyCopy`
 
 ## Design and knowledge
-- DESIGN: `FlacConvert/DESIGN.md` → Files and schemas (`conversion-audit.json`); Contracts (ownership, reserved names)
+- DESIGN: `FlacConvert/DESIGN.md` → Files and schemas (`conversion-audit.json`); Output-directory anchoring; Contracts
+  (ownership, reserved names)
 - K-029 preservation audit, K-030 failure marking and ownership, K-024 sequential stop-on-error,
-  K-036 complete folders and skipped unchanged folders
+  K-036 complete folders and skipped unchanged folders, K-047 output-path safety
 
 ## Acceptance checks
 - [ ] Successful run: report `status: completed`, `errorType: ""`, counts equal plan, no marker.
 - [ ] Forced audio failure in a new output folder: folder renamed `ERROR_AUDIO_…`, marker retained, report
       `status: failed`.
+- [ ] On Windows, an invalid-audio fixture with a near-limit output-folder name retains the report and marker at the
+      original path when adding the failure prefix exceeds the component-length limit.
 - [ ] Failure in a pre-existing output folder: folder **not** renamed.
 - [ ] Source containing `conversion-audit.json` or `.conversion-in-progress`, in any letter case on Windows or Linux,
       is rejected at plan time before writing output.
+- [ ] Replacing or renaming an anchored output directory cannot redirect writes into the source library.
 - [ ] FLAC reports include copied unsupported audio and skipped unchanged folders, including no-conversion libraries.
 - [ ] A copied-file failure does not report unattempted copies as installed.
 - [ ] The `preservation-audit` CTest target (`tests/preservation_audit.cpp`) passes.

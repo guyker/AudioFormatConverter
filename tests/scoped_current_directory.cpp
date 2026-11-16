@@ -1,0 +1,144 @@
+#include "PlatformUtils.h"
+
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+
+namespace fs = std::filesystem;
+
+namespace
+{
+fs::path cleanupPath(const fs::path& path)
+{
+#ifdef _WIN32
+    return PlatformUtils::WindowsLongPath(path);
+#else
+    return path;
+#endif
+}
+
+void cleanupFixture(const fs::path& root, const fs::path& output)
+{
+    std::error_code ec;
+    fs::remove_all(cleanupPath(output), ec);
+    if (ec) throw std::runtime_error("Could not remove output fixture: " + ec.message());
+    auto parent = output.parent_path();
+    while (parent != root) {
+        fs::remove(cleanupPath(parent), ec);
+        if (ec) throw std::runtime_error("Could not remove output parent: " + ec.message());
+        parent = parent.parent_path();
+    }
+    fs::remove(root / "source" / "sentinel.txt", ec);
+    if (ec) throw std::runtime_error("Could not remove source fixture: " + ec.message());
+    fs::remove(root / "source", ec);
+    if (ec) throw std::runtime_error("Could not remove source directory: " + ec.message());
+    fs::remove(root, ec);
+    if (ec) throw std::runtime_error("Could not remove test fixture: " + ec.message());
+}
+
+void require(bool condition, const char* message)
+{
+    if (!condition) throw std::runtime_error(message);
+}
+}
+
+int main()
+{
+    const auto originalDirectory = fs::current_path();
+    const auto root = fs::temp_directory_path() /
+        ("afc-scoped-current-directory-" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+    const auto source = root / "source";
+#ifdef _WIN32
+    const auto output = root / std::string(90, 'a') /
+        std::string(90, 'b') / std::string(90, 'c');
+#else
+    const auto output = root / "output";
+#endif
+
+    std::error_code ec;
+    try {
+        fs::create_directories(source);
+        const auto sourceSentinel = source / "sentinel.txt";
+        {
+            std::ofstream file(sourceSentinel);
+            require(static_cast<bool>(file), "Could not create source sentinel");
+            file << "source remains unchanged";
+        }
+
+        PlatformUtils::ScopedCurrentDirectory anchor;
+        require(anchor.EnterValidatedDirectory(output, source, true),
+            "Could not enter the validated output directory");
+        require(anchor.IsAnchored(output), "Output directory was not anchored");
+        const auto resolvedRoot = anchor.ResolvePath(".");
+#ifdef _WIN32
+        require(resolvedRoot.is_absolute() && resolvedRoot.native().size() >= 260,
+            "Long-path fallback did not resolve output relative to the locked directory");
+#endif
+        const auto outputSentinel = anchor.ResolvePath("output.txt");
+        {
+            std::ofstream file(outputSentinel);
+            require(static_cast<bool>(file), "Could not write through the resolved output path");
+            file << "output";
+        }
+        require(fs::is_regular_file(outputSentinel), "Resolved output was not created");
+
+#ifdef _WIN32
+        const auto extendedOutput = PlatformUtils::WindowsLongPath(output);
+        const auto movedOutput = PlatformUtils::WindowsLongPath(output.parent_path() / "moved-output");
+        fs::rename(extendedOutput, movedOutput, ec);
+        if (!ec) {
+            std::error_code restoreError;
+            fs::rename(movedOutput, extendedOutput, restoreError);
+            throw std::runtime_error("An anchored output directory could be renamed");
+        }
+        ec.clear();
+
+        const auto extendedParent = PlatformUtils::WindowsLongPath(output.parent_path());
+        const auto movedParent = PlatformUtils::WindowsLongPath(output.parent_path().parent_path() / "moved-parent");
+        fs::rename(extendedParent, movedParent, ec);
+        if (!ec) {
+            std::error_code restoreError;
+            fs::rename(movedParent, extendedParent, restoreError);
+            throw std::runtime_error("An anchored output parent could be renamed");
+        }
+        ec.clear();
+#endif
+
+        require(anchor.Restore(), "Could not restore the original working directory");
+        require(fs::current_path() == originalDirectory, "Working directory was not restored");
+        require(fs::is_regular_file(sourceSentinel), "The source sentinel was removed");
+        {
+            std::ifstream file(sourceSentinel);
+            std::string contents;
+            std::getline(file, contents);
+            require(contents == "source remains unchanged", "The source sentinel was modified");
+        }
+#ifdef _WIN32
+        const auto outputAfterRestore = PlatformUtils::WindowsLongPath(output);
+        const auto movedOutputAfterRestore =
+            PlatformUtils::WindowsLongPath(output.parent_path() / "moved-output");
+        fs::rename(outputAfterRestore, movedOutputAfterRestore, ec);
+        require(!ec, "Output directory remained locked after restore");
+        fs::rename(movedOutputAfterRestore, outputAfterRestore, ec);
+        require(!ec, "Could not restore the output directory after lock verification");
+#endif
+        cleanupFixture(root, output);
+    }
+    catch (const std::exception& error) {
+        std::cerr << error.what() << '\n';
+        fs::current_path(originalDirectory, ec);
+        try {
+            cleanupFixture(root, output);
+        }
+        catch (const std::exception& cleanupError) {
+            std::cerr << cleanupError.what() << '\n';
+        }
+        return 1;
+    }
+
+    return 0;
+}

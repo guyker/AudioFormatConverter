@@ -16,8 +16,10 @@ add_executable(bounded_task_runner_test bounded_task_runner.cpp)
 target_include_directories(bounded_task_runner_test PRIVATE
     "${PROJECT_SOURCE_DIR}/FlacConvert/include")
 target_compile_features(bounded_task_runner_test PRIVATE cxx_std_20)
+add_executable(scoped_current_directory_test scoped_current_directory.cpp)
+target_link_libraries(scoped_current_directory_test PRIVATE FlacConvertCore)
 
-foreach(_target IN ITEMS preservation_audit_test warning_regressions_test media_metadata_json_test media_record_json_test taglib_smoke_test decode_analyzer_test bounded_task_runner_test)
+foreach(_target IN ITEMS preservation_audit_test warning_regressions_test media_metadata_json_test media_record_json_test taglib_smoke_test decode_analyzer_test bounded_task_runner_test scoped_current_directory_test)
     target_compile_options(${_target} PRIVATE
         "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/W3;/utf-8;/permissive->"
         "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>>:-Wall;-Wextra;-Wpedantic>")
@@ -56,6 +58,8 @@ add_test(NAME decode-analyzer
         --ffmpeg "${FFMPEG_EXECUTABLE}")
 add_test(NAME bounded-task-runner
     COMMAND "$<TARGET_FILE:bounded_task_runner_test>")
+add_test(NAME scoped-current-directory
+    COMMAND "$<TARGET_FILE:scoped_current_directory_test>")
 add_test(NAME mp3-conversion-integration
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/mp3_conversion.py"
         --converter "$<TARGET_FILE:FlacConvert>"

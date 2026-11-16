@@ -1168,6 +1168,25 @@ class ConversionTests(unittest.TestCase):
                     self.assertGreater(connection.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
         self.assertEqual(json_file.read_bytes(), original)
 
+    @unittest.skipUnless(os.name == "nt", "Windows long-path database publication")
+    def test_database_import_supports_long_output_path(self):
+        scanned = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "2\nRUN\n")
+        self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
+        long_output = self.work / "long-db" / ("a" * 90) / ("b" * 90)
+        try:
+            result = run(ARGS.converter, "db", "import", self.output / "Library",
+                         "--output-dir", long_output)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            database = Path("\\\\?\\" + str(long_output / "Library" / "catalog-v2.sqlite"))
+            self.assertTrue(database.is_file())
+            self.assertGreater(database.stat().st_size, 0)
+        finally:
+            extended_output = "\\\\?\\" + str(long_output)
+            if os.path.exists(extended_output):
+                shutil.rmtree(extended_output)
+
     def test_database_import_round_trips_string_fields_without_format_tags(self):
         album = self.source / "album"
         album.mkdir()

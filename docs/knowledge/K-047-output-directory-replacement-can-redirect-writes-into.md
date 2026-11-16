@@ -3,7 +3,7 @@ id: K-047
 kind: defect
 title: "Output directory replacement can redirect writes into source libraries"
 area: [FlacConvert]
-status: active
+status: fixed
 created: 2026-11-16
 reviewed: 2026-11-16
 cites:
