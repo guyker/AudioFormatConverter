@@ -229,12 +229,17 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(self.audit(self.destination())["errorType"], "AUDIO")
 
     def test_reserved_state_filenames_block_without_writes(self):
-        for reserved in ("conversion-audit.json", ".conversion-in-progress", "CONVERSION-AUDIT.JSON"):
+        for reserved in ("conversion-audit.json", ".conversion-in-progress",
+                         "CONVERSION-AUDIT.JSON", ".CONVERSION-IN-PROGRESS"):
             path = self.source / reserved
             path.write_bytes(b"original companion")
-            result = self.convert(success=False)
-            self.assertFalse(self.output.exists(), result.stdout + result.stderr)
-            self.assertEqual(path.read_bytes(), b"original companion")
+            for suffix in ("", os.sep):
+                result = run(ARGS.converter, "convert", str(self.source) + suffix,
+                             "--output-dir", self.output, "--config", self.config, "--to", "mp3")
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(self.output.exists(), result.stdout + result.stderr)
+                self.assertEqual(path.read_bytes(), b"original companion")
+                self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
             path.unlink()
 
     def test_existing_marker_blocks_even_overwrite(self):

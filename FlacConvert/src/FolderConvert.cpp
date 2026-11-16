@@ -24,6 +24,7 @@
 #include <set>
 #include <map>
 #include "CommonUtils.h"
+#include "JsonUtils.h"
 #include "MediaInformation.h"
 #include "MediaTrack.h"
 #include <spdlog/spdlog.h>
@@ -372,6 +373,14 @@ int FolderConvert::PrepareConversion(
         };
         try {
             for (const auto& entry : fs::recursive_directory_iterator(inputRoot)) {
+                if (entry.path().lexically_relative(inputRoot).parent_path().empty()) {
+                    const auto name = CommonUtils::path_to_utf8(entry.path().filename());
+                    if (JsonUtils::caseInsensitiveEquals(name.c_str(), auditFilename) ||
+                        JsonUtils::caseInsensitiveEquals(name.c_str(), markerFilename)) {
+                        spdlog::error("Reserved conversion state filename already exists: {}", name);
+                        return -1;
+                    }
+                }
                 if (entry.is_directory()) {
                     if (completeTree) {
                         const auto relative = entry.path().lexically_relative(inputRoot);

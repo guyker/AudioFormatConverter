@@ -57,8 +57,15 @@ static void check_recording(const char* filename, bool silent) {
         avformat_close_input(&context);
         throw std::runtime_error("Read fixture streams failed");
     }
+    const auto metadata = FFmpeg::GetFormatInformation(context, filename);
     const auto analysis = FFmpeg::analyze_audio_recording(context);
     avformat_close_input(&context);
+    require(metadata.nb_streams == 1, "Fixture stream count was lost");
+#if LIBAVFORMAT_VERSION_MAJOR >= 61
+    require(metadata.nb_stream_groups == 0, "Fixture stream group count was lost");
+#else
+    require(!metadata.nb_stream_groups, "Unavailable stream group count was fabricated");
+#endif
     require(analysis != nullptr, "Recording analysis failed");
     require(analysis->total_samples > 0, "No samples analyzed");
     require(std::isfinite(analysis->rms_amplitude), "Non-finite RMS");

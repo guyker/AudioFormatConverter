@@ -830,10 +830,10 @@ void AlbumCollection::SaveAlbumsToJSON_LasrError(std::list<MediaTrack>& mediaTra
         trackObj.AddMember("Path", rapidjson::Value(trackPathStr.c_str(), allocator), allocator);
 
         // 2. Add the file size.
-        trackObj.AddMember("File Size", static_cast<unsigned long long>(track.fs_fileSize), allocator);
+        trackObj.AddMember("File Size", static_cast<std::uint64_t>(track.fs_fileSize), allocator);
         if (track.formatInfo.format.duration) {
             trackObj.AddMember("format_duration",
-                static_cast<unsigned long long>(*track.formatInfo.format.duration), allocator);
+                static_cast<std::uint64_t>(*track.formatInfo.format.duration), allocator);
         }
         if (track.formatInfo.format.format_name) {
             trackObj.AddMember("format_format_name",

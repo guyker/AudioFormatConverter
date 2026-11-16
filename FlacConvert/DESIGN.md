@@ -186,7 +186,8 @@ directory aliases; a trailing separator does not change the name.
 - **Processing is sequential and stops at the first error**; earlier outputs remain; no batch rollback (K-024).
 - **Ownership:** only library folders created by the current execution are renamed on failure (K-030).
 - **Reserved names:** `conversion-audit.json` and `.conversion-in-progress` at a library root; a source containing
-  them blocks the run; an existing in-progress marker in the output blocks reuse.
+  either name in any letter case blocks the run on every platform; an existing in-progress marker in the output
+  blocks reuse.
 - **FLAC completeness:** every written folder is complete: each enumerated regular file outside a skipped subtree is
   converted or copied, and each directory outside it is retained. Skipped subtrees (audio, no conversions) are
   omitted entirely and listed in the report. Unsupported filesystem entries or filename collisions fail rather than

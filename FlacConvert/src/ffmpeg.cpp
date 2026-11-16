@@ -578,7 +578,9 @@ namespace FFmpeg {
         fmt.ctx_flags = fmt_ctx->ctx_flags;
         fmt.nb_streams = fmt_ctx->nb_streams;
 
+#if LIBAVFORMAT_VERSION_MAJOR >= 61
         fmt.nb_stream_groups = fmt_ctx->nb_stream_groups;
+#endif
 
         fmt.nb_chapters = fmt_ctx->nb_chapters;
 
