@@ -39,10 +39,14 @@ Write a short plan covering:
 ## Build and validate
 
 ```text
-msbuild .\MediaBoost.sln /m /p:Configuration=Debug /p:Platform=x64
+cmake --preset windows-debug
+cmake --build --preset windows-debug --parallel
+ctest --preset windows-debug
 ```
-Then validate per `audio-cpp.instructions.md` (generated fixtures, probe outputs, hash sources). For conversion work
-run `tests\mp3_conversion.py` (command in `README.md`) and extend it for new behaviour. Run the feature entry's
+Use the matching `linux-*` preset on Linux. New source files go in `FlacConvert/CMakeLists.txt` (`FlacConvertCore`);
+new regression tests are registered in `tests/CMakeLists.txt`. Then validate per `audio-cpp.instructions.md`
+(generated fixtures, probe outputs, hash sources). For conversion work extend `tests\mp3_conversion.py` (CTest
+`mp3-conversion-integration`) for new behaviour. Run the feature entry's
 acceptance checks.
 
 ## Finish (same change)

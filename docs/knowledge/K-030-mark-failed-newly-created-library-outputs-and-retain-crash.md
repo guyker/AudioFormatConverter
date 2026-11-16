@@ -5,7 +5,7 @@ title: "Mark failed newly created library outputs and retain crash markers"
 area: [FlacConvert]
 status: active
 created: 2026-10-11
-reviewed: 2026-11-10
+reviewed: 2026-11-16
 cites:
   - path: FlacConvert/src/FolderConvert.cpp
     symbol: FolderConvert.ExecuteConversion

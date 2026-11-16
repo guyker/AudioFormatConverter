@@ -5,7 +5,7 @@ title: "Use a portable case-insensitive comparison for JSON keys"
 area: [FlacConvert]
 status: active
 created: 2026-11-10
-reviewed: 2026-11-10
+reviewed: 2026-11-16
 cites:
   - path: FlacConvert/include/JsonUtils.h
     symbol: "JsonUtils::caseInsensitiveEquals"

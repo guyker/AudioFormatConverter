@@ -8,8 +8,8 @@ AudioFormatConverter is a Windows C++ audio conversion and library-management ut
 `FlacConvert`, currently runs conversions through the FFmpeg executable; metadata and audio analysis also use FFmpeg
 libraries. See `README.md` for the feature overview.
 
-The core C++ sources must remain portable across Windows, Linux and macOS. Visual Studio solution/project files are a
-Windows development/build wrapper, not a requirement that the application logic use Windows APIs. Isolate
+The core C++ sources must remain portable across Windows, Linux and macOS. CMake is the only build definition; Visual
+Studio is used through its CMake "Open Folder" support, not a hand-maintained solution. Isolate
 platform-specific code behind narrow platform abstractions or conditional implementations.
 
 ## Map
@@ -17,12 +17,11 @@ platform-specific code behind narrow platform abstractions or conditional implem
 | Folder / file | What it is | Read first |
 |---|---|---|
 | `CMakeLists.txt`, `CMakePresets.json` | Shared Windows/Linux build | `README.md`, then platform CMake files |
-| `MediaBoost.sln` | Retained Windows fallback | `README.md`, then `FlacConvert/FlacConvert.vcxproj` |
 | `FlacConvert/` | The application: components, flows, contracts, schemas | `FlacConvert/DESIGN.md` |
 | `FlacConvert/src/`, `FlacConvert/include/` | Implementation and headers | `FlacConvert/DESIGN.md` component map, then the file |
 | `docs/features/` | User-visible features (F-xxx): behaviour, entry points, acceptance checks | `docs/features/index.md` |
-| `tests/` | Integration and ad-hoc C++ tests (not in the solution) | `README.md` test section |
-| `external/` | Third-party source/SDK dependencies | `FlacConvert/FlacConvert.vcxproj` for expected paths |
+| `tests/` | Native regression and Python integration tests, registered with CTest | `tests/CMakeLists.txt` |
+| `external/` | Third-party source/SDK dependencies | `CMakeLists.txt` and `cmake/platform/` for expected paths |
 
 ## Skills
 
@@ -49,8 +48,7 @@ Windows requires a matching shared FFmpeg SDK, selected with `FFmpeg_ROOT` (defa
 `external/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/`). Linux uses pkg-config to find the FFmpeg development
 libraries and requires the `ffmpeg`/`ffprobe` tools. SQLite amalgamation, CLI11 and spdlog are supplied in the
 repository/submodules. Build artifacts live under ignored `out/build/`.
-The existing Visual Studio solution remains a Windows fallback:
-`msbuild .\MediaBoost.sln /m /p:Configuration=Debug /p:Platform=x64`.
+In Visual Studio, use File > Open > Folder on the repository root and pick a Windows preset; there is no `.sln`.
 CTest builds and runs the native regression executables and `tests/mp3_conversion.py` against disposable
 generated fixtures. See `.github/instructions/audio-cpp.instructions.md` for audio validation and source safety.
 

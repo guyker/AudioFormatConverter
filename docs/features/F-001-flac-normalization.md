@@ -22,7 +22,7 @@ Without `--overwrite`, existing targets are never replaced. Exit code 0 only if 
 
 ## Design and knowledge
 - DESIGN: `FlacConvert/DESIGN.md` → Key flows / Conversion; Contracts and invariants
-- K-003 install after success, K-013 CD-quality gate, K-014 FFmpeg argument vector, K-038 sidecar policy,
+- K-041 install after success, K-013 CD-quality gate, K-014 FFmpeg argument vector, K-038 sidecar policy,
   K-032 configured vs canonical paths, K-026/K-031 output tree layout, K-036 complete folders, skipped unchanged folders
 
 ## Acceptance checks

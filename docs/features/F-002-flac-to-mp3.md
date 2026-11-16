@@ -5,7 +5,7 @@ Status: active
 ## Behaviour
 Converts `.flac` files under a source folder to LAME VBR MP3 (`-q:a 0`–`9`, default 0) in
 `<root>/MP3/<source folder name>/`, preserving tags (ID3v2.4, no ID3v1), cover art and chapters. 44.1/48 kHz sources
-keep their rate; others are resampled to 48 kHz. Multichannel sources are rejected unless downmix is enabled. A
+keep their rate; others are resampled to 48 kHz. Multichannel sources are rejected unless downmix is enabled.
 When enabled, a `.flac-metadata` sidecar beside each MP3 preserves the original FLAC metadata byte-for-byte;
 `MetadataSidecars` can select a readable `.flac-metadata.json` form or make it optional/disabled (disabled by
 default; F-007). Without a sidecar, conversion fails rather than lose metadata the output cannot represent.
@@ -24,7 +24,7 @@ Non-FLAC audio is reported as skipped; companions are copied.
   K-029 preservation audit
 
 ## Acceptance checks
-- [ ] `python tests\mp3_conversion.py --converter x64\Debug\FlacConvert.exe --ffmpeg <ffmpeg.exe> --ffprobe <ffprobe.exe>` passes.
+- [ ] `ctest --preset windows-debug -R mp3-conversion-integration` (or the matching Linux preset) passes.
 - [ ] Output probes as `mp3`, rate 44100/48000, channels = min(source, 2) only when downmix is set.
 - [ ] Sidecar passes `FlacMetadata::Verify` against the source.
 - [ ] With `MetadataSidecars.Format: "json"` the `.mp3.flac-metadata.json` archive decodes to the original bytes.

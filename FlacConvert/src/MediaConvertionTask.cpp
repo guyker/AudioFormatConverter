@@ -26,7 +26,7 @@
 
 #include "AppSettings.h"
 #include "CommonUtils.h"
-#include "FFmpeg.h"
+#include "ffmpeg.h"
 #include "PlatformUtils.h"
 #include "FlacMetadata.h"
 #include "MediaTrack.h"

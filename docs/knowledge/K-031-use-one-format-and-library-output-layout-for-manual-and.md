@@ -5,7 +5,7 @@ title: "Use one format and library output layout for manual and explicit convers
 area: [FlacConvert]
 status: active
 created: 2026-10-11
-reviewed: 2026-11-10
+reviewed: 2026-11-16
 cites:
   - path: FlacConvert/src/FlacConvertMain.cpp
     symbol: RunWithArguments

@@ -18,7 +18,7 @@ Answer from the documentation first, then confirm in code. Read-only: do not edi
 4. **Impact** (for "what breaks") – list:
    - callers and both entry modes (CLI and menu) reaching the symbol;
    - DESIGN contracts and K-entries the change would touch;
-   - output files/schemas affected (audit report, sidecar, album JSON, `TracksDB`) and their readers;
+   - output files/schemas affected (audit report, sidecar, album JSON v2, `catalog-v2.sqlite`) and their readers;
    - platform branches (`_WIN32` / POSIX) and tests (`tests/`) covering it;
    - F-entry acceptance checks that must be re-run.
 

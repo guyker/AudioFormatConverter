@@ -3,8 +3,9 @@ id: K-011
 kind: trap
 title: "Use SQLite's long-path VFS for Windows database exports"
 area: [FlacConvert]
-status: active
+status: superseded
 supersedes: [K-008]
+superseded_by: K-042
 created: 2026-10-10
 reviewed: 2026-11-10
 cites:

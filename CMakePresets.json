@@ -11,6 +11,10 @@
       "hidden": true,
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
       "cacheVariables": {
         "BUILD_TESTING": "ON",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}"

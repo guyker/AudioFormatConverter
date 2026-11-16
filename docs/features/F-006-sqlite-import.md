@@ -19,7 +19,7 @@ are rejected without modification.
 
 ## Design and knowledge
 - DESIGN: `FlacConvert/DESIGN.md` → Database import; Files and schemas (SQLite catalog schema v2)
-- K-011 SQLite long-path VFS; K-040 library-relative file identity
+- K-042 SQLite long-path VFS; K-040 library-relative file identity
 
 ## Acceptance checks
 - [ ] Imported files have stable `(library_id, relative_path)` identity; re-import does not duplicate rows.
@@ -28,6 +28,7 @@ are rejected without modification.
 - [ ] Every table/view and column has a `schema_docs` entry and schema v2 AI guide metadata exists.
 - [ ] Every finding code has an `enum_docs` entry, and each table/view DDL carries an inline interpretation comment.
 - [ ] Non-ASCII and >260-character database paths open on Windows.
+- [ ] CLI import through a directory alias uses the supplied directory name for its output, with or without a trailing separator.
 - [ ] An incompatible catalog database is refused without modification; the old `.db` remains untouched.
 
 ## Known limitations

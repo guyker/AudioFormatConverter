@@ -1101,6 +1101,34 @@ class ConversionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertTrue((destination / "catalog-v2.sqlite").exists())
 
+    def test_database_import_uses_supplied_directory_alias(self):
+        scanned = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "2\nRUN\n")
+        self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
+        json_directory = self.output / "Library"
+        json_file = json_directory / "media_out_Library_1.json"
+        original = json_file.read_bytes()
+        alias = self.work / "Alias \u97f3"
+        if os.name == "nt":
+            result = run(os.environ["ComSpec"], "/c", "mklink", "/J", alias, json_directory)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        else:
+            alias.symlink_to(json_directory, target_is_directory=True)
+
+        for index, input_path in enumerate((alias.name, alias.name + os.sep)):
+            with self.subTest(input_path=input_path):
+                database_output = self.work / f"database-output-{index}"
+                result = run(ARGS.converter, "db", "import", input_path, "--output-dir",
+                             database_output, cwd=self.work)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                database = database_output / alias.name / "catalog-v2.sqlite"
+                self.assertTrue(database.exists())
+                self.assertFalse((database_output / "Library").exists())
+                with closing(sqlite3.connect(database)) as connection:
+                    self.assertGreater(connection.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
+        self.assertEqual(json_file.read_bytes(), original)
+
     def test_database_import_round_trips_string_fields_without_format_tags(self):
         album = self.source / "album"
         album.mkdir()

@@ -29,7 +29,7 @@ On failure the report is still written and, if this run created the library fold
 - [ ] Source containing `conversion-audit.json` or `.conversion-in-progress` is rejected at plan time.
 - [ ] FLAC reports include copied unsupported audio and skipped unchanged folders, including no-conversion libraries.
 - [ ] A copied-file failure does not report unattempted copies as installed.
-- [ ] `tests/preservation_audit.cpp` passes when built against the Debug objects.
+- [ ] The `preservation-audit` CTest target (`tests/preservation_audit.cpp`) passes.
 
 ## Known limitations
 - `schemaVersion` 1; no reader in this repository consumes the report.

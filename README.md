@@ -31,8 +31,8 @@ explicitly. Native metadata inventory is partial for FLAC/MP3 and unsupported fo
 1. The `convert` command uses FFmpeg to write FLAC or convert FLAC to MP3 into a separate output tree and leaves source files unchanged. The legacy menu remains available without arguments during the CLI transition.
 
 <h3>Duplicate Album Detection and Comparison:</h3>
-1. A key feature is finding "duplicate" albums within the scanned collection. This is done by comparing track counts, and then more thoroughly by comparing sorted track durations and potentially audio quality metrics (if enabled).
-2. It provides a detailed report when audio quality differences are found between seemingly duplicate albums.
+1. A key feature is finding "duplicate" albums within the scanned collection. This is done by comparing track counts, and then more thoroughly by comparing sorted track durations.
+2. Candidate pairs are re-probed and a report compares their format and tag properties; no signal-quality analysis is performed (`ExtraAudioQualityMetrics` is deprecated and ignored).
 3. The legacy menu opens matching album folders; the `duplicates` command only does so when passed `--open`.
 
 <h3>Legacy interactive menu (no arguments):</h3>
@@ -41,7 +41,8 @@ press Enter; invalid input is retried, `0` exits, and end-of-input exits without
 Option `5` is explicitly unavailable: scan with `2`, then import into SQLite with `4`.
 Option `1` writes to `OutDirectory\FLAC\<mediaName>` and leaves the source tree untouched.
 It keeps the 16-bit / 44.1 kHz profile with triangular dithering, maps tags and supported embedded pictures,
-archives original native FLAC metadata in `<filename>.flac.flac-metadata` sidecars, and keeps every written
+archives original native FLAC metadata in `<filename>.flac.flac-metadata` sidecars when
+`MetadataSidecars.ConvertToFlac` is `optional` or `required` (default `disabled`), and keeps every written
 folder complete: other regular files there, including MP3 beside converted tracks, are copied unchanged, as are
 folders without audio (artwork, scans, empty folders). A folder whose subtree contains audio but nothing to
 convert is skipped entirely and listed in `conversion-audit.json`; a library without conversions produces only
@@ -73,20 +74,23 @@ The final preview shows the selected settings and still requires `RUN`. Overwrit
 metadata sidecars and copied companions, never to source files. Settings are per operation and reset
 to safe defaults when selecting option `6` again; they do not modify config.json.
 
-1. The main function provides a console-based menu for the user to select different actions:
-2. Convert audio to FLAC in a separate output tree.
-3. Scan directories and create JSON metadata files.
-4. Process existing JSON files to find duplicate albums.
-5. Populate a SQLite database from JSON files.
-6. Menu selection `6` converts active configured libraries from FLAC to MP3, writing to
+The console menu options are:
+
+- `1` converts audio to FLAC in a separate output tree.
+- `2` scans directories and creates JSON metadata files.
+- `3` processes existing JSON files to find duplicate albums.
+- `4` imports JSON files into the SQLite catalog.
+- `5` is unavailable (see above).
+- `6` converts active configured libraries from FLAC to MP3, writing to
    `OutDirectory\MP3\<mediaName>` (defaults to the source folder name). It defaults to VBR quality 0,
    preserves metadata/companions, never changes sources, and rejects existing destinations or
    multichannel input unless overwrite or stereo downmix is explicitly enabled.
 
 ## Build
 
-CMake is the shared build system for Windows and Linux; Ninja runs the builds and CTest runs the tests.
-The Visual Studio solution remains available as a Windows fallback during migration.
+CMake is the only build system for Windows and Linux; Ninja runs the builds and CTest runs the tests.
+In Visual Studio, open the repository folder (File > Open > Folder) and choose a Windows preset; Visual Studio
+reads `CMakePresets.json` directly, so no solution or project files are kept.
 
 Initialize submodules (`git submodule update --init --recursive`) and install CMake 3.28+, Ninja, Python 3
 and a C++20 toolchain. CMake fetches the pinned TagLib revision for metadata catalog reads.
@@ -114,9 +118,6 @@ isolated under `out\build\<preset>`. To stage an executable, use
 `cmake --install out\build\<preset>`; choose another location with `--prefix <directory>`. Linux uses
 installed system FFmpeg libraries. Windows stages the matched runtime DLLs beside the executable. Do not copy
 the Windows-path sample `config.json` into an active Linux configuration without editing its library paths.
-
-The retained Visual Studio fallback is:
-`msbuild .\MediaBoost.sln /m /p:Configuration=Debug /p:Platform=x64`.
 
 ## Design and feature documentation
 
@@ -258,8 +259,9 @@ Pictures are copied without image re-encoding, including their types/description
 information remains enabled for seeking and gapless playback. Unsupported pictures remain in the
 sidecar, rather than being silently discarded. Not every player displays every ID3 field or multiple pictures.
 
-Each MP3 has a `<filename>.mp3.flac-metadata` binary sidecar by default (JSON or optional per
-`MetadataSidecars`, see above): the original FLAC marker and every
+When `MetadataSidecars.ConvertToMp3` is `optional` or `required` (the default is `disabled`, see above), each
+MP3 has a `<filename>.mp3.flac-metadata` sidecar (binary, or JSON per `MetadataSidecars.Format`): the original
+FLAC marker and every
 metadata block, byte-for-byte, plus leading ID3 and recognized trailing APE/ID3v1 tags when present.
 It preserves repeated Vorbis comments, vendor data, application blocks, cue sheets, seek tables and
 all picture payloads that ID3 or FFmpeg cannot faithfully represent. This is **not playable audio** or

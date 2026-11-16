@@ -6,7 +6,7 @@ area: [FlacConvert]
 status: active
 supersedes: [K-037]
 created: 2026-11-12
-reviewed: 2026-11-12
+reviewed: 2026-11-16
 cites:
   - path: FlacConvert/include/AppSettings.h
     symbol: MetadataSidecarSettings

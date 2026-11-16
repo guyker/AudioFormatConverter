@@ -47,6 +47,6 @@ locals; do not flag them. Ignore C#/WPF guidance.
 - [ ] CLI and menu stay consistent; previews and summaries report confirmed counts only.
 - [ ] DESIGN.md, the F-entry and README match materially changed behaviour; `kb.ps1 affected` entries handled.
       Do not require documentation churn for behaviour-preserving edits.
-- [ ] Validation evidence uses generated fixtures; MSBuild x64 Debug passes.
+- [ ] Validation evidence uses generated fixtures; the CMake preset build and `ctest --preset <preset>` pass.
 
 Report findings by severity with `path#Symbol` and the violated DESIGN contract or K-id.

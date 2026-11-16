@@ -37,7 +37,7 @@
 
 #include "CommonUtils.h"
 #include "DecodeAnalyzer.h"
-#include "FFmpeg.h"
+#include "ffmpeg.h"
 #include "MediaRecordJson.h"
 #include "TagLibReader.h"
 

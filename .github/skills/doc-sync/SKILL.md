@@ -20,7 +20,7 @@ description: Detect and fix drift between FlacConvert code, FlacConvert/DESIGN.m
    - DESIGN: component map, flows, contracts, configuration table, file/DB schemas, platform boundaries;
    - F-entries citing it: behaviour, entry points, acceptance checks, limitations;
    - README: CLI options, menu text, config keys, output layout.
-   Look especially for new CLI options, config keys, output files, audit fields, `TracksDB` columns, menu options.
+   Look especially for new CLI options, config keys, output files, audit fields, album JSON v2 / `catalog-v2.sqlite` schema fields (`docs/schemas/media-catalog-v2.schema.json`, `CatalogDatabase::Import`), menu options.
 5. **Fix** – update the document that owns each materially changed fact (what → DESIGN, user value/checks → F-entry,
    why → K-entry, rule → instructions). Remove duplicates rather than syncing two copies. Record no per-change
    history and do not manufacture documentation edits when nothing important changed.

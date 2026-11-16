@@ -22,7 +22,7 @@
 
 #include "MediaTrack.h"
 #include "rapidjson/error/en.h"
-#include "FFmpeg.h"
+#include "ffmpeg.h"
 #include "PlatformUtils.h"
 #include "JsonUtils.h"
 #include "AppSettings.h"

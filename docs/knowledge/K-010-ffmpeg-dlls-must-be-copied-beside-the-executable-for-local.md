@@ -3,12 +3,12 @@ id: K-010
 kind: domain
 title: "FFmpeg DLLs must be copied beside the executable for local runs"
 area: ["External Dependencies"]
-status: active
+status: superseded
+superseded_by: K-044
 created: 2026-10-09
 reviewed: 2026-11-10
-cites:
-  - path: FlacConvert/FlacConvert.vcxproj
-    symbol: PostBuildEvent
+uncited: "The cited FlacConvert.vcxproj PostBuildEvent was removed with the Visual Studio project; see K-044 and K-045."
+cites: []
 ---
 
 **Fact:** The Visual Studio project now copies FFmpeg shared DLLs from `external\ffmpeg\ffmpeg-master-latest-win64-gpl-shared\bin` into `$(TargetDir)` for the x64 Debug and Release configurations, and `avformat-63.dll` appears next to the built executable after the build.

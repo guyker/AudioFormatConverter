@@ -40,4 +40,5 @@ saved.
 
 ## Known limitations
 - `DatabaseFileName`, `resultPath`, `dbPath` and most `FLACSettings` strings are read but unused.
-- `AppSettingsJsonPersistent.txt` lives in the current directory.
+- `AppSettingsJsonPersistent.txt` lives in the current directory; only the legacy menu writes it, when the user
+  supplies a config directory (`AppSettings.cpp#promptForConfigDir`). Commands only read it.

@@ -5,7 +5,7 @@ title: "Skip unchanged FLAC audio folders and list them in the audit"
 area: [FlacConvert]
 status: active
 created: 2026-11-11
-reviewed: 2026-11-11
+reviewed: 2026-11-16
 cites:
   - path: FlacConvert/src/FolderConvert.cpp
     symbol: FolderConvert.PrepareConversion

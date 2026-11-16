@@ -4,7 +4,7 @@ applyTo: "FlacConvert/src/**,FlacConvert/include/**"
 
 # Audio / C++
 
-- Keep core C++ sources portable across Windows, Linux and macOS. Treat Visual Studio projects as a build wrapper;
+- Keep core C++ sources portable across Windows, Linux and macOS. CMake is the only build definition;
   isolate OS-specific APIs in narrow platform adapters or conditional implementations.
 - Follow existing naming and error-handling conventions; use RAII with matching FFmpeg deleters and explicit
   ownership. Do not edit vendored `FlacConvert/include/rapidjson/` or `external/` code unless requested.

@@ -14,15 +14,15 @@ Keep MSVC on Windows and use GCC on Linux initially. Visual Studio can open the
 CMake project directly; a generated solution can be supported separately if
 needed. Ninja is a backend, not a replacement compiler.
 
-Use an incremental migration, not an application rewrite. Keep the existing
-solution temporarily as a Windows fallback, establish CMake parity, then retire
-the hand-maintained solution/project in a separately approved cleanup.
+Use an incremental migration, not an application rewrite. The hand-maintained
+solution/project was kept as a temporary Windows fallback and has since been
+retired; Visual Studio opens the CMake presets directly.
 
 ## Findings from this repository
 
 | Evidence | Implication |
 |---|---|
-| `FlacConvert\FlacConvert.vcxproj` owns the legacy Windows source lists, C++20 settings, libraries, manifest and DLL copy commands | Shared source targets and platform dependency/deployment rules now live in CMake; the solution remains a Windows fallback |
+| The former `FlacConvert\FlacConvert.vcxproj` owned the Windows source lists, C++20 settings, libraries, manifest and DLL copy commands | Shared source targets and platform dependency/deployment rules now live in CMake; the project was removed after it stopped linking (it lacked newer sources and TagLib) |
 | Debug/Release x64 have the complete dependency configuration; Win32 Debug contains an absolute Boost path | x64 is the migration baseline; do not describe the existing Win32 configurations as validated support |
 | CLI11 and spdlog are Git submodules; RapidJSON is vendored; SQLite 3.50.0 amalgamation is tracked | Reuse existing dependencies rather than introducing a package-manager migration |
 | FFmpeg's local SDK identifies itself as `N-127252-ga25ba44c0c-20261008`, with libavcodec major 63 | Stock Linux FFmpeg packages cannot be assumed compatible with the current Windows SDK |
@@ -32,9 +32,9 @@ the hand-maintained solution/project in a separately approved cleanup.
 | Tests include a Python integration suite and two manually linked C++ executables | Register existing tests with CTest and replace manual linking against Debug objects |
 | Existing CI only reminded contributors about documentation impact | A separate Windows/Linux Debug/Release build and test workflow is now present |
 
-K-006 supports this architecture. K-009 describes the current Windows SDK layout;
+K-006 supports this architecture. K-043 describes the current Windows SDK layout;
 retain it during migration, not as a Linux dependency requirement. Preserve
-K-010's Windows runtime-DLL requirement. Reassess affected knowledge entries when
+K-044's Windows runtime-DLL requirement. Reassess affected knowledge entries when
 implementation changes their facts; do not change their status during planning.
 
 ## Implemented structure
@@ -171,13 +171,12 @@ cross-compilation and fully self-contained release bundles are separate work.
    added; its clean-run result remains pending.
 5. **Documentation/install:** README, AGENTS and DESIGN describe the CMake path;
    Windows install/staged executable launch passed locally. The Visual Studio
-   solution remains a fallback until parity is established and its removal is
-   separately approved.
+   solution/project has been removed; use Visual Studio's CMake folder support.
 
 Windows CI uses the MSVC toolset on the pinned `windows-2025` image and downloads
 the shared FFmpeg SDK from the retained FFmpeg-Builds monthly release dated
 2026-10-31, verifying its published SHA-256 digest.
-Local Visual Studio builds continue to use v145. Linux CI pins Ubuntu 24.04.
+Linux CI pins Ubuntu 24.04.
 
 ## Acceptance criteria
 

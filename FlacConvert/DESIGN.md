@@ -69,10 +69,10 @@ flowchart LR
 
 | Mode | Entry | Notes |
 |---|---|---|
-| `convert <input> [--to flac\|mp3] [--mp3-quality 0-9] [--downmix-to-stereo] [--overwrite] [--output-dir]` | `RunWithArguments` → `FolderConvert::ConvertAudioFolderToOutput` | Output `<root>/<FLAC\|MP3>/<input folder name>` (K-031) |
-| `scan <library> [--output-dir]` | `ScanFolderAndCreateJSON` | One library; name = folder name |
+| `convert <input> [--to flac\|mp3] [--mp3-quality 0-9] [--downmix-to-stereo] [--overwrite] [--no-metadata-sidecar] [--output-dir]` | `RunWithArguments` → `FolderConvert::ConvertAudioFolderToOutput` | Output `<root>/<FLAC\|MP3>/<input folder name>` (K-031); `--no-metadata-sidecar` is valid only for an `optional` sidecar policy (K-038) |
+| `scan <library> [--output-dir] [--full-rescan] [--tier catalog\|integrity\|analysis]` | `ScanFolderAndCreateJSON` | One library; name = folder name |
 | `duplicates <json dir> [--open]` | `ScanFolderProcessJSONAndFindDuplicates` | Opens folders only with `--open` |
-| `db import <json dir> [--output-dir]` | `ImportJsonDirectoryToDatabase` | Database named after the JSON folder |
+| `db import <json dir> [--output-dir]` | `ImportJsonDirectoryToDatabase` | `<output root>/<JSON folder name>/catalog-v2.sqlite`; output root is `--output-dir`, else `OutDirectory` |
 | No arguments | `RunLegacyMenu` | Options 1 FLAC, 2 scan, 3 duplicates, 4 DB import, 5 not implemented, 6 MP3; all use active `MediaDirectoryList` entries |
 
 All commands accept `--config <file>`. Exit code is 0 on success, non-zero on any failure.
@@ -126,7 +126,7 @@ records the effective `metadataSidecars` value.
 
 `MediaConvertionTask::InstallTemporaryOutput` installs the sidecar first (backing up an existing one when
 overwriting), then the audio; on audio failure it restores or removes the sidecar and leaves the temporary in place
-(K-003).
+(K-041).
 
 ### Scan to JSON (menu 2, `scan`)
 
@@ -170,13 +170,15 @@ albums included in the import. Albums absent from the import remain untouched. I
 consistent `"Library Root"`; incompatible existing databases are rejected before catalog writes. The transaction
 includes all imported albums and rolls back completely on any failure. `schema_docs`, `enum_docs`, and
 `catalog_meta.ai_guide` describe the schema and safe interpretation of measured versus claimed data.
+CLI import reads through the supplied directory path and names the output after that directory, without resolving
+directory aliases; a trailing separator does not change the name.
 
 ## Contracts and invariants
 
 - **Sources are never modified.** Every write target is outside the source tree; overlap is rejected at plan time.
 - **Install only after success.** Output is written to a unique temporary, verified and audited, then moved into place
   (`installFile`: `MoveFileExW` on Windows; rename or hard-link/copy elsewhere). Without overwrite an existing
-  target is never replaced (K-003).
+  target is never replaced (K-041).
 - **Configured paths for I/O, canonical paths for safety checks only** (K-032). Known exception:
   `ConvertConfiguredLibraries` validates each library with `fs::is_directory` on its canonical path.
 - **Processing is sequential and stops at the first error**; earlier outputs remain; no batch rollback (K-024).
@@ -206,7 +208,7 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | `OutDirectory` | `C:\tmp` (Windows) / temp dir (K-007) | All outputs |
 | `LogLevel` | 1 (0–6, spdlog levels) | Logger |
 | `UseAsyncMetadataReads` | true | Parallel TagLib scan reads; legacy `UseAsyncFFmpegCalls` is accepted as an alias |
-| `Incremental` | true | Reuse scan records when library-relative file path, size, modification time, and requested tier match |
+| `Incremental` | true | Reuse scan records when library-relative file path, size and modification time match and the cached tier is the requested tier or higher (`AlbumCollection::ImportMetadata`) |
 | `ScanTier` | `catalog` (`catalog`\|`integrity`\|`analysis`) | Default scan tier; CLI `scan --tier` overrides it |
 | `MetadataScanMaxThreads` | 0 (automatic) | Maximum per-album metadata workers; 0 uses hardware concurrency, falling back to 4 |
 | `DecodeWorkers` | 0 (automatic) | Independent full-decode worker cap; 0 uses at most 4 workers and half the available hardware concurrency |
@@ -273,7 +275,11 @@ as usable audio metadata.
   At most `min(valid tracks in album, effective worker cap)` workers run; `MetadataScanMaxThreads=0` selects hardware
   concurrency (fallback 4). Workers finish before the next album is processed, and exceptions are rethrown after joining.
   `UseAsyncMetadataReads=false` keeps TagLib scan reads sequential.
-- Duplicate comparison: one `std::async` task per track, joined before the comparison is used; re-probes use libav.
+- Decode stage (`integrity`/`analysis` tiers): a separate bounded `BoundedTaskRunner` pass after the album's TagLib
+  reads, capped by `DecodeWorkers` (0 = 1 worker on single-core hosts, else `min(4, hardware_concurrency/2)`).
+  Decode failures are recorded in the record without discarding tags (`AlbumCollection::ImportMetadata`).
+- Duplicate comparison: one `std::async` task per track, joined before the comparison is used; re-probes use libav
+  and are not bounded by `DecodeWorkers` or `MetadataScanMaxThreads`.
 - `FFmpeg::ffmpeg_log_callback` is process-wide and appends to a mutex-protected buffer.
 - `AppSettingsJson::AppSetting` is a lazily created process-wide instance read from worker threads; initialise it
   before starting tasks.
@@ -290,7 +296,7 @@ conversion records its class in `MediaConvertionTask::GetFailureType`.
 
 Portable core with narrow conditional blocks (K-006). Windows-specific code: `wmain`, console code pages,
 `PlatformUtils::WindowsLongPath`, `quoteWindowsArgument` + `_wspawnvp`, `MoveFileExW`, `CompareStringOrdinal`,
-SQLite `win32-longpath` VFS (K-011), default `C:\tmp` (K-007). POSIX branches: `fork`/`execvp`, rename/hard-link
+SQLite `win32-longpath` VFS (K-042), default `C:\tmp` (K-007). POSIX branches: `fork`/`execvp`, rename/hard-link
 install, `sqlite3_open`. `JsonUtils::tryParseMember` uses the portable
 `JsonUtils::caseInsensitiveEquals` helper for case-insensitive keys (K-033).
 
@@ -301,13 +307,13 @@ Windows and Linux Debug/Release builds (`CMakePresets.json`). `FlacConvertCore` 
 links the SQLite amalgamation, CLI11, header-only spdlog and FFmpeg; `FlacConvert` owns the executable entry point.
 Windows uses MSVC and a matching shared FFmpeg SDK selected by `FFmpeg_ROOT` (default
 `external/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/`); CMake stages the SDK runtime DLLs beside the executable
-(K-010). Linux uses pkg-config imported targets for the system FFmpeg development packages. Both platforms use the
+(K-044). Linux uses pkg-config imported targets for the system FFmpeg development packages. Both platforms use the
 tracked SQLite amalgamation and initialized CLI11/spdlog submodules. TagLib is fetched by CMake at a pinned
 revision; ZLIB is optional in that dependency, so compressed ID3 frame support depends on build-time ZLIB
 availability. Runtime conversion still requires the `ffmpeg` executable with `libmp3lame` for MP3.
 
 `cmake --install` stages the executable; Linux links system FFmpeg libraries, while Windows installs the matched
-runtime DLLs. The Windows Visual Studio solution remains a temporary fallback, not a second Linux build description.
+runtime DLLs. CMake is the only build description; Visual Studio opens the CMake presets directly.
 
 CTest registers the Python integration suite and native preservation/warning regression tests. The native tests link
 `FlacConvertCore` rather than IDE-generated object files; `tests/run_native_regression.py` creates temporary audio
@@ -335,5 +341,5 @@ prompt, and `ShowConversionPreview`.
 
 ## Knowledge links
 
-Conversion safety: K-003, K-013, K-014, K-029, K-030, K-032, K-038. Formats: K-016, K-017, K-031. Manual menu: K-024, K-025, K-026, K-027. Catalog/DB: K-005, K-011, K-040. Platform/build: K-006, K-007, K-009, K-010, K-033.
+Conversion safety: K-041, K-013, K-014, K-029, K-030, K-032, K-038. Formats: K-016, K-017, K-031. Manual menu: K-024, K-025, K-026, K-027. Catalog/DB: K-005, K-042, K-040. Platform/build: K-006, K-007, K-043, K-044, K-033.
 Only live entries are listed; superseded history is in `docs/knowledge/index.md` under "Closed".

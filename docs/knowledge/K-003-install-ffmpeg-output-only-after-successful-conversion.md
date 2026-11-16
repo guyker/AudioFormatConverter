@@ -3,7 +3,8 @@ id: K-003
 kind: trap
 title: "Install FFmpeg output only after successful conversion"
 area: [FlacConvert]
-status: active
+status: superseded
+superseded_by: K-041
 created: 2026-10-09
 reviewed: 2026-11-10
 cites:

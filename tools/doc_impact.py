@@ -99,7 +99,8 @@ def changed_paths(root: Path, staged: bool, base: str | None) -> set[str]:
 def relevant(path: str) -> bool:
     return (
         path.startswith(("FlacConvert/src/", "FlacConvert/include/", "tests/", "external/"))
-        or path in {"FlacConvert/config.json", "FlacConvert/FlacConvert.vcxproj", "MediaBoost.sln"}
+        or path in {"FlacConvert/config.json", "CMakeLists.txt", "CMakePresets.json", "FlacConvert/CMakeLists.txt"}
+        or path.startswith("cmake/")
     )
 
 

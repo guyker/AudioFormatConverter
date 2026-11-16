@@ -47,7 +47,7 @@
 
 #include "PlatformUtils.h"
 
-#include "FFmpeg.h"
+#include "ffmpeg.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -1285,12 +1285,12 @@ int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList,
 int ImportJsonDirectoryToDatabase(const fs::path& jsonDirectory, const fs::path& outputRoot)
 {
     std::error_code ec;
-    const fs::path canonicalJsonDirectory = fs::weakly_canonical(jsonDirectory, ec);
-    if (ec || !fs::is_directory(canonicalJsonDirectory, ec) || ec) {
+    const fs::path inputDirectory = fs::absolute(jsonDirectory, ec);
+    if (ec || !fs::is_directory(inputDirectory, ec) || ec) {
         spdlog::error("JSON input path is not a directory: {}", pathToUtf8(jsonDirectory));
         return 1;
     }
-    const auto jsonFiles = findJsonFiles(canonicalJsonDirectory);
+    const auto jsonFiles = findJsonFiles(inputDirectory);
     if (jsonFiles.empty()) {
         spdlog::error("No generated album JSON files found in '{}'.", pathToUtf8(jsonDirectory));
         return 1;
@@ -1307,7 +1307,11 @@ int ImportJsonDirectoryToDatabase(const fs::path& jsonDirectory, const fs::path&
         albums->insert(albums->end(), part->begin(), part->end());
     }
     MediaDirectoryElement library{};
-    library.mediaName = directoryNameUtf8(canonicalJsonDirectory);
+    fs::path nameDirectory = inputDirectory.lexically_normal();
+    if (nameDirectory.filename().empty() && nameDirectory.has_relative_path()) {
+        nameDirectory = nameDirectory.parent_path();
+    }
+    library.mediaName = directoryNameUtf8(nameDirectory);
     const fs::path databasePath = library.getMediaDBPath(outputRoot);
     fs::create_directories(databasePath.parent_path(), ec);
     if (ec) {
@@ -1672,9 +1676,15 @@ int RunWithArguments(const std::vector<const char*>& arguments)
                 spdlog::error("Library path is not a directory: {}", pathToUtf8(inputPath));
                 return 1;
             }
+            // Scan through the given path, as the menu does; canonicalizing would expand 8.3 names and turn
+            // mapped drives into UNC paths in the catalog.
+            fs::path scanRoot = absoluteDisplayPath(inputPath);
+            if (scanRoot.filename().empty() && scanRoot.has_relative_path()) {
+                scanRoot = scanRoot.parent_path();
+            }
             MediaDirectoryElement library{};
-            library.mediaPath = pathToUtf8(canonicalInput);
-            library.mediaName = directoryNameUtf8(canonicalInput);
+            library.mediaPath = pathToUtf8(scanRoot);
+            library.mediaName = directoryNameUtf8(scanRoot);
             return ScanFolderAndCreateJSON(
                 { library }, true, outputDirectory, false, nullptr, options.fullRescan);
         }

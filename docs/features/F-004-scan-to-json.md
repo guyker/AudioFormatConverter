@@ -25,7 +25,7 @@ signal-statistics analysis. Decode failures are retained in the record without d
 If any accepted track has a read error or lacks usable audio technical metadata, the scan fails
 before installing staged JSON, leaving the previous generated files unchanged.
 Album objects include the source `"Library Root"` for stable downstream database identity. With `Incremental=true`,
-unchanged records are reused only when the source path, file size, full-precision modification time and requested tier match;
+unchanged records are reused only when the source path, file size, full-precision modification time match and the cached tier is the requested tier or higher;
 `scan --full-rescan` forces metadata rereads.
 
 ## Entry points
