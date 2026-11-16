@@ -3,10 +3,12 @@
 Status: active
 
 ## Behaviour
-Loads generated album JSON, finds album pairs with matching track counts and track durations/sizes within
-`SizeMatchPercentageThreshold`, then re-probes both folders and logs a quality and tag comparison per pair. Read-only.
-Malformed album/track structures or tracks without audio-stream metadata fail JSON loading rather than being silently
-skipped. With `--open` (CLI) or always in the menu, both folders are opened in the file manager.
+Loads generated album JSON v2 (and legacy ffprobe-style batches), finds album pairs with matching track counts and
+track durations/sizes within `SizeMatchPercentageThreshold`, then re-probes both folders and logs format/tag
+comparisons per pair. Signal-quality
+metrics are not currently computed; the report explicitly says analysis was not run. Read-only.
+Malformed album/track structures or catalog records without usable audio technical metadata fail JSON loading rather
+than being silently skipped. With `--open` (CLI) or always in the menu, both folders are opened in the file manager.
 
 ## Entry points
 - `FlacConvert duplicates <json dir> [--open]` → `FlacConvertMain.cpp#RunWithArguments`
@@ -15,7 +17,8 @@ skipped. With `--open` (CLI) or always in the menu, both folders are opened in t
 
 ## Design and knowledge
 - DESIGN: `FlacConvert/DESIGN.md` → Duplicates
-- Related config: `MinMatchingTracksForDuplicate`, `SizeMatchPercentageThreshold`, `ExtraAudioQualityMetrics`
+- Related config: `MinMatchingTracksForDuplicate`, `SizeMatchPercentageThreshold`; `ExtraAudioQualityMetrics`
+  currently warns and is ignored.
 
 ## Acceptance checks
 - [ ] Two copies of the same album in different folders are reported once.

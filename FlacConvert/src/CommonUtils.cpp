@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <chrono>
+#include <format>
 #include <filesystem>
 #include <spdlog/spdlog.h>
 #include <system_error>
@@ -37,6 +38,25 @@ namespace CommonUtils {
         }
 
         return result;
+    }
+
+    std::optional<std::string> fileModificationTimeUtc(const fs::path& path) {
+        std::error_code ec;
+        const auto modified = fs::last_write_time(path, ec);
+        if (ec) {
+            return std::nullopt;
+        }
+
+        const auto fileNow = fs::file_time_type::clock::now();
+        const auto systemNow = std::chrono::system_clock::now();
+        // Rounding the epoch offset avoids subsecond sampling jitter while preserving file-clock precision.
+        const auto epochOffset = std::chrono::round<std::chrono::seconds>(
+            systemNow.time_since_epoch() - fileNow.time_since_epoch());
+        const auto systemModified = std::chrono::system_clock::time_point{
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(
+                modified.time_since_epoch() + epochOffset)
+        };
+        return std::format("{:%FT%TZ}", systemModified);
     }
 
 

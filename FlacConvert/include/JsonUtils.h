@@ -34,7 +34,8 @@ namespace JsonUtils {
                 a.begin(), a.end(),
                 b.begin(), b.end(),
                 [](char c1, char c2) {
-                    return tolower(c1) < tolower(c2);
+                    return std::tolower(static_cast<unsigned char>(c1)) <
+                        std::tolower(static_cast<unsigned char>(c2));
                 });
         }
     };
@@ -106,12 +107,12 @@ namespace JsonUtils {
 
         if constexpr (std::is_same_v<T, std::optional<std::string>>) {
             if (value.IsString()) {
-                return value.GetString();
+                return std::string(value.GetString(), value.GetStringLength());
             }
         }
         else if constexpr (std::is_same_v<T, std::string>) {
             if (value.IsString()) {
-                return value.GetString();
+                return std::string(value.GetString(), value.GetStringLength());
             }
         }
         else if constexpr (std::is_same_v<T, std::wstring>) {

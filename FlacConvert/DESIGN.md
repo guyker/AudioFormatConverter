@@ -27,9 +27,11 @@ It runs either as explicit CLI commands or, with no arguments, as a legacy inter
 | File conversion | `src/MediaConvertionTask.cpp`, `include/MediaConvertionTask.h` | `MediaConvertionTask`: quality gate, FFmpeg child process, output verification, sidecar, audit, installation |
 | Metadata archive | `src/FlacMetadata.cpp`, `include/FlacMetadata.h` | `FlacMetadata::Save` / `FlacMetadata::Verify` byte-exact archive as binary `.flac-metadata` or `.flac-metadata.json` (readable scan-schema metadata + Base64 archive; only the archive is verified) |
 | Preservation audit | `src/PreservationAudit.cpp`, `include/PreservationAudit.h` | `PreservationAudit::Compare` (tags, pictures, chapters, opaque blocks), `PreservationAudit::VerifyCopy` |
-| FFmpeg library access | `src/ffmpeg.cpp`, `include/ffmpeg.h`, `include/FFmpegWrapper.h` | `FFmpeg::GetFFprobeMetadataAPI` (libav probe), audio metrics, the process-wide log callback, `FFmpeg::GetJsonMetadataShell` (ffprobe executable) |
-| Track/album model | `src/MediaTrack.cpp`, `include/MediaTrack.h`, `include/MediaInformation.h`, `include/MediaAlbum.h` | `MediaTrack` (probe parsing, JSON, comparison, SQLite row), `FFprobeOutput`, `MediaAlbum` |
-| Album collection | `src/AlbumCollection.cpp`, `include/AlbumCollection.h` | Discovery (`AlbumCollection::LoadAlbumsCo`), metadata import, JSON save/load, duplicate search, `AlbumCollection::ExportToDatabase` |
+| FFmpeg library access | `src/ffmpeg.cpp`, `include/ffmpeg.h`, `include/FFmpegWrapper.h` | `FFmpeg::GetFFprobeMetadataAPI` (conversion/duplicate re-probes) and the process-wide log callback |
+| Catalog metadata | `src/TagLibReader.cpp`, `include/TagLibReader.h`, `include/MediaRecord.h`, `src/MediaRecordJson.cpp` | Read-only TagLib extraction, normalized multi-value tags, source-scoped raw tags, picture descriptors, and schema-v2 JSON |
+| Track/album model | `src/MediaTrack.cpp`, `include/MediaTrack.h`, `include/MediaInformation.h`, `include/MediaAlbum.h` | `MediaTrack` (legacy probe parsing/comparison), `FFprobeOutput`, `MediaAlbum` |
+| Catalog database | `src/CatalogDatabase.cpp`, `include/CatalogDatabase.h` | Schema-v2 SQLite writer, stable library-relative identity, incremental upsert and stale-file cleanup |
+| Album collection | `src/AlbumCollection.cpp`, `include/AlbumCollection.h` | Discovery (`AlbumCollection::LoadAlbumsCo`), metadata import/cache reuse, JSON save/load, duplicate search, `AlbumCollection::ExportToDatabase` |
 | Platform adapters | `src/PlatformUtils.cpp`, `include/PlatformUtils.h` | UTF-16/UTF-8, `PlatformUtils::WindowsLongPath`, `PlatformUtils::OpenDirectory` |
 | Utilities | `src/CommonUtils.cpp`, `include/CommonUtils.h`, `include/BoundedTaskRunner.h`, `src/JsonUtils.cpp`, `include/JsonUtils.h` | UTF-8 path helpers, coroutine `Generator`, bounded task runner, JSON helpers |
 | Legacy (unused) | `FolderConvert::ConverAudioFolder`, `FolderConvert::ConverAudioFolder2`, `MediaConvertionAsyncTask` | In-place conversion paths with no caller outside themselves; not part of any current flow |
@@ -53,12 +55,14 @@ flowchart LR
     EC --> OUT[(OutDirectory/FLAC or MP3/name)]
     RWA --> SCAN[ScanFolderAndCreateJSON]
     SRC --> SCAN
-    SCAN -->|libav probe| LIBAV[FFmpeg libraries]
+    SCAN -->|read-only metadata| TAGLIB[TagLib]
+    TAGLIB --> RECORD[MediaRecord]
+    RECORD -->|schema v2| JSON
     SCAN --> JSON[(OutDirectory/name/media_out_*.json)]
     JSON --> DUP[ScanFolderProcessJSONAndFindDuplicates]
     DUP --> REP[Console report / open folders]
     JSON --> DB[ExportJSONToDB / ImportJsonDirectoryToDatabase]
-    DB --> SQL[(media_out_name.db)]
+    DB --> SQL[(catalog-v2.sqlite)]
 ```
 
 ## Entry points
@@ -126,14 +130,29 @@ overwriting), then the audio; on audio failure it restores or removes the sideca
 
 ### Scan to JSON (menu 2, `scan`)
 
-`ScanFolderAndCreateJSON`: discover albums in batches of `AlbumsSplitThreshold` (`AlbumCollection::LoadAlbumsCo`),
-import metadata (`AlbumCollection::ImportMetadata`, parallel when `UseAsyncFFmpegCalls`), sort by album artist, write
-each batch to a staging sibling directory (`AlbumCollection::SaveAlbumsToJSON`), then `installGeneratedFiles` swaps
-only `media_out_*.json` files into `OutDirectory/<mediaName>/`, with backup and rollback (K-005). An accepted audio
-track with extraction/JSON errors or no usable audio stream fails the scan before installation, preserving the prior
-generated JSON. Extraction failures retain the source path and FFmpeg/ffprobe diagnostic through the metadata-read
-result and are reported by the scan. The menu preview discovers albums without reading track metadata and reuses
-the discovered batches.
+`ScanFolderAndCreateJSON`: discover albums (including files directly under the library root) in batches of
+`AlbumsSplitThreshold` (`AlbumCollection::LoadAlbumsCo`), reuse prior records for unchanged `(path, size, full-precision mtime)`
+when `Incremental=true` (unless CLI `--full-rescan` is specified), recompute album-level findings from current tracks,
+read remaining accepted formats from `CatalogExtensions` with `TagLibReader`, then read container chapters through
+the linked FFmpeg libraries
+(`AlbumCollection::ImportMetadata`, optionally using bounded workers controlled by `UseAsyncMetadataReads`),
+sort by normalized album artist, write schema-v2 records to a staging sibling directory
+(`AlbumCollection::SaveAlbumsToJSON`), then `installGeneratedFiles` swaps only `media_out_*.json` files into
+`OutDirectory/<mediaName>/`, with backup and rollback (K-005). records keep normalized multi-value tags separate
+from source-scoped raw tag entries and include technical properties, picture descriptors, and explicit
+support/analysis statuses; chapter boundaries and chapter tags come from libavformat. FLAC and MP3 native inventories
+are partial; other configured formats expose TagLib properties while `support.nativeInventory` remains `unsupported`.
+Tag validation records missing title/artist/album tags, malformed track/disc numbers, non-ISO dates, malformed
+MusicBrainz UUIDs, ISRCs and EAN/UPC/GTIN check digits, and album-level inconsistencies for album, album artist,
+release date, and label. Album validation also flags duplicate/gapped per-disc track numbers and inconsistent or
+mismatched declared track/disc totals without treating the folder as proof of album completeness.
+Unavailable properties are omitted. An accepted audio track with a read/JSON error or
+without usable sample-rate/channel data fails the scan before installation, preserving the prior generated JSON
+(K-035). TagLib reads use a read-only stream. The menu preview discovers albums without reading track metadata and
+reuses the discovered batches. `ScanTier` selects `catalog` (default), `integrity`, or `analysis`; CLI `scan --tier`
+overrides the config. Integrity and analysis tiers decode the audio once, report decode/sample/hash results, and
+analysis adds per-channel signal statistics and zero-padded-hi-res findings. Decode failures are retained in the
+record without discarding successfully read tags. `ExtraAudioQualityMetrics` is deprecated and ignored.
 
 ### Duplicates (menu 3, `duplicates`)
 
@@ -143,12 +162,14 @@ quality comparison (`MediaTrack::GenerateComparisonReport`). Read-only; folders 
 
 ### Database import (menu 4, `db import`)
 
-`ExportJSONToDB` (menu, per library, one transaction per JSON batch) or `ImportJsonDirectoryToDatabase` (CLI, one
-transaction): `AlbumCollection::ExportToDatabase` creates `TracksDB` if needed, replaces all existing rows for each
-imported album path, and inserts one row per track. Re-importing refreshes those albums without duplicating rows;
-tracks removed since the previous scan are removed from the database. Other album paths remain untouched.
-Malformed album/track structure fails loading instead of silently importing a partial JSON batch. The row id is
-bound as NULL, so rows inserted by a refresh receive new SQLite row ids.
+`ExportJSONToDB` (menu, per library, all JSON batches in one transaction) or `ImportJsonDirectoryToDatabase` (CLI,
+one transaction): `CatalogDatabase::Import` writes catalog schema v2 to
+`OutDirectory/<name>/catalog-v2.sqlite`, leaving any prior `.db` database untouched. File identity is
+`(library_id, relative_path)` (K-040); records upsert without duplicating files, and missing tracks are deleted only from
+albums included in the import. Albums absent from the import remain untouched. Imports require schema-v2 JSON with a
+consistent `"Library Root"`; incompatible existing databases are rejected before catalog writes. The transaction
+includes all imported albums and rolls back completely on any failure. `schema_docs`, `enum_docs`, and
+`catalog_meta.ai_guide` describe the schema and safe interpretation of measured versus claimed data.
 
 ## Contracts and invariants
 
@@ -169,7 +190,8 @@ bound as NULL, so rows inserted by a refresh receive new SQLite row ids.
   Regular-file symlinks are read as content, not reproduced as links. Plans are preview-time snapshots, not
   transactional filesystem snapshots; unrelated existing output files are not deleted.
 - **External FFmpeg tools are child processes with argument vectors**, never shell commands (K-014).
-  `FFmpeg::GetJsonMetadataShell` captures ffprobe output through a pipe when `UseFFmpegLibraryAPI` is false.
+  Catalog scans and duplicate-report re-probes use TagLib and linked FFmpeg libraries; the ffprobe executable is not
+  used for metadata extraction.
 - **Counts reflect confirmed work only** (installed files, installed JSON batches, committed DB batches, processed
   duplicate pairs) (K-024).
 
@@ -183,10 +205,14 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 |---|---|---|
 | `OutDirectory` | `C:\tmp` (Windows) / temp dir (K-007) | All outputs |
 | `LogLevel` | 1 (0–6, spdlog levels) | Logger |
-| `UseAsyncFFmpegCalls` | true | Parallel metadata import |
+| `UseAsyncMetadataReads` | true | Parallel TagLib scan reads; legacy `UseAsyncFFmpegCalls` is accepted as an alias |
+| `Incremental` | true | Reuse scan records when library-relative file path, size, modification time, and requested tier match |
+| `ScanTier` | `catalog` (`catalog`\|`integrity`\|`analysis`) | Default scan tier; CLI `scan --tier` overrides it |
 | `MetadataScanMaxThreads` | 0 (automatic) | Maximum per-album metadata workers; 0 uses hardware concurrency, falling back to 4 |
-| `UseFFmpegLibraryAPI` | true | libav probe vs ffprobe executable |
-| `ExtraAudioQualityMetrics` | false | Peak/RMS/dynamic range analysis |
+| `DecodeWorkers` | 0 (automatic) | Independent full-decode worker cap; 0 uses at most 4 workers and half the available hardware concurrency |
+| `CatalogExtensions` | `[".flac", ".mp3"]` | Accepted scan formats; additional TagLib formats may be enabled explicitly |
+| `UseFFmpegLibraryAPI` | deprecated | Ignored with a warning; metadata re-probes always use linked FFmpeg libraries |
+| `ExtraAudioQualityMetrics` | false | Deprecated; true warns and is ignored; use the `analysis` scan tier |
 | `MinMatchingTracksForDuplicate`, `SizeMatchPercentageThreshold` | 1, 3 | Duplicate search |
 | `RecursionDirectorySearchDepth` | 10 | Discovery |
 | `AlbumsSplitThreshold` | 2000 (>0) | JSON batch size |
@@ -206,9 +232,9 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | Unchanged file copies | Same relative path; non-converted regular files outside skipped subtrees for FLAC, non-audio companions for MP3 | `FolderConvert::ExecuteConversion` |
 | Audit report | `<library output>/conversion-audit.json` | `writeAudit` in `FolderConvert.cpp` |
 | In-progress marker | `<library output>/.conversion-in-progress/` (directory) | `FolderConvert::ExecuteConversion` |
-| Album JSON | `OutDirectory/<name>/media_out_<name>[_<n>].json` | `AlbumCollection::SaveAlbumsToJSON` |
+| Album JSON | `OutDirectory/<name>/media_out_<name>[_<n>].json` (schema v2; see `docs/schemas/media-catalog-v2.schema.json`) | `AlbumCollection::SaveAlbumsToJSON` |
 | JSON diagnostic reports | `<album json>_ffmpeg_error.json` when captured (excluded from inputs); legacy `_error.json` reports are also excluded | `AlbumCollection` |
-| SQLite database | `OutDirectory/<name>/media_out_<name>.db` | `AlbumCollection::ExportToDatabase` |
+| SQLite catalog | `OutDirectory/<name>/catalog-v2.sqlite` (`user_version=2`) | `CatalogDatabase::Import` |
 
 **Sidecar:** original leading ID3, `fLaC` marker and every metadata block byte-for-byte, plus trailing APE/ID3v1;
 no audio. Describes the source, not the output.
@@ -226,15 +252,18 @@ directory, `"."` for root), `files`, `audioFiles`}, `skippedAudio[]`,
 other audio. Directory fields are additive version-1 fields and are empty/zero for MP3. Skipped folders are
 planning results; they are listed even when the run later fails.
 
-**Album JSON:** array of `{ "Album Path", "Folder", "Tracks": [ffprobe-style object with format, streams,
-chapters] }`. Format and stream timing is in seconds; stream dispositions and chapter timing/tags are preserved.
-The scan accepts `.flac` and `.mp3` case-insensitively and rejects the whole scan if an accepted track cannot be
-serialized as usable audio metadata.
+**Album JSON v2:** array of `{ "Album Path", "Library Root", "Folder", "Tracks": [MediaRecord] }`. Each `MediaRecord` separates
+filesystem identity, available technical properties, normalized tag arrays, raw scoped tags, picture descriptors,
+reader support, validation findings, and analysis status. It does not archive embedded picture bytes or claim complete native-block
+inventory; `support.nativeInventory` is `partial` for FLAC/MP3. The scan accepts the configured `CatalogExtensions`
+case-insensitively (default `.flac` and `.mp3`); TagLib properties are also available for explicitly enabled M4A/MP4,
+Ogg/Opus, WavPack/APE, WAV and AIFF files. The scan rejects the whole batch if an accepted track cannot be serialized
+as usable audio metadata.
 
-**`TracksDB`** (`MediaTrack::GetCreateTableSQL`): `ID` (`INTEGER PRIMARY KEY`, bound NULL → new rowid), `album_path`, format fields (`file_size`,
-`nb_streams`, `format_name`, `start_time` and `duration` in seconds, `bit_rate`, …), one TEXT column per
-`MediaTrackConstants::kFormatTag_*` (title, artist, album, album_artist, genre, track, disc, date, …), and
-`stream1_*` / `stream2_*` technical columns, including stream start time in seconds.
+**SQLite catalog schema v2:** normalized `libraries`, `albums`, `files`, `tags`, `raw_tags`, `pictures`, `chapters`,
+`chapter_tags`, `measurements` and `findings` tables, with `v_tracks`, `v_findings` and `v_albums` views.
+`files.record_json` preserves the complete schema-v2 record; file identity is `(library_id, relative_path)`.
+`schema_docs`, `enum_docs` and `catalog_meta` provide queryable descriptions, units, examples and AI interpretation hints.
 
 ## Threading and process lifetime
 
@@ -243,8 +272,8 @@ serialized as usable audio metadata.
   claim track indexes from an atomic counter.
   At most `min(valid tracks in album, effective worker cap)` workers run; `MetadataScanMaxThreads=0` selects hardware
   concurrency (fallback 4). Workers finish before the next album is processed, and exceptions are rethrown after joining.
-  `UseAsyncFFmpegCalls=false` keeps metadata reads sequential.
-- Duplicate comparison: one `std::async` task per track, joined before the comparison is used.
+  `UseAsyncMetadataReads=false` keeps TagLib scan reads sequential.
+- Duplicate comparison: one `std::async` task per track, joined before the comparison is used; re-probes use libav.
 - `FFmpeg::ffmpeg_log_callback` is process-wide and appends to a mutex-protected buffer.
 - `AppSettingsJson::AppSetting` is a lazily created process-wide instance read from worker threads; initialise it
   before starting tasks.
@@ -273,8 +302,9 @@ links the SQLite amalgamation, CLI11, header-only spdlog and FFmpeg; `FlacConver
 Windows uses MSVC and a matching shared FFmpeg SDK selected by `FFmpeg_ROOT` (default
 `external/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/`); CMake stages the SDK runtime DLLs beside the executable
 (K-010). Linux uses pkg-config imported targets for the system FFmpeg development packages. Both platforms use the
-tracked SQLite amalgamation and initialized CLI11/spdlog submodules. Runtime conversion still requires the `ffmpeg`
-executable with `libmp3lame` for MP3.
+tracked SQLite amalgamation and initialized CLI11/spdlog submodules. TagLib is fetched by CMake at a pinned
+revision; ZLIB is optional in that dependency, so compressed ID3 frame support depends on build-time ZLIB
+availability. Runtime conversion still requires the `ffmpeg` executable with `libmp3lame` for MP3.
 
 `cmake --install` stages the executable; Linux links system FFmpeg libraries, while Windows installs the matched
 runtime DLLs. The Windows Visual Studio solution remains a temporary fallback, not a second Linux build description.
@@ -305,5 +335,5 @@ prompt, and `ShowConversionPreview`.
 
 ## Knowledge links
 
-Conversion safety: K-003, K-013, K-014, K-029, K-030, K-032, K-038. Formats: K-016, K-017, K-031. Manual menu: K-024, K-025, K-026, K-027. Catalog/DB: K-005, K-011. Platform/build: K-006, K-007, K-009, K-010, K-033.
+Conversion safety: K-003, K-013, K-014, K-029, K-030, K-032, K-038. Formats: K-016, K-017, K-031. Manual menu: K-024, K-025, K-026, K-027. Catalog/DB: K-005, K-011, K-040. Platform/build: K-006, K-007, K-009, K-010, K-033.
 Only live entries are listed; superseded history is in `docs/knowledge/index.md` under "Closed".

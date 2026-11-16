@@ -293,6 +293,41 @@ std::vector<fs::path> findJsonFiles(const fs::path& directory)
     return files;
 }
 
+std::map<std::string, MediaRecord> loadCatalogCache(
+    const fs::path& directory, const fs::path& libraryRoot)
+{
+    std::map<std::string, MediaRecord> cache;
+    const auto files = findJsonFiles(directory);
+    if (files.empty()) return cache;
+
+    const auto normalizedRoot = fs::absolute(libraryRoot).lexically_normal();
+    AlbumCollection collection;
+    for (const auto& file : files) {
+        const auto albums = collection.LoadAlbumsFromJSON(file);
+        if (!albums) {
+            spdlog::warn("Ignoring the incremental metadata cache because '{}' could not be read.",
+                pathToUtf8(file));
+            return {};
+        }
+        for (const auto& album : *albums) {
+            for (const auto& track : album.trackList) {
+                if (!track.catalogRecord || !track.libraryRoot ||
+                    fs::absolute(*track.libraryRoot).lexically_normal() != normalizedRoot) {
+                    spdlog::warn("Ignoring the incremental metadata cache because its library identity does not match.");
+                    return {};
+                }
+                const auto sourcePath = fs::absolute(
+                    album.path.path() / track.trackPath).lexically_normal();
+                if (!cache.emplace(pathToUtf8(sourcePath), *track.catalogRecord).second) {
+                    spdlog::warn("Ignoring the incremental metadata cache because it contains duplicate file identities.");
+                    return {};
+                }
+            }
+        }
+    }
+    return cache;
+}
+
 std::vector<fs::path> findConfiguredJsonFiles(
     const std::vector<MediaDirectoryElement>& mediaList,
     const fs::path& outputRoot)
@@ -671,7 +706,8 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& libraries, const 
 }
 
 int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryList, bool bIncludeMetadata,
-    const fs::path& outputRoot, bool preview = false, ManualOperationSummary* summary = nullptr)
+    const fs::path& outputRoot, bool preview = false, ManualOperationSummary* summary = nullptr,
+    bool fullRescan = false)
 {
     if (summary) {
         summary->unit = "album JSON files";
@@ -798,6 +834,15 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             spdlog::error("Scan output directory must not overlap the source library: '{}'.", pathToUtf8(targetDirectory));
             return 1;
         }
+        const auto settings = AppSettingsJson::AppSetting();
+        const bool useIncrementalCache = settings->Incremental && !fullRescan;
+        const auto cachedRecords = useIncrementalCache
+            ? loadCatalogCache(targetDirectory, libraryPath)
+            : std::map<std::string, MediaRecord>{};
+        if (useIncrementalCache) {
+            spdlog::info("Incremental scan cache contains {} catalog record(s).",
+                cachedRecords.size());
+        }
         const fs::path stagingRoot = uniqueSiblingPath(targetDirectory, ".staging-");
         const fs::path stagedDirectory = stagingRoot / libraryName;
         fs::create_directories(stagedDirectory, ec);
@@ -811,23 +856,26 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         try {
             const auto writeBatch = [&](const MediaAlbumListPtr& albumListPtr) {
                 spdlog::info("Received batch with {} albums", albumListPtr->size());
+                if (bIncludeMetadata) {
+                    ac.ImportMetadata(albumListPtr, 0, albumListPtr->size(),
+                        settings->UseAsyncMetadataReads,
+                        useIncrementalCache ? &cachedRecords : nullptr);
+                }
                 ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
-                if (!ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(stagingRoot, ++count))) {
+                if (!ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(stagingRoot, ++count),
+                    pathFromUtf8(mediaEntry.mediaPath))) {
                     throw std::runtime_error("Failed to write an album JSON file.");
                 }
             };
             if (preview) {
                 for (const auto& albums : preparedAlbums[libraryIndex]) {
-                    if (bIncludeMetadata) {
-                        ac.ImportMetadata(albums, 0, albums->size(), AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
-                    }
                     writeBatch(albums);
                 }
                 preparedAlbums[libraryIndex].clear();
             }
             else {
                 for (auto albums : ac.LoadAlbumsCo(
-                    libraryPath, bIncludeMetadata, AppSettingsJson::AppSetting()->AlbumsSplitThreshold)) {
+                    libraryPath, false, settings->AlbumsSplitThreshold)) {
                     writeBatch(albums);
                 }
             }
@@ -1151,19 +1199,28 @@ int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList,
 
     struct ImportPlan {
         fs::path database;
+        fs::path libraryRoot;
         std::vector<fs::path> json;
     };
     std::vector<ImportPlan> plans;
     std::vector<fs::path> targets;
     for (const auto& mediaEntry : mediaDirectoryList) {
-        const auto name = pathFromUtf8(mediaEntry.mediaName.value_or(""));
+        auto normalizedEntry = mediaEntry;
+        if (!normalizedEntry.mediaName || normalizedEntry.mediaName->empty()) {
+            normalizedEntry.mediaName = directoryNameUtf8(pathFromUtf8(normalizedEntry.mediaPath));
+        }
+        const auto name = pathFromUtf8(normalizedEntry.mediaName.value_or(""));
         if (name == "." || name == ".." || name.has_root_path() || name.has_parent_path()) {
             spdlog::error("Library name must be a single directory name for database import.");
             return 1;
         }
-        ImportPlan plan{ absoluteDisplayPath(mediaEntry.getMediaDBPath(pathFromUtf8(appSettingPtr->OutDirectory))), {} };
+        ImportPlan plan{
+            absoluteDisplayPath(normalizedEntry.getMediaDBPath(pathFromUtf8(appSettingPtr->OutDirectory))),
+            pathFromUtf8(mediaEntry.mediaPath),
+            {}
+        };
         summary.outputs.push_back(plan.database);
-        auto generator = mediaEntry.getMediaJsonPathCo(pathFromUtf8(appSettingPtr->OutDirectory));
+        auto generator = normalizedEntry.getMediaJsonPathCo(pathFromUtf8(appSettingPtr->OutDirectory));
         while (generator.resume()) {
             plan.json.push_back(absoluteDisplayPath(generator.value()));
         }
@@ -1205,19 +1262,21 @@ int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList,
     }
     summary.Start();
     for (const auto& plan : plans) {
+        auto albums = std::make_shared<DirectoryContentEntryList>();
         for (const auto& json : plan.json) {
             spdlog::info("Processing: {}", pathToUtf8(json));
-            const auto albums = albumCollection.LoadAlbumsFromJSON(json);
-            if (!albums) {
+            const auto part = albumCollection.LoadAlbumsFromJSON(json);
+            if (!part) {
                 spdlog::error("Failed to read JSON: '{}'.", pathToUtf8(json));
                 return 1;
             }
-            albumCollection.SortAlbums(albums, { { SortBy::AlbumName, true } });
-            if (!albumCollection.ExportToDatabase(albums, plan.database)) {
-                return 1;
-            }
-            ++summary.completed;
+            albums->insert(albums->end(), part->begin(), part->end());
         }
+        albumCollection.SortAlbums(albums, { { SortBy::AlbumName, true } });
+        if (!albumCollection.ExportToDatabase(albums, plan.database, plan.libraryRoot)) {
+            return 1;
+        }
+        summary.completed += plan.json.size();
     }
 
     return 0;
@@ -1297,7 +1356,7 @@ constexpr std::array<MenuEntry, 6> MenuEntries{ {
         "      Changes: does not delete duplicates or change audio, JSON or databases.\n" },
     { '4', ConvertActionEnum::PopulateJsonToDBEnum, "Import metadata JSON into SQLite",
         "      Input: generated JSON from option 2 for each active library.\n"
-        "      Output: OutDirectory/<mediaName>/media_out_<mediaName>.db.\n"
+        "      Output: OutDirectory/<mediaName>/catalog-v2.sqlite.\n"
         "      Changes: creates/updates database records; source audio and JSON are unchanged.\n"
         "               Does not scan audio directly; preview shows the configured filenames.\n" },
     { '5', ConvertActionEnum::CreateDBFromFolderEnum, "Scan directories directly to SQLite [NOT IMPLEMENTED]",
@@ -1432,14 +1491,13 @@ int RunLegacyMenu()
 
     //std::cout << "App Settings: " << std::filesystem::path(AppSettingsJson::DefaultConfigDirectory) / AppSettingsJson::DefaultConfigFileName << std::endl;
     spdlog::info("Output root (OutDirectory): {}", appSettingPtr->OutDirectory);
-    spdlog::info("Database output: OutDirectory/<mediaName>/media_out_<mediaName>.db");
+    spdlog::info("Database output: OutDirectory/<mediaName>/catalog-v2.sqlite");
 
     spdlog::info("----------------");
 
     spdlog::info("Log Level: {}", AppSettingsJson::AppSetting()->LogLevel);
-    spdlog::info("Use Async FFmpeg Calls: {}", AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+    spdlog::info("Use Async Metadata Reads: {}", AppSettingsJson::AppSetting()->UseAsyncMetadataReads);
     spdlog::info("Metadata Scan Max Threads: {}", AppSettingsJson::AppSetting()->MetadataScanMaxThreads);
-    spdlog::info("Use ffmpeg Library API: {}", AppSettingsJson::AppSetting()->UseFFmpegLibraryAPI);
     spdlog::info("Extra Audio Quality Metrics: {}", AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics);
     spdlog::info("Albums Split Threshold: {}", AppSettingsJson::AppSetting()->AlbumsSplitThreshold);
 
@@ -1605,6 +1663,9 @@ int RunWithArguments(const std::vector<const char*>& arguments)
         }
 
         case CommandAction::Scan: {
+            if (options.scanTierSpecified) {
+                settings->ScanTier = options.scanTier;
+            }
             std::error_code ec;
             const fs::path canonicalInput = fs::weakly_canonical(inputPath, ec);
             if (ec || !fs::is_directory(canonicalInput, ec) || ec) {
@@ -1614,7 +1675,8 @@ int RunWithArguments(const std::vector<const char*>& arguments)
             MediaDirectoryElement library{};
             library.mediaPath = pathToUtf8(canonicalInput);
             library.mediaName = directoryNameUtf8(canonicalInput);
-            return ScanFolderAndCreateJSON({ library }, true, outputDirectory);
+            return ScanFolderAndCreateJSON(
+                { library }, true, outputDirectory, false, nullptr, options.fullRescan);
         }
 
         case CommandAction::Duplicates:

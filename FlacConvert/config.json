@@ -37,9 +37,17 @@
     "ConvertToMp3": "disabled"
   },
   "LogLevel": 1,
-  "UseAsyncFFmpegCalls": true,
+  "UseAsyncMetadataReads": true,
+  "Incremental": true,
+  // Default scan depth; CLI scan --tier overrides this for one run.
+  // catalog reads tags/properties; integrity fully decodes; analysis adds signal measurements.
+  "ScanTier": "catalog",
   "MetadataScanMaxThreads": 0,
-  "UseFFmpegLibraryAPI": true,
+  // Independent cap for full decodes; 0 uses min(4, hardware threads / 2).
+  "DecodeWorkers": 0,
+  // Catalog extensions; FLAC and MP3 have partial native inventory, other formats use TagLib properties.
+  // Additional supported extensions: .m4a, .mp4, .ogg, .oga, .opus, .wv, .ape, .wav, .aif, .aiff.
+  "CatalogExtensions": [".flac", ".mp3"],
   "ExtraAudioQualityMetrics": false,
   "MinMatchingTracksForDuplicate": 1,
   "SizeMatchPercentageThreshold": 3,

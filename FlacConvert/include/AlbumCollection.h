@@ -1,6 +1,8 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
+#include <map>
 
 
 #include <iostream>
@@ -57,16 +59,21 @@ public:
 
 	//Import/update Media Metadata from the current loaded Album Collection (get JSON from media files)
 	//Normally this function should be called after LoadAlbums
-	size_t ImportMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr, size_t currentCount = 0, size_t totalCount = 0, bool bAsync = true);
+	size_t ImportMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr,
+		size_t currentCount = 0, size_t totalCount = 0, bool bAsync = true,
+		const std::map<std::string, MediaRecord>* cachedRecords = nullptr);
 
 
 	//Export albums tracks information to a Database
-	bool ExportToDatabase(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path);
+	bool ExportToDatabase(std::shared_ptr<DirectoryContentEntryList> albumListPtr,
+		std::filesystem::path path,
+		const std::optional<std::filesystem::path>& libraryRoot = std::nullopt);
 
 	// load albums from a Json file
 	std::shared_ptr<DirectoryContentEntryList> LoadAlbumsFromJSON(std::filesystem::path dirPath);
 	//Save album list and metadata to JSON file
-	bool SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path);
+	bool SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr,
+		std::filesystem::path path, const std::filesystem::path& libraryRoot);
 
 
 

@@ -1,0 +1,310 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AudioFormatConverter media catalog batch",
+  "description": "A generated JSON scan batch containing album folders and loss-aware per-file metadata records.",
+  "$comment": "Schema v2 uses TagLib for native tag reading and linked FFmpeg libraries for container properties/chapters and optional decode analysis. Keep rawTags for source-scoped values and tags for searchable normalized multi-values. Missing technical values are unknown, not zero. Catalog, integrity and analysis are distinct scan tiers.",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/album"
+  },
+  "$defs": {
+    "album": {
+      "type": "object",
+      "description": "A discovered directory containing one or more accepted audio files.",
+      "required": ["Album Path", "Library Root", "Folder", "Tracks"],
+      "properties": {
+        "Album Path": {
+          "type": "string",
+          "description": "Absolute source directory path used for display and duplicate-folder navigation."
+        },
+        "Library Root": {
+          "type": "string",
+          "description": "Absolute source library root; combined with album-relative file paths for stable database identity."
+        },
+        "Folder": {
+          "type": "string",
+          "description": "Directory leaf name; descriptive only and not a stable identifier."
+        },
+        "Tracks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/mediaRecord"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "mediaRecord": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "file",
+        "technical",
+        "tags",
+        "rawTags",
+        "pictures",
+        "chapters",
+        "integrity",
+        "findings",
+        "support",
+        "audioAnalysis"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 2,
+          "description": "Version of this per-file catalog record, independent of the database schema version."
+        },
+        "file": {
+          "type": "object",
+          "required": ["relativePath", "sizeBytes", "format"],
+          "properties": {
+            "relativePath": {
+              "type": "string",
+              "description": "Path of the audio file relative to its album directory."
+            },
+            "sizeBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Filesystem size; this is not the encoded audio payload size."
+            },
+            "modifiedUtc": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Filesystem modification time when available; it is not a content identity."
+            },
+            "format": {
+              "type": "string",
+              "description": "Container format name reported by the linked FFmpeg libraries."
+            }
+          },
+          "additionalProperties": false
+        },
+        "technical": {
+          "type": "object",
+          "description": "Observed technical properties. Omitted values were unavailable from the reader.",
+          "properties": {
+            "durationSeconds": { "type": "number", "minimum": 0 },
+            "bitRateKbps": { "type": "integer", "minimum": 0 },
+            "sampleRateHz": { "type": "integer", "minimum": 1 },
+            "channels": { "type": "integer", "minimum": 1 },
+            "declaredBitsPerSample": { "type": "integer", "minimum": 1 },
+            "totalSamples": { "type": "integer", "minimum": 0 },
+            "flacMd5": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$",
+              "description": "FLAC stream-declared PCM MD5, not a file hash or independent verification."
+            },
+            "tagVendor": {
+              "type": "string",
+              "description": "Vorbis-comment vendor string when present."
+            }
+          },
+          "additionalProperties": false
+        },
+        "tags": {
+          "type": "object",
+          "description": "Normalized searchable tags. Every key maps to an array because tags can repeat.",
+          "propertyNames": { "minLength": 1 },
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "rawTags": {
+          "type": "array",
+          "description": "TagLib-exposed native tag entries, retaining tag scope, key, extraction ordinal, and frame qualifiers where available. Ordinals are not guaranteed to match on-disk ordering for map-based formats.",
+          "items": {
+            "type": "object",
+            "required": ["scope", "key", "value", "ordinal"],
+            "properties": {
+              "scope": { "type": "string", "minLength": 1 },
+              "key": { "type": "string", "minLength": 1 },
+              "value": { "type": "string" },
+              "ordinal": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Order in which the reader enumerated the entry; not necessarily original on-disk order."
+              },
+              "frame": { "type": "string" },
+              "description": { "type": "string" },
+              "language": { "type": "string" },
+              "encoding": { "type": "integer" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "pictures": {
+          "type": "array",
+          "description": "Embedded picture descriptors; image bytes are not duplicated into catalog JSON.",
+          "items": {
+            "type": "object",
+            "required": ["sizeBytes"],
+            "properties": {
+              "type": { "type": "integer" },
+              "mime": { "type": "string" },
+              "description": { "type": "string" },
+              "width": { "type": "integer", "minimum": 0 },
+              "height": { "type": "integer", "minimum": 0 },
+              "sizeBytes": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "chapters": {
+          "type": "array",
+          "description": "Container-level chapter boundaries and chapter tags when exposed by FFmpeg libraries.",
+          "items": {
+            "type": "object",
+            "required": ["tags"],
+            "properties": {
+              "id": { "type": "integer" },
+              "timeBase": { "type": "string" },
+              "start": { "type": "integer" },
+              "startSeconds": { "type": "number", "minimum": 0 },
+              "end": { "type": "integer" },
+              "endSeconds": { "type": "number", "minimum": 0 },
+              "tags": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "integrity": {
+          "type": "object",
+          "description": "Optional full-decode checks. Status not_run means no decode was attempted; it is not a pass.",
+          "required": ["status", "decodeErrors"],
+          "properties": {
+            "status": {
+              "enum": ["ok", "partial", "failed", "unsupported", "not_run"],
+              "description": "Integrity tier result, separate from tag extraction.",
+              "examples": ["ok", "failed"],
+              "$comment": "Decode errors do not erase successfully extracted metadata.",
+              "x-ai-hint": "Only status=ok means every requested integrity check passed. not_run is not evidence of a clean file."
+            },
+            "decodedSamples": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Decoded samples per channel, not total interleaved scalar values.",
+              "examples": [96000],
+              "$comment": "Compare with FLAC STREAMINFO total samples when available.",
+              "x-ai-hint": "This is a decoder observation; use it to detect truncation when compared with declared totalSamples."
+            },
+            "decodeErrors": { "type": "integer", "minimum": 0 },
+            "firstErrorPosition": {
+              "type": "integer",
+              "description": "First known byte offset or packet timestamp associated with a decode failure.",
+              "x-ai-hint": "The value is decoder/container-relative evidence, not necessarily a precise corrupt-byte location."
+            },
+            "flacMd5Matches": {
+              "type": "boolean",
+              "description": "Whether decoded integer PCM matched a nonzero FLAC STREAMINFO MD5.",
+              "x-ai-hint": "Absent means the source MD5 was missing, zero/unset, or unsupported; it is not a pass."
+            },
+            "fileSha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "SHA-256 of the complete source file.",
+              "x-ai-hint": "Changes when tags or container metadata change."
+            },
+            "pcmSha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "SHA-256 of interleaved decoded sample bytes as emitted by the selected decoder.",
+              "x-ai-hint": "Useful for comparing retagged copies in the same decoder environment; not a universal codec-independent PCM fingerprint."
+            },
+            "error": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "findings": {
+          "type": "array",
+          "description": "Explicit validation and heuristic findings; absence of a finding is not proof of quality.",
+          "items": {
+            "type": "object",
+            "required": ["code", "severity", "confidence", "evidence"],
+            "properties": {
+              "code": { "type": "string" },
+              "severity": { "enum": ["error", "warning", "info"] },
+              "confidence": { "enum": ["low", "medium", "high"] },
+              "evidence": { "type": "string" }
+            },
+            "additionalProperties": false,
+            "x-ai-hint": "Treat each finding as evidence-backed and heuristic where applicable; confidence is not certainty."
+          }
+        },
+        "support": {
+          "type": "object",
+          "required": ["tags", "nativeInventory", "decode", "chapters"],
+          "properties": {
+            "tags": {
+              "enum": ["supported", "unsupported"],
+              "description": "Whether TagLib exposed a metadata tag interface for the file."
+            },
+            "nativeInventory": {
+              "enum": ["complete", "partial", "unsupported"],
+              "description": "Whether every native metadata block/frame was enumerated; partial is not lossless."
+            },
+            "decode": {
+              "enum": ["verified", "failed", "unsupported", "not_run"],
+              "description": "Full audio decode status. Metadata probing alone must remain not_run."
+            },
+            "chapters": {
+              "enum": ["supported", "unsupported"],
+              "description": "Whether chapter metadata is read using the linked FFmpeg libraries."
+            }
+          },
+          "additionalProperties": false
+        },
+        "audioAnalysis": {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": {
+              "enum": ["complete", "partial", "failed", "not_run"],
+              "description": "Do not interpret missing measurements as a zero-valued result.",
+              "x-ai-hint": "partial means some optional analysis is not measured or unavailable; consult each measurement."
+            },
+            "tier": {
+              "enum": ["catalog", "integrity", "analysis"],
+              "description": "Requested scan tier.",
+              "x-ai-hint": "Catalog records contain tags only; integrity and analysis tiers perform a full decode."
+            },
+            "measurements": {
+              "type": "object",
+              "description": "Method-specific measured signal values; units are encoded in each field name.",
+              "additionalProperties": { "type": "number" },
+              "x-ai-hint": "These are measured from decoded audio, unlike tags such as ReplayGain which are claims."
+            },
+            "method": {
+              "type": "string",
+              "description": "Analyzer/version used to derive the numeric measurements."
+            },
+            "clippedSamples": { "type": "integer", "minimum": 0 },
+            "usedBits": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Observed integer-sample precision after accounting for decoder left-shift.",
+              "x-ai-hint": "This detects zero-padded low bits only; it is not effective resolution or proof of genuine high-resolution mastering."
+            },
+            "usedBitsStatus": {
+              "enum": ["ok", "unsupported", "unavailable"],
+              "x-ai-hint": "Float/lossy formats are unsupported; silence yields unavailable rather than a fabricated bit depth."
+            }
+          },
+          "additionalProperties": true
+        },
+        "error": {
+          "type": "string",
+          "description": "Reader diagnostic when the record is retained despite incomplete extraction."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -21,10 +21,14 @@ const std::string kConfigurationHelp =
     "  MetadataSidecars.Format (binary|json, default binary): original FLAC metadata archive written next to converted audio as .flac-metadata or readable .flac-metadata.json.\n"
     "  MetadataSidecars.ConvertToFlac / ConvertToMp3 (disabled|optional|required, default disabled): sidecar policy per conversion target; optional runs may turn sidecars off (menu prompt or --no-metadata-sidecar), required runs reject that request. Without a sidecar, metadata the output cannot carry stops the conversion.\n"
     "  LogLevel (integer 0-6, default 1): subcommand logging level (trace, debug, info, warn, err, critical, off).\n"
-    "  UseAsyncFFmpegCalls (bool, default true): parallel metadata reads while scanning.\n"
+    "  UseAsyncMetadataReads (bool, default true): parallel TagLib metadata reads while scanning; legacy UseAsyncFFmpegCalls is also accepted.\n"
+    "  Incremental (bool, default true): reuse metadata records when path, size and modification time are unchanged.\n"
+    "  CatalogExtensions (array, default [.flac,.mp3]): accepted scan extensions; TagLib supports additional formats when explicitly enabled.\n"
     "  MetadataScanMaxThreads (integer >=0, default 0): per-album metadata worker cap; 0 uses hardware concurrency (fallback 4).\n"
-    "  UseFFmpegLibraryAPI (bool, default true): use FFmpeg libraries rather than the ffprobe executable for metadata.\n"
-    "  ExtraAudioQualityMetrics (bool, default false): include extended audio-quality analysis for duplicate matches.\n"
+    "  UseFFmpegLibraryAPI (deprecated): ignored; metadata re-probes always use FFmpeg libraries.\n"
+    "  ScanTier (catalog|integrity|analysis, default catalog): default metadata scan depth; scan --tier overrides it.\n"
+    "  DecodeWorkers (integer >=0, default 0): separate full-decode worker cap; 0 uses at most 4 workers.\n"
+    "  ExtraAudioQualityMetrics (bool, default false): deprecated compatibility setting; use ScanTier analysis.\n"
     "  MinMatchingTracksForDuplicate (integer, default 1): minimum matching tracks for a duplicate candidate.\n"
     "  SizeMatchPercentageThreshold (integer, default 3): track-size matching tolerance, in percent.\n"
     "  RecursionDirectorySearchDepth (integer, default 10): maximum directory depth for scans.\n"
@@ -115,9 +119,15 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
             return value.empty() ? "output directory must not be empty" : std::string{};
         })
         ->each([&options](const std::string&) { options.outputDirectorySpecified = true; });
+    scan->add_flag("--full-rescan", options.fullRescan,
+        "Ignore cached JSON metadata and reread every audio file.");
+    scan->add_option("--tier", options.scanTier,
+        "Override configured scan tier: catalog, integrity, or analysis.")
+        ->check(CLI::IsMember({ "catalog", "integrity", "analysis" }))
+        ->each([&options](const std::string&) { options.scanTierSpecified = true; });
     add_config_option(scan, options);
     scan->footer(command_footer(
-        "Inputs: one audio library directory. Output: <output-dir>/<library-name>/media_out_<library-name>_<part>.json. A completed scan replaces the previous generated JSON set only after the new set is ready.",
+        "Inputs: one audio library directory. Output: <output-dir>/<library-name>/media_out_<library-name>_<part>.json. Unchanged files reuse prior metadata when Incremental is enabled; --full-rescan forces rereads. --tier selects catalog, integrity, or analysis processing. A completed scan replaces the previous generated JSON set only after the new set is ready.",
         "  FlacConvert scan \"D:\\Music\"\n"
         "  FlacConvert scan \"D:\\Music\" --output-dir \"E:\\Catalog\""));
     scan->callback([&options] { options.action = CommandAction::Scan; });
@@ -153,7 +163,7 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
         ->each([&options](const std::string&) { options.outputDirectorySpecified = true; });
     add_config_option(databaseImport, options);
     databaseImport->footer(command_footer(
-        "Inputs: a directory containing generated album JSON files. Output: <output-dir>/<library-name>/media_out_<library-name>.db. Import is transactional; existing databases receive the imported rows.",
+        "Inputs: schema-v2 catalog JSON files. Output: <output-dir>/<library-name>/catalog-v2.sqlite. Import is transactional; old-format databases are left untouched.",
         "  FlacConvert db import \"C:\\tmp\\Music\"\n"
         "  FlacConvert db import \"C:\\tmp\\Music\" --output-dir \"E:\\Catalog\""));
     databaseImport->callback([&options] { options.action = CommandAction::DatabaseImport; });

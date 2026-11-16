@@ -23,6 +23,9 @@ struct CommandLineOptions
     bool overwrite{ false };
     bool noMetadataSidecar{ false };
     bool openDuplicateFolders{ false };
+    bool fullRescan{ false };
+    std::string scanTier{ "catalog" };
+    bool scanTierSpecified{ false };
     ConversionOptions conversion;
 };
 

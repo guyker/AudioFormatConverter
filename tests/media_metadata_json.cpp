@@ -62,10 +62,33 @@ int main() {
         require(roundTripped.chapters.size() == 1 && roundTripped.chapters[0].tags->at("title") == "Chapter",
             "Chapter tags did not round-trip");
 
+        std::string controlCharacters;
+        for (int value = 0; value <= 0x1f; ++value) {
+            controlCharacters.push_back(static_cast<char>(value));
+        }
+        FFprobeOutput controlMetadata;
+        controlMetadata.format.tags = JsonUtils::Tags{{controlCharacters, controlCharacters}};
+        controlMetadata.streams.emplace_back();
+        const auto controlJson = MediaTrack::toJsonString(controlMetadata);
+        rapidjson::Document controlDocument;
+        controlDocument.Parse(controlJson.data(), controlJson.size());
+        require(!controlDocument.HasParseError(), "Control characters made serialized metadata invalid");
+        const auto controlRoundTrip = MediaTrack::ParseFFprobeInformation(controlDocument);
+        require(controlRoundTrip.format.tags &&
+            controlRoundTrip.format.tags->at(controlCharacters) == controlCharacters,
+            "Control characters in metadata tag keys or values did not round-trip");
+        require(!controlDocument["format"].HasMember("nb_streams") &&
+            !controlDocument["streams"][0].HasMember("index"),
+            "Unavailable metadata values were serialized as fabricated defaults");
+        require(controlDocument.HasMember("audio_analysis") &&
+            controlDocument["audio_analysis"]["status"] == "not_run",
+            "Audio analysis status was not explicitly marked as not run");
+
         std::string settingsError;
         auto settings = AppSettingsJson::LoadForCommandLine(std::nullopt, settingsError);
         require(settings != nullptr, "Could not initialize test settings");
-        settings->UseFFmpegLibraryAPI = true;
+        require(settings->toJsonString().find("UseFFmpegLibraryAPI") == std::string::npos,
+            "Deprecated UseFFmpegLibraryAPI setting was serialized");
         const auto missingFile = std::filesystem::temp_directory_path() /
             ("afc-metadata-error-" +
                 std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".flac");
@@ -73,14 +96,6 @@ int main() {
         require(failedRead.error.has_value(), "Metadata read error was discarded");
         require(failedRead.error->find("Failed to open input") != std::string::npos,
             "Metadata read did not preserve the FFmpeg failure reason");
-
-        settings->UseFFmpegLibraryAPI = false;
-        const auto failedProbe = MediaTrack::ReadMetadataInfoFromFile(missingFile);
-        require(failedProbe.error.has_value(), "ffprobe error was discarded");
-        require(failedProbe.error->find("ffprobe exited with status") != std::string::npos,
-            "ffprobe failure status was not preserved");
-        require(failedProbe.error->find("No such file or directory") != std::string::npos,
-            "ffprobe diagnostic was not preserved");
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

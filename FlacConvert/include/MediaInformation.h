@@ -83,27 +83,27 @@ struct Format {
 
     std::optional<std::string> url; // The filename or URL of the media file
 
-    int ctx_flags{ 0 };
-    int nb_streams{ 0 }; // Number of streams, non-negative integer, e.g., 1 [0 (no streams)]
-	int nb_programs{ 0 }; // Number of programs, non-negative integer, e.g., 0
-    unsigned int nb_stream_groups{ 0 }; //OPTIONAL ????
+    std::optional<int> ctx_flags;
+    std::optional<int> nb_streams; // Number of streams, non-negative integer.
+	std::optional<int> nb_programs; // Number of programs, non-negative integer, e.g., 0
+    std::optional<unsigned int> nb_stream_groups;
 	
-    unsigned int nb_chapters{ 0 }; // Number of chapters and array of chapter metadata. Some music files (e.g., audiobooks, long mixes) have chapters.
+    std::optional<unsigned int> nb_chapters; // Some music files (e.g., audiobooks, long mixes) have chapters.
 
-    enum AVCodecID audio_codec_id { AV_CODEC_ID_NONE }; // ID of the audio codec (e.g., AV_CODEC_ID_MP3, AV_CODEC_ID_FLAC).
+    std::optional<AVCodecID> audio_codec_id; // ID of the audio codec (e.g., AV_CODEC_ID_MP3, AV_CODEC_ID_FLAC).
     std::optional<std::string> audio_codec_name;
 
-	std::string format_name; // Container format short name, e.g., "flac", "mp3"
-	std::string format_long_name; // Container format descriptive name, e.g., "raw FLAC"
+	std::optional<std::string> format_name; // Container format short name, e.g., "flac", "mp3"
+	std::optional<std::string> format_long_name; // Container format descriptive name, e.g., "raw FLAC"
     std::optional<double> start_time; // Start time in seconds, optional
     std::optional<double> duration; // Duration in seconds, string with decimal, e.g., "123.456789", optional - { AV_NOPTS_VALUE if empry/unknown}
 	std::optional<int64_t> bit_rate; // Overall bitrate in bits/s, string with integer, e.g., "960000", optional
 
-    unsigned int packet_size{ 0 }; //The default packet size (often used for streaming data)
-    int max_delay{ -1 }; //The maximum demuxing or buffering delay (usually in microseconds)
-    int flags{ 0 };
+    std::optional<unsigned int> packet_size; //The default packet size (often used for streaming data)
+    std::optional<int> max_delay; //The maximum demuxing or buffering delay (usually in microseconds)
+    std::optional<int> flags;
 
-	int probe_score{ 0 }; // Format detection confidence, integer 0-100
+	std::optional<int> probe_score; // Format detection confidence, integer 0-100
 
 	std::optional<JsonUtils::Tags> tags; // Container metadata tags, e.g., "artist": "The Beatles", optional
 };
@@ -113,7 +113,7 @@ struct Stream {
     std::optional<int> frame_size; // Added to fix the error
     std::optional<int64_t> nb_frames;
 
-    int index{ 0 }; // Stream index, non-negative integer, e.g., 0
+    std::optional<int> index; // Stream index, non-negative integer, e.g., 0
     std::optional<std::string> codec_name; // Codec name, e.g., "flac", "mp3", optional
     std::optional<std::string> codec_long_name; // Codec descriptive name, e.g., "FLAC (Free Lossless Audio Codec)", optional
     std::optional<std::string> codec_type; // Stream type, e.g., "audio", "video", optional
@@ -180,7 +180,7 @@ struct Program {
 
 // Represents an entry in the "chapters" array (-show_chapters)
 struct Chapter {
-    int64_t id{ 0 }; // Chapter ID, integer, e.g., 0
+    std::optional<int64_t> id; // Chapter ID, integer, e.g., 0
     std::optional<std::string> time_base; // Time base, e.g., "1/1000", optional
     std::optional<int64_t> start; // Start time in time base units, integer, e.g., 0, optional
     std::optional<std::string> start_time; // Start time in seconds, e.g., "0.000000", optional

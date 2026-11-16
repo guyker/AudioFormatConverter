@@ -20,6 +20,7 @@
 #include "rapidjson/ostreamwrapper.h"
 
 #include "MediaInformation.h"
+#include "MediaRecord.h"
 #include "sqlite3.h"
 
 namespace fs = std::filesystem;
@@ -58,6 +59,8 @@ struct MediaTrack
 
 	//keep it last for agregation
 	std::optional<std::string> LastErroString;
+	std::optional<MediaRecord> catalogRecord;
+	std::optional<std::filesystem::path> libraryRoot;
 
 
 	static bool IsFileConvertable(std::filesystem::path filePath)
@@ -69,13 +72,7 @@ struct MediaTrack
 		return filePath.has_extension() && (fileExtensionList.find(fileExtension) != fileExtensionList.end());
 	}
 
-	static bool IsFileAcceptedAudioFile(std::filesystem::path filePath)
-	{
-		static const std::set<std::u8string> fileExtensionList = { u8".flac", u8".mp3" };
-		auto fileExtension = FileExtension(filePath);
-
-		return filePath.has_extension() && (fileExtensionList.find(fileExtension) != fileExtensionList.end());
-	}
+	static bool IsFileAcceptedAudioFile(std::filesystem::path filePath);
 
 	static std::u8string FileExtension(const fs::path& path)
 	{

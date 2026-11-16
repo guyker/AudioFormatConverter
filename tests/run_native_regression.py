@@ -11,8 +11,8 @@ def run(*arguments):
 
 
 def main():
-    if len(sys.argv) != 4 or sys.argv[1] not in {"preservation", "warnings"}:
-        raise SystemExit("usage: run_native_regression.py preservation|warnings TEST_EXECUTABLE FFMPEG")
+    if len(sys.argv) != 4 or sys.argv[1] not in {"preservation", "warnings", "taglib"}:
+        raise SystemExit("usage: run_native_regression.py preservation|warnings|taglib TEST_EXECUTABLE FFMPEG")
 
     kind, executable, ffmpeg = sys.argv[1:]
     with tempfile.TemporaryDirectory(prefix="afc-native-test-") as temporary:
@@ -28,7 +28,7 @@ def main():
                 "-bits_per_raw_sample", "24", "-c:v", "copy", "-disposition:v", "attached_pic",
                 "-metadata", "title=Native regression", fixture)
             run(executable, fixture, root)
-        else:
+        elif kind == "warnings":
             sine = root / "sine.wav"
             silence = root / "silence.wav"
             run(ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i",
@@ -38,6 +38,22 @@ def main():
                 "anullsrc=channel_layout=stereo:sample_rate=48000", "-t", "1",
                 "-c:a", "pcm_s16le", silence)
             run(executable, sine, silence)
+        else:
+            flac = root / "fixture.flac"
+            mp3 = root / "fixture.mp3"
+            cover = root / "cover.png"
+            run(ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i",
+                "color=c=red:s=16x16", "-frames:v", "1", cover)
+            run(ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i",
+                "sine=frequency=997:sample_rate=48000:duration=1", "-i", cover,
+                "-map", "0:a", "-map", "1:v", "-c:a", "flac", "-sample_fmt", "s32",
+                "-c:v", "copy", "-disposition:v", "attached_pic",
+                "-metadata", "title=TagLib smoke", flac)
+            run(ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i",
+                "sine=frequency=997:sample_rate=48000:duration=1", "-i", cover,
+                "-map", "0:a", "-map", "1:v", "-metadata", "title=TagLib smoke",
+                "-c:a", "libmp3lame", "-c:v", "copy", "-disposition:v", "attached_pic", mp3)
+            run(executable, flac, mp3)
 
 
 if __name__ == "__main__":

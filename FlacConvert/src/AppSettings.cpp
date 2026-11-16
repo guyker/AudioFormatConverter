@@ -8,6 +8,9 @@
 #include <optional>
 #include <format>
 #include <string>
+#include <algorithm>
+#include <cctype>
+#include <set>
 #include <system_error>
 
 #include <spdlog/spdlog.h>
@@ -259,9 +262,18 @@ std::string AppSettingsJson::toJsonString() const {
     doc.AddMember("MetadataSidecars", sidecarObj, allocator);
 
     doc.AddMember("LogLevel", LogLevel, allocator);
-    doc.AddMember("UseAsyncFFmpegCalls", UseAsyncFFmpegCalls, allocator);
+    doc.AddMember("UseAsyncMetadataReads", UseAsyncMetadataReads, allocator);
+    doc.AddMember("Incremental", Incremental, allocator);
+    doc.AddMember("ScanTier", rapidjson::Value(ScanTier.c_str(), allocator), allocator);
     doc.AddMember("MetadataScanMaxThreads", MetadataScanMaxThreads, allocator);
-    doc.AddMember("UseFFmpegLibraryAPI", UseFFmpegLibraryAPI, allocator);
+    doc.AddMember("DecodeWorkers", DecodeWorkers, allocator);
+    rapidjson::Value catalogExtensions(rapidjson::kArrayType);
+    for (const auto& extension : CatalogExtensions) {
+        rapidjson::Value value;
+        value.SetString(extension.c_str(), static_cast<rapidjson::SizeType>(extension.size()), allocator);
+        catalogExtensions.PushBack(value, allocator);
+    }
+    doc.AddMember("CatalogExtensions", catalogExtensions, allocator);
     doc.AddMember("ExtraAudioQualityMetrics", ExtraAudioQualityMetrics, allocator);
     doc.AddMember("MinMatchingTracksForDuplicate", MinMatchingTracksForDuplicate, allocator);
     doc.AddMember("SizeMatchPercentageThreshold", SizeMatchPercentageThreshold, allocator);
@@ -311,6 +323,55 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
         (!doc["MetadataScanMaxThreads"].IsInt() || doc["MetadataScanMaxThreads"].GetInt() < 0)) {
         spdlog::error("MetadataScanMaxThreads must be a non-negative integer.");
         return false;
+    }
+    if (doc.HasMember("DecodeWorkers") &&
+        (!doc["DecodeWorkers"].IsInt() || doc["DecodeWorkers"].GetInt() < 0)) {
+        spdlog::error("DecodeWorkers must be a non-negative integer.");
+        return false;
+    }
+    if (doc.HasMember("CatalogExtensions")) {
+        const auto& extensions = doc["CatalogExtensions"];
+        static const std::set<std::string> supportedExtensions{
+            ".flac", ".mp3", ".m4a", ".mp4", ".ogg", ".oga", ".opus",
+            ".wv", ".ape", ".wav", ".aif", ".aiff"
+        };
+        if (!extensions.IsArray() || extensions.Empty()) {
+            spdlog::error("CatalogExtensions must be a non-empty array of supported extensions.");
+            return false;
+        }
+        std::vector<std::string> parsedExtensions;
+        std::set<std::string> seenExtensions;
+        for (const auto& value : extensions.GetArray()) {
+            if (!value.IsString()) {
+                spdlog::error("CatalogExtensions entries must be strings.");
+                return false;
+            }
+            std::string extension = value.GetString();
+            std::ranges::transform(extension, extension.begin(), [](unsigned char character) {
+                return static_cast<char>(std::tolower(character));
+            });
+            if (!supportedExtensions.contains(extension)) {
+                spdlog::error("Unsupported CatalogExtensions entry '{}'.", extension);
+                return false;
+            }
+            if (!seenExtensions.insert(extension).second) {
+                spdlog::error("Duplicate CatalogExtensions entry '{}'.", extension);
+                return false;
+            }
+            parsedExtensions.push_back(std::move(extension));
+        }
+        CatalogExtensions = std::move(parsedExtensions);
+    }
+    if (doc.HasMember("ScanTier") &&
+        (!doc["ScanTier"].IsString() ||
+            (std::string_view(doc["ScanTier"].GetString()) != "catalog" &&
+                std::string_view(doc["ScanTier"].GetString()) != "integrity" &&
+                std::string_view(doc["ScanTier"].GetString()) != "analysis"))) {
+        spdlog::error("ScanTier must be catalog, integrity, or analysis.");
+        return false;
+    }
+    if (doc.HasMember("UseFFmpegLibraryAPI")) {
+        spdlog::warn("UseFFmpegLibraryAPI is deprecated and ignored; metadata re-probes always use FFmpeg libraries.");
     }
 
     if (doc.HasMember("Version") && doc["Version"].IsString()) {
@@ -409,14 +470,37 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
     if (doc.HasMember("LogLevel") && doc["LogLevel"].IsInt()) {
         LogLevel = doc["LogLevel"].GetInt();
     }
-    if (doc.HasMember("UseAsyncFFmpegCalls") && doc["UseAsyncFFmpegCalls"].IsBool()) {
-        UseAsyncFFmpegCalls = doc["UseAsyncFFmpegCalls"].GetBool();
+    if (doc.HasMember("UseAsyncMetadataReads") && doc["UseAsyncMetadataReads"].IsBool()) {
+        UseAsyncMetadataReads = doc["UseAsyncMetadataReads"].GetBool();
+    }
+    if (doc.HasMember("Incremental")) {
+        if (!doc["Incremental"].IsBool()) {
+            spdlog::error("Incremental must be a boolean.");
+            return false;
+        }
+        Incremental = doc["Incremental"].GetBool();
+    }
+    if (doc.HasMember("ScanTier")) {
+        ScanTier = doc["ScanTier"].GetString();
+    }
+    else if (doc.HasMember("UseAsyncFFmpegCalls") && doc["UseAsyncFFmpegCalls"].IsBool()) {
+        UseAsyncMetadataReads = doc["UseAsyncFFmpegCalls"].GetBool();
     }
     if (doc.HasMember("MetadataScanMaxThreads")) {
         MetadataScanMaxThreads = doc["MetadataScanMaxThreads"].GetInt();
     }
-    if (doc.HasMember("UseFFmpegLibraryAPI") && doc["UseFFmpegLibraryAPI"].IsBool()) {
-        UseFFmpegLibraryAPI = doc["UseFFmpegLibraryAPI"].GetBool();
+    if (doc.HasMember("DecodeWorkers")) {
+        DecodeWorkers = doc["DecodeWorkers"].GetInt();
+    }
+    if (doc.HasMember("CatalogExtensions")) {
+        CatalogExtensions.clear();
+        for (const auto& extension : doc["CatalogExtensions"].GetArray()) {
+            CatalogExtensions.emplace_back(extension.GetString());
+            std::ranges::transform(CatalogExtensions.back(), CatalogExtensions.back().begin(),
+                [](unsigned char character) {
+                    return static_cast<char>(std::tolower(character));
+                });
+        }
     }
     if (doc.HasMember("ExtraAudioQualityMetrics") && doc["ExtraAudioQualityMetrics"].IsBool()) {
         ExtraAudioQualityMetrics = doc["ExtraAudioQualityMetrics"].GetBool();

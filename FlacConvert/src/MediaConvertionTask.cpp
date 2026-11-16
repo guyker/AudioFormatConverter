@@ -186,11 +186,16 @@ std::vector<std::string> conversionArguments(const ConversionOptions& options,
         const auto& codec = stream.codec_name;
         if (codec && (*codec == "mjpeg" || *codec == "png" || *codec == "gif" ||
             *codec == "tiff" || *codec == "bmp" || *codec == "webp" || *codec == "jpegxl")) {
-            arguments.insert(arguments.end(), { "-map", "0:" + std::to_string(stream.index) });
+            if (stream.index) {
+                arguments.insert(arguments.end(), { "-map", "0:" + std::to_string(*stream.index) });
+            }
+            else {
+                spdlog::warn("Picture stream has no index and cannot be mapped; original native FLAC pictures remain in the metadata sidecar.");
+            }
         }
         else {
             spdlog::warn("Picture stream {} cannot be embedded; original native FLAC pictures remain in the metadata sidecar.",
-                stream.index);
+                stream.index.value_or(-1));
         }
     }
     arguments.insert(arguments.end(), { "-map_metadata", "0", "-map_chapters", "0", "-c:v", "copy" });

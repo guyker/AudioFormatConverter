@@ -13,6 +13,10 @@ a positive value caps concurrent metadata workers per album. `MetadataSidecars` 
 JSON comments to explain these options. `disabled` never writes a sidecar; `optional` writes by default and can
 be disabled for a run; `required` always writes and rejects disable requests. The menu may prompt for a config
 directory and offer to create a default file.
+`UseAsyncMetadataReads` controls parallel TagLib reads during scan; the previous `UseAsyncFFmpegCalls` key remains
+accepted as an alias. `CatalogExtensions` defaults to `.flac` and `.mp3`; additional supported TagLib formats can be
+enabled explicitly. `UseFFmpegLibraryAPI` is deprecated, ignored with a warning, and omitted when configuration is
+saved.
 
 ## Entry points
 - `AppSettings.cpp#AppSettingsJson::LoadForCommandLine` (CLI), `AppSettings.cpp#AppSettingsJson::AppSetting` (menu)
@@ -27,6 +31,8 @@ directory and offer to create a default file.
 - [ ] With no config file, `convert` works using defaults.
 - [ ] `AlbumsSplitThreshold: 0` is rejected.
 - [ ] `MetadataScanMaxThreads: -1` is rejected; `0` selects automatic concurrency.
+- [ ] `CatalogExtensions` accepts only supported extensions and matching is case-insensitive.
+- [ ] A legacy `UseFFmpegLibraryAPI` setting is ignored and not written back.
 - [ ] `MetadataSidecars` config comments load; omitting its target policies defaults both to `disabled`.
 - [ ] `MetadataSidecars.Format: "xml"` is rejected; `--no-metadata-sidecar` fails when the target policy is
       `required` and succeeds without a sidecar when it is `optional`.

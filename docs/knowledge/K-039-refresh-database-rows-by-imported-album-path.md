@@ -3,7 +3,8 @@ id: K-039
 kind: decision
 title: "Refresh database rows by imported album path"
 area: [FlacConvert]
-status: active
+status: superseded
+superseded_by: K-040
 created: 2026-11-15
 reviewed: 2026-11-15
 cites:

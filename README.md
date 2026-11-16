@@ -6,16 +6,20 @@
 <h2>high-level overview of what the program does:</h2>
 
 <h3>Configuration Management:</h3>
-1. It reads application settings (like output directories, logging levels, FFmpeg usage preferences, and media library paths) from config.json.
+1. It reads application settings (output directories, logging levels, scan formats/tiers, conversion sidecar policy, and media library paths) from config.json.
 2. Explicit commands use built-in defaults when no config is found; only the temporary legacy menu can prompt for a config location.
 
 <h3>Audio File Discovery and Metadata Collection:</h3>
 1. It scans specified directories (recursively) to find audio files (FLAC, MP3, etc.).
   
-<h3>For each audio file, it uses FFprobe (either via a shell command or directly through FFmpeg's C API) to extract detailed metadata, including:</h3>
-1. Standard tags (artist, album, title, year, genre, etc.).
-2. Technical format information (codec, sample rate, bitrate, duration, file size).
-3. Optionally, detailed audio quality metrics like peak amplitude, RMS, dynamic range, and noise floor.
+<h3>For each accepted audio file, the scan uses TagLib to extract catalog metadata, including:</h3>
+1. Normalized multi-value tags and source-scoped raw tag entries (including ID3 frame identity where available).
+2. Technical format properties, filesystem size/time, and embedded picture descriptors.
+3. Explicit reader support and analysis status; the default `catalog` tier does not decode audio, while the
+   `integrity` and `analysis` tiers perform decode-based checks and signal measurements.
+Generated scan batches use schema v2, documented in `docs/schemas/media-catalog-v2.schema.json`.
+`CatalogExtensions` defaults to `.flac` and `.mp3`; M4A/MP4, Ogg/Opus, WavPack/APE, WAV and AIFF can be enabled
+explicitly. Native metadata inventory is partial for FLAC/MP3 and unsupported for those additional formats.
 
 <h3>Album Organization and Persistence:</h3>
 1. It organizes the discovered audio files into "albums" based on their folder structure.
@@ -85,7 +89,7 @@ CMake is the shared build system for Windows and Linux; Ninja runs the builds an
 The Visual Studio solution remains available as a Windows fallback during migration.
 
 Initialize submodules (`git submodule update --init --recursive`) and install CMake 3.28+, Ninja, Python 3
-and a C++20 toolchain.
+and a C++20 toolchain. CMake fetches the pinned TagLib revision for metadata catalog reads.
 
 On Windows, use an x64 Visual Studio Developer PowerShell/Command Prompt. Set the `FFmpeg_ROOT` environment
 variable or pass `-DFFmpeg_ROOT=<path>` for a matching shared FFmpeg SDK containing `include`, `lib` and `bin`
@@ -136,6 +140,7 @@ FlacConvert convert "D:\Music" --output-dir "E:\Converted"
 FlacConvert convert "D:\Music" --to mp3 --output-dir "E:\MP3"
 FlacConvert convert "D:\Music" --to mp3 --mp3-quality 2 --output-dir "E:\MP3"
 FlacConvert scan "D:\Music" --output-dir "E:\Catalog"
+FlacConvert scan "D:\Music" --full-rescan --tier integrity
 FlacConvert duplicates "E:\Catalog\Music"
 FlacConvert db import "E:\Catalog\Music" --output-dir "E:\Databases"
 ```
@@ -144,8 +149,12 @@ FlacConvert db import "E:\Catalog\Music" --output-dir "E:\Databases"
 whose properties cannot be verified, are rejected and fail the command. Accepted audio is converted to 16-bit, 44.1 kHz
 FLAC with triangular dithering. Existing destinations cause an error unless `--overwrite` is specified. `scan` replaces
 the generated JSON output for that library only after a new scan
-completes. `duplicates` reports matches without opening folders; pass `--open` to open matched folders in Explorer.
-`db import` creates or updates a library-named SQLite database.
+completes. Incremental scans reuse metadata when file path, size, and modification time are unchanged; pass
+`--full-rescan` to force rereads. `--tier` accepts `catalog` (default), `integrity`, or `analysis`; configure the
+menu/default tier with `ScanTier`. `CatalogExtensions` selects accepted scan formats; only FLAC and MP3 are enabled
+by default. `DecodeWorkers` caps the independent full-decode stage. `duplicates` reports matches without opening folders; pass `--open` to open matched
+folders in Explorer. `db import` creates or updates a library-named `catalog-v2.sqlite` database and leaves legacy
+`.db` files untouched.
 
 ### FLAC output preservation
 

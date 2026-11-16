@@ -21,14 +21,18 @@ target_include_directories(rapidjson_headers SYSTEM INTERFACE
 add_library(FlacConvertCore STATIC
     src/AlbumCollection.cpp
     src/AppSettings.cpp
+    src/CatalogDatabase.cpp
     src/CommonUtils.cpp
     src/CommandLine.cpp
+    src/DecodeAnalyzer.cpp
     src/ffmpeg.cpp
     src/FolderConvert.cpp
     src/FlacMetadata.cpp
     src/PreservationAudit.cpp
     src/JsonUtils.cpp
     src/MediaAlbum.cpp
+    src/MediaRecordJson.cpp
+    src/TagLibReader.cpp
     src/MediaConvertionAsyncTask.cpp
     src/MediaConvertionTask.cpp
     src/MediaTrack.cpp
@@ -42,6 +46,7 @@ target_link_libraries(FlacConvertCore
         FFmpeg::FFmpeg
         SQLite::SQLite3
         spdlog_headers
+        TagLib::TagLib
         Threads::Threads
     PRIVATE
         rapidjson_headers)

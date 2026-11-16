@@ -772,7 +772,7 @@ class ConversionTests(unittest.TestCase):
                 self.assertIn("BACK for the menu, EXIT to quit", result.stdout)
                 self.assertEqual(result.stdout.count("Select run option"), 2 if "BACK" in response else 1)
         self.assertFalse((self.output / "MP3").exists())
-        self.assertFalse((self.output / "Library" / "media_out_Library.db").exists())
+        self.assertFalse((self.output / "Library" / "catalog-v2.sqlite").exists())
 
     def test_back_from_flac_preview_can_select_mp3_without_replacing_sources(self):
         result = self.legacy(
@@ -867,6 +867,7 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
 
     def test_scan_preview_reuses_discovery_and_cancels_without_writes(self):
+        self.track.unlink()
         album = self.source / "album"
         album.mkdir()
         (album / "one.flac").write_bytes(self.fixture.read_bytes())
@@ -902,13 +903,17 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Operation preview: import JSON into SQLite", result.stdout)
         self.assertIn("Database: new file", result.stdout)
-        db = self.output / "Library" / "media_out_Library.db"
+        db = self.output / "Library" / "catalog-v2.sqlite"
         self.assertFalse(db.exists())
         result = self.legacy(libraries, "4\nRUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assert_summary(result, "Completed", 1, "JSON batches imported")
         self.assertIn("Output location: " + str(db), result.stdout)
         self.assertTrue(db.exists())
+        self.assertFalse((self.output / "Library" / "media_out_Library.db").exists())
+        with closing(sqlite3.connect(db)) as connection:
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
         before_db = db.read_bytes()
         result = self.legacy(libraries, "4\n\n")
         self.assertEqual(result.returncode, 0)
@@ -958,10 +963,8 @@ class ConversionTests(unittest.TestCase):
         (self.output / "Library" / "media_out_Library_2.json").write_bytes(b"{invalid JSON")
         result = self.legacy(libraries, "4\nRUN\n")
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assert_summary(result, "Partially completed", 1, "JSON batches imported", failed=1)
-        database = self.output / "Library" / "media_out_Library.db"
-        with closing(sqlite3.connect(database)) as connection:
-            self.assertGreater(connection.execute("SELECT count(*) FROM TracksDB").fetchone()[0], 0)
+        self.assert_summary(result, "Failed", 0, "JSON batches imported", failed=1)
+        self.assertFalse((self.output / "Library" / "catalog-v2.sqlite").exists())
 
     def test_flac_partial_completion_preserves_sources_and_completed_outputs(self):
         second = self.work / "second"
@@ -1077,7 +1080,7 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(second_json.read_bytes(), before)
         self.assertTrue((self.output / "First" / "media_out_First_1.json").exists())
 
-    def test_database_import_preserves_legacy_unnamed_library_paths(self):
+    def test_database_import_uses_default_name_for_unnamed_libraries(self):
         album = self.source / "album"
         album.mkdir()
         (album / "one.flac").write_bytes(self.fixture.read_bytes())
@@ -1085,99 +1088,125 @@ class ConversionTests(unittest.TestCase):
             [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}], "2\nRUN\n")
         self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
         albums = (self.output / "Library" / "media_out_Library_1.json").read_bytes()
-        for name, stem in ((None, self.source.name), ("", "")):
-            destination = self.output / stem
-            destination.mkdir(exist_ok=True)
-            json_path = destination / f"media_out_{stem}_1.json"
-            json_path.write_bytes(albums)
+        stem = self.source.name
+        destination = self.output / stem
+        destination.mkdir(exist_ok=True)
+        json_path = destination / f"media_out_{stem}_1.json"
+        json_path.write_bytes(albums)
+        for name in (None, ""):
             library = {"isActive": True, "mediaPath": str(self.source)}
             if name is not None:
                 library["mediaName"] = name
             result = self.legacy([library], "4\nRUN\n")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertTrue((destination / f"media_out_{stem}.db").exists())
+            self.assertTrue((destination / "catalog-v2.sqlite").exists())
 
     def test_database_import_round_trips_string_fields_without_format_tags(self):
-        json_directory = self.work / "metadata"
-        json_directory.mkdir()
-        json_file = json_directory / "media_out_metadata_1.json"
-        json_file.write_text(json.dumps([{
-            "Album Path": str(self.source / "album"),
-            "Folder": "album",
-            "Tracks": [{
-                "format": {
-                    "filename": str(self.track),
-                    "size": "1234",
-                    "nb_streams": 1,
-                    "format_name": "flac",
-                    "format_long_name": "raw FLAC",
-                    "start_time": "0.250000",
-                    "duration": "1.250000",
-                    "bit_rate": "320000",
-                    "probe_score": 100
-                },
-                "streams": [{
-                    "index": 0,
-                    "codec_name": "flac",
-                    "codec_type": "audio",
-                    "sample_rate": "44100",
-                    "channels": 2,
-                    "channel_layout": "stereo",
-                    "bits_per_sample": 16,
-                    "bit_rate": "320000",
-                    "time_base": "1/44100",
-                    "r_frame_rate": "0/0",
-                    "avg_frame_rate": "0/0",
-                    "start_pts": 11025,
-                    "start_time": 0.25,
-                    "duration_ts": 55125,
-                    "nb_frames": "12",
-                    "disposition": {"attached_pic": 0}
-                }]
-            }]
-        }]), encoding="utf-8")
+        album = self.source / "album"
+        album.mkdir()
+        (album / "one.flac").write_bytes(self.fixture.read_bytes())
+        (album / "two.flac").write_bytes(self.fixture.read_bytes())
+        scanned = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "2\nRUN\n")
+        self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
+        json_directory = self.output / "Library"
+        json_file = json_directory / "media_out_Library_1.json"
 
         database_output = self.work / "database-output"
+        old_database = database_output / "Library" / "media_out_Library.db"
+        old_database.parent.mkdir(parents=True)
+        old_database.write_bytes(b"legacy database must remain untouched")
         result = run(ARGS.converter, "db", "import", json_directory, "--output-dir", database_output)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        database = database_output / "metadata" / "media_out_metadata.db"
+        database = database_output / "Library" / "catalog-v2.sqlite"
         with closing(sqlite3.connect(database)) as connection:
-            row = connection.execute(
-                "SELECT file_size, start_time, duration, bit_rate, title, stream1_index, "
-                "stream1_codec_name, stream1_sample_rate, stream1_channels, stream1_start_time "
-                "FROM TracksDB").fetchone()
-        self.assertEqual(row[0], 1234)
-        self.assertAlmostEqual(row[1], 0.25)
-        self.assertAlmostEqual(row[2], 1.25)
-        self.assertEqual(row[3], 320000)
-        self.assertIsNone(row[4])
-        self.assertEqual(row[5:9], (0, "flac", "44100", 2))
-        self.assertAlmostEqual(row[9], 0.25)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 2)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM files").fetchone()[0], 3)
+            self.assertGreater(connection.execute("SELECT COUNT(*) FROM schema_docs").fetchone()[0], 0)
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM catalog_meta WHERE key='ai_guide'").fetchone()[0], 1)
+            objects = connection.execute(
+                "SELECT name, type FROM sqlite_schema "
+                "WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%'").fetchall()
+            for name, object_type in objects:
+                self.assertEqual(connection.execute(
+                    "SELECT COUNT(*) FROM schema_docs WHERE object_name=? AND column_name=''",
+                    (name,)).fetchone()[0], 1, name)
+                for column in connection.execute(f'PRAGMA table_info("{name}")'):
+                    self.assertEqual(connection.execute(
+                        "SELECT COUNT(*) FROM schema_docs WHERE object_name=? AND column_name=?",
+                        (name, column[1])).fetchone()[0], 1, f"{name}.{column[1]}")
 
         data = json.loads(json_file.read_text(encoding="utf-8"))
-        data[0]["Tracks"][0]["format"]["tags"] = {"title": "Updated title"}
+        first_album = next(album for album in data
+                           if any(track["file"]["relativePath"] == "one.flac"
+                                  for track in album["Tracks"]))
+        first_track = next(track for track in first_album["Tracks"]
+                           if track["file"]["relativePath"] == "one.flac")
+        first_track["tags"]["title"] = ["Updated title"]
         json_file.write_text(json.dumps(data), encoding="utf-8")
         result = run(ARGS.converter, "db", "import", json_directory, "--output-dir", database_output)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         with closing(sqlite3.connect(database)) as connection:
-            row_count, title = connection.execute(
-                "SELECT COUNT(*), MAX(title) FROM TracksDB").fetchone()
-        self.assertEqual(row_count, 1)
+            row_count = connection.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+            title = connection.execute(
+                "SELECT t.value FROM tags t JOIN files f ON f.id=t.file_id "
+                "WHERE f.relative_path='album/one.flac' AND t.field='title'").fetchone()[0]
+        self.assertEqual(row_count, 3)
         self.assertEqual(title, "Updated title")
 
         with closing(sqlite3.connect(database)) as connection:
             connection.execute(
-                "CREATE TRIGGER reject_refresh BEFORE INSERT ON TracksDB "
+                "CREATE TRIGGER reject_refresh BEFORE INSERT ON files "
+                "WHEN NEW.relative_path LIKE '%one.flac' "
                 "BEGIN SELECT RAISE(ABORT, 'test refresh failure'); END")
-        data[0]["Tracks"][0]["format"]["tags"] = {"title": "Failed refresh"}
+        first_track["tags"]["title"] = ["Failed refresh"]
         json_file.write_text(json.dumps(data), encoding="utf-8")
         result = run(ARGS.converter, "db", "import", json_directory, "--output-dir", database_output)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         with closing(sqlite3.connect(database)) as connection:
-            row_count, title = connection.execute(
-                "SELECT COUNT(*), MAX(title) FROM TracksDB").fetchone()
-        self.assertEqual(row_count, 1)
+            row_count = connection.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+            title = connection.execute(
+                "SELECT t.value FROM tags t JOIN files f ON f.id=t.file_id "
+                "WHERE f.relative_path='album/one.flac' AND t.field='title'").fetchone()[0]
+        self.assertEqual(row_count, 3)
         self.assertEqual(title, "Updated title")
+        self.assertEqual(old_database.read_bytes(), b"legacy database must remain untouched")
+
+        with closing(sqlite3.connect(database)) as connection:
+            connection.execute("DROP TRIGGER reject_refresh")
+        first_album["Tracks"] = [track for track in first_album["Tracks"]
+                                 if track["file"]["relativePath"] == "one.flac"]
+        json_file.write_text(json.dumps(data), encoding="utf-8")
+        result = run(ARGS.converter, "db", "import", json_directory, "--output-dir", database_output)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        with closing(sqlite3.connect(database)) as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM files").fetchone()[0], 2)
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM files WHERE relative_path LIKE '%two.flac'").fetchone()[0], 0)
+
+    def test_database_import_refuses_incompatible_catalog_without_mutation(self):
+        album = self.source / "album"
+        album.mkdir()
+        (album / "one.flac").write_bytes(self.fixture.read_bytes())
+        scanned = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "2\nRUN\n")
+        self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
+
+        database_output = self.work / "incompatible-database-output"
+        database = database_output / "Library" / "catalog-v2.sqlite"
+        database.parent.mkdir(parents=True)
+        with closing(sqlite3.connect(database)) as connection:
+            connection.execute("CREATE TABLE old_catalog (value TEXT)")
+            connection.execute("PRAGMA user_version=1")
+        before = database.read_bytes()
+        result = run(ARGS.converter, "db", "import", self.output / "Library",
+                     "--output-dir", database_output)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Refusing a database", result.stdout + result.stderr)
+        self.assertEqual(database.read_bytes(), before)
 
     def test_database_import_rejects_malformed_track_without_partial_rows(self):
         json_directory = self.work / "malformed-metadata"
@@ -1197,11 +1226,8 @@ class ConversionTests(unittest.TestCase):
         result = run(ARGS.converter, "db", "import", json_directory, "--output-dir", database_output)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
-        database = database_output / "malformed-metadata" / "media_out_malformed-metadata.db"
-        if database.exists():
-            with closing(sqlite3.connect(database)) as connection:
-                row_count = connection.execute("SELECT COUNT(*) FROM TracksDB").fetchone()[0]
-            self.assertEqual(row_count, 0)
+        database = database_output / "malformed-metadata" / "catalog-v2.sqlite"
+        self.assertFalse(database.exists())
 
     def test_manual_scan_matches_explicit_scan_across_batches(self):
         for name in ("a", "b", "c"):
@@ -1222,9 +1248,15 @@ class ConversionTests(unittest.TestCase):
                          "--config", self.work / "config.json")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             explicit_files = sorted((explicit_output / self.source.name).glob("media_out_*_[12].json"))
-            self.assertEqual([json.loads(path.read_text(encoding="utf-8")) for path in explicit_files], expected)
+            actual = [json.loads(path.read_text(encoding="utf-8")) for path in explicit_files]
+            for batches in (expected, actual):
+                for batch in batches:
+                    for album in batch:
+                        for track in album["Tracks"]:
+                            track["file"].pop("modifiedUtc", None)
+            self.assertEqual(actual, expected)
 
-    def test_ffprobe_scan_treats_shell_metacharacters_as_filename_data(self):
+    def test_taglib_scan_treats_shell_metacharacters_as_filename_data(self):
         album = self.source / "album"
         album.mkdir()
         marker = self.work / "ffprobe-shell-marker"
@@ -1247,12 +1279,14 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         output = self.output / self.source.name / f"media_out_{self.source.name}_1.json"
         data = json.loads(output.read_text(encoding="utf-8"))
-        self.assertEqual(len(data[0]["Tracks"]), 1)
-        self.assertEqual(data[0]["Tracks"][0]["format"]["tags"]["title"], "Title \u97f3\u697d")
+        tracks = [track for album in data for track in album["Tracks"]]
+        track = next(track for track in tracks
+                     if Path(track["file"]["relativePath"]).name == filename)
+        self.assertEqual(track["tags"]["title"], ["Title \u97f3\u697d"])
         if os.name != "nt":
             self.assertFalse(marker.exists(), "Filename was interpreted as shell syntax")
 
-    def test_async_ffprobe_scan_retains_raw_stream_fields(self):
+    def test_async_taglib_scan_retains_catalog_properties(self):
         album = self.source / "album"
         album.mkdir()
         (album / "track.flac").write_bytes(self.fixture.read_bytes())
@@ -1267,10 +1301,41 @@ class ConversionTests(unittest.TestCase):
 
         output = self.output / self.source.name / f"media_out_{self.source.name}_1.json"
         data = json.loads(output.read_text(encoding="utf-8"))
-        stream = data[0]["Tracks"][0]["streams"][0]
-        self.assertEqual(stream["codec_long_name"], "FLAC (Free Lossless Audio Codec)")
+        track = next(track for album in data for track in album["Tracks"]
+                     if Path(track["file"]["relativePath"]).name == "track.flac")
+        self.assertEqual(track["technical"]["sampleRateHz"], 48000)
+        self.assertEqual(track["technical"]["channels"], 2)
+        self.assertEqual(track["support"]["chapters"], "supported")
+
+    def test_incremental_scan_reuses_matching_records_and_full_rescan_bypasses_cache(self):
+        self.track.unlink()
+        album = self.source / "album"
+        album.mkdir()
+        track = album / "cached.flac"
+        track.write_bytes(self.fixture.read_bytes())
+
+        first = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                    "--config", self.config)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        second = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                     "--config", self.config)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn("Reused 1 unchanged metadata record(s)", second.stdout + second.stderr)
+
+        stat = track.stat()
+        os.utime(track, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5_000_000_000))
+        changed = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                      "--config", self.config)
+        self.assertEqual(changed.returncode, 0, changed.stdout + changed.stderr)
+        self.assertNotIn("Reused 1 unchanged metadata record(s)", changed.stdout + changed.stderr)
+
+        full = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                   "--config", self.config, "--full-rescan")
+        self.assertEqual(full.returncode, 0, full.stdout + full.stderr)
+        self.assertNotIn("Incremental scan cache contains", full.stdout + full.stderr)
 
     def test_metadata_scan_worker_limit_handles_thousand_track_album(self):
+        self.track.unlink()
         album = self.source / "album"
         album.mkdir()
         fixture_bytes = self.fixture.read_bytes()
@@ -1326,7 +1391,8 @@ class ConversionTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(output.read_bytes(), previous)
 
-    def test_scan_retains_chapters_and_attached_picture_disposition(self):
+    def test_scan_retains_chapters_and_picture_descriptors(self):
+        self.track.unlink()
         album = self.source / "album"
         album.mkdir()
         chapter_metadata = self.work / "chapters.txt"
@@ -1355,17 +1421,15 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         output = self.output / self.source.name / f"media_out_{self.source.name}_1.json"
         data = json.loads(output.read_text(encoding="utf-8"))
-        tracks = {Path(track["format"]["filename"]).name: track for track in data[0]["Tracks"]}
+        tracks = {Path(track["file"]["relativePath"]).name: track for track in data[0]["Tracks"]}
         self.assertEqual(len(tracks["chapters.flac"]["chapters"]), 2)
-        self.assertEqual(tracks["chapters.flac"]["chapters"][0]["tags"]["title"], "First chapter")
-        chapter_stream = tracks["chapters.flac"]["streams"][0]
-        self.assertEqual(chapter_stream["r_frame_rate"], "0/0")
-        self.assertTrue(chapter_stream["time_base"].count("/") == 1)
-        artwork_stream = next(stream for stream in tracks["artwork.flac"]["streams"]
-                              if stream["codec_type"] == "video")
-        self.assertEqual(artwork_stream["disposition"]["attached_pic"], 1)
+        self.assertEqual(
+            tracks["chapters.flac"]["chapters"][0]["tags"]["title"],
+            ["First chapter"])
+        self.assertTrue(tracks["artwork.flac"]["pictures"])
 
     def test_scan_sort_uses_album_artist_order(self):
+        self.track.unlink()
         for folder, artist in (("a", "Zebra"), ("b", "Alpha"), ("c", "Beta")):
             album = self.source / folder
             album.mkdir()
@@ -1378,7 +1442,7 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         output = self.output / self.source.name / f"media_out_{self.source.name}_1.json"
         data = json.loads(output.read_text(encoding="utf-8"))
-        artists = [album["Tracks"][0]["format"]["tags"]["album_artist"] for album in data]
+        artists = [album["Tracks"][0]["tags"]["albumArtists"][0] for album in data]
         self.assertEqual(artists, ["Alpha", "Beta", "Zebra"])
 
     def test_manual_flac_wav_conversion_retains_non_flac_source(self):

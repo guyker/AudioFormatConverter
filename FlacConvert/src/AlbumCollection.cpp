@@ -3,14 +3,19 @@
 
 
 #include <filesystem>
+#include <array>
 #include <vector>
 #include <string>
+#include <string_view>
 #include <execution>
 #include <mutex>
 #include <iostream>
 #include <map>
+#include <set>
 #include <algorithm>
 #include <charconv>
+#include <cstdint>
+#include <limits>
 #include <ranges>
 #include <format>
 #include <spdlog/spdlog.h>
@@ -23,6 +28,7 @@
 #include <iostream>
 
 #include "AlbumCollection.h"
+#include "CatalogDatabase.h"
 #include "BoundedTaskRunner.h"
 #include "MediaTrack.h"
 #include "FolderConvert.h"
@@ -30,7 +36,10 @@
 #include "PlatformUtils.h"
 
 #include "CommonUtils.h"
+#include "DecodeAnalyzer.h"
 #include "FFmpeg.h"
+#include "MediaRecordJson.h"
+#include "TagLibReader.h"
 
 #include "sqlite3.h"
 
@@ -38,6 +47,286 @@
 namespace fs = std::filesystem;
 using namespace rapidjson;
 
+namespace {
+
+FFprobeOutput makeLegacyProjection(const MediaRecord& record)
+{
+    FFprobeOutput output;
+    output.format.filename = record.relativePath;
+    output.format.fs_file_size = record.sizeBytes;
+    if (record.sizeBytes <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        output.format.file_size = static_cast<std::int64_t>(record.sizeBytes);
+    }
+    output.format.format_name = record.format;
+    output.format.duration = record.durationSeconds;
+    if (record.bitRateKbps && *record.bitRateKbps > 0) {
+        output.format.bit_rate = static_cast<std::int64_t>(*record.bitRateKbps) * 1000;
+    }
+    output.format.nb_streams = 1;
+    JsonUtils::Tags tags;
+    for (const auto& [key, values] : record.tags) {
+        if (values.empty()) continue;
+        std::string legacyKey = key;
+        if (key == "artists") legacyKey = "artist";
+        else if (key == "albumArtists") legacyKey = "album_artist";
+        else if (key == "trackNumber") legacyKey = "track";
+        else if (key == "discNumber") legacyKey = "disc";
+        std::string joined;
+        for (const auto& value : values) {
+            if (!joined.empty()) joined += ";";
+            joined += value;
+        }
+        tags[legacyKey] = std::move(joined);
+    }
+    output.format.tags = std::move(tags);
+
+    Stream stream;
+    stream.index = 0;
+    stream.codec_name = record.format;
+    stream.codec_type = "audio";
+    if (record.sampleRateHz) stream.sample_rate = std::to_string(*record.sampleRateHz);
+    stream.channels = record.channels;
+    stream.bits_per_sample = record.declaredBitsPerSample;
+    if (record.bitRateKbps) {
+        stream.bit_rate = static_cast<std::int64_t>(*record.bitRateKbps) * 1000;
+    }
+    output.streams.push_back(std::move(stream));
+    return output;
+}
+
+bool cacheRecordMatches(const std::filesystem::path& path, const MediaRecord& record)
+{
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec || size != record.sizeBytes || !record.modifiedUtc) return false;
+    const auto modifiedUtc = CommonUtils::fileModificationTimeUtc(path);
+    return modifiedUtc && *modifiedUtc == *record.modifiedUtc;
+}
+
+int scanTierRank(const std::string& tier)
+{
+    if (tier == "analysis") return 2;
+    if (tier == "integrity") return 1;
+    return 0;
+}
+
+struct ParsedNumberTag
+{
+    int number{ 0 };
+    std::optional<int> total;
+};
+
+std::optional<ParsedNumberTag> parseNumberTag(std::string_view value)
+{
+    const auto slash = value.find('/');
+    const auto numberText = value.substr(0, slash);
+    int number = 0;
+    const auto numberResult = std::from_chars(
+        numberText.data(), numberText.data() + numberText.size(), number);
+    if (numberResult.ec != std::errc{} || numberResult.ptr != numberText.data() + numberText.size() ||
+        number <= 0) {
+        return std::nullopt;
+    }
+
+    ParsedNumberTag parsed{ number, std::nullopt };
+    if (slash != std::string_view::npos) {
+        const auto totalText = value.substr(slash + 1);
+        int total = 0;
+        const auto totalResult = std::from_chars(
+            totalText.data(), totalText.data() + totalText.size(), total);
+        if (totalResult.ec != std::errc{} ||
+            totalResult.ptr != totalText.data() + totalText.size() || total < number) {
+            return std::nullopt;
+        }
+        parsed.total = total;
+    }
+    return parsed;
+}
+
+void addAlbumFinding(TrackInfoList& tracks, const std::string& code, const std::string& evidence)
+{
+    for (auto& track : tracks) {
+        if (!track.catalogRecord) continue;
+        const auto exists = std::ranges::any_of(track.catalogRecord->findings,
+            [&](const CatalogFinding& finding) { return finding.code == code; });
+        if (!exists) {
+            track.catalogRecord->findings.push_back({ code, "warning", "high", evidence });
+        }
+    }
+}
+
+bool isAlbumFindingCode(std::string_view code)
+{
+    static constexpr std::array albumFindingCodes{
+        std::string_view("DUPLICATE_TRACK_NUMBER"),
+        std::string_view("TRACK_NUMBER_GAP"),
+        std::string_view("INCONSISTENT_TRACK_TOTAL"),
+        std::string_view("TRACK_TOTAL_MISMATCH"),
+        std::string_view("DISC_NUMBER_GAP"),
+        std::string_view("INCONSISTENT_DISC_TOTAL"),
+        std::string_view("DISC_TOTAL_MISMATCH")
+    };
+    return code.starts_with("INCONSISTENT_ALBUM_TAG_") ||
+        std::ranges::any_of(albumFindingCodes, [&](std::string_view candidate) {
+            return code == candidate;
+        });
+}
+
+void applyScanTier(const std::filesystem::path& path, MediaRecord& record)
+{
+    const auto tier = AppSettingsJson::AppSetting()->ScanTier;
+    record.scanTier = tier;
+    if (tier == "catalog") return;
+    DecodeAnalyzer::Analyze(path, record, tier == "analysis");
+    if (tier == "analysis") {
+        record.analysisStatus = record.signal.status == "failed" ? "failed" : "partial";
+    }
+}
+
+void validateAlbumTags(TrackInfoList& tracks)
+{
+    for (auto& track : tracks) {
+        if (!track.catalogRecord) continue;
+        std::erase_if(track.catalogRecord->findings, [](const CatalogFinding& finding) {
+            return isAlbumFindingCode(finding.code);
+        });
+    }
+
+    static constexpr std::array fields{
+        std::string_view("album"), std::string_view("albumArtists"),
+        std::string_view("releaseDate"), std::string_view("label")
+    };
+    for (const auto field : fields) {
+        std::set<std::string> values;
+        for (const auto& track : tracks) {
+            if (!track.catalogRecord) continue;
+            const auto tag = track.catalogRecord->tags.find(std::string(field));
+            if (tag == track.catalogRecord->tags.end()) continue;
+            for (const auto& value : tag->second) {
+                if (!value.empty()) values.insert(value);
+            }
+        }
+        if (values.size() < 2) continue;
+
+        const auto findingCode = "INCONSISTENT_ALBUM_TAG_" + std::string(field);
+        for (auto& track : tracks) {
+            if (!track.catalogRecord) continue;
+            const auto& findings = track.catalogRecord->findings;
+            if (std::ranges::any_of(findings, [&](const CatalogFinding& finding) {
+                    return finding.code == findingCode;
+                })) {
+                continue;
+            }
+            track.catalogRecord->findings.push_back({
+                findingCode,
+                "warning",
+                "high",
+                "Different normalized '" + std::string(field) +
+                    "' values were found among tracks in this album folder."
+            });
+        }
+    }
+
+    std::map<int, std::set<int>> trackNumbersByDisc;
+    std::map<int, std::set<int>> trackTotalsByDisc;
+    std::set<int> discNumbers;
+    std::set<int> discTotals;
+    std::set<int> discsWithUnnumberedTracks;
+    bool duplicateTrackNumber = false;
+    for (const auto& track : tracks) {
+        if (!track.catalogRecord) continue;
+        int discNumber = 1;
+        if (const auto discs = track.catalogRecord->tags.find("discNumber");
+            discs != track.catalogRecord->tags.end() && !discs->second.empty()) {
+            if (const auto parsed = parseNumberTag(discs->second.front())) {
+                discNumber = parsed->number;
+                if (parsed->total) discTotals.insert(*parsed->total);
+            }
+        }
+        discNumbers.insert(discNumber);
+        bool hasValidTrackNumber = false;
+        if (const auto numbers = track.catalogRecord->tags.find("trackNumber");
+            numbers != track.catalogRecord->tags.end()) {
+            for (const auto& value : numbers->second) {
+                if (const auto parsed = parseNumberTag(value)) {
+                    hasValidTrackNumber = true;
+                    if (!trackNumbersByDisc[discNumber].insert(parsed->number).second) {
+                        duplicateTrackNumber = true;
+                    }
+                    if (parsed->total) {
+                        trackTotalsByDisc[discNumber].insert(*parsed->total);
+                    }
+                }
+            }
+            if (!hasValidTrackNumber) discsWithUnnumberedTracks.insert(discNumber);
+        }
+    }
+
+    if (duplicateTrackNumber) {
+        addAlbumFinding(tracks, "DUPLICATE_TRACK_NUMBER",
+            "More than one track in the same disc has the same track number.");
+    }
+    bool trackNumberGap = false;
+    for (const auto& [disc, numbers] : trackNumbersByDisc) {
+        (void)disc;
+        if (numbers.size() < 2) continue;
+        for (auto number = *numbers.begin(); number < *numbers.rbegin();) {
+            ++number;
+            if (!numbers.contains(number)) {
+                trackNumberGap = true;
+                break;
+            }
+        }
+    }
+    if (trackNumberGap) {
+        addAlbumFinding(tracks, "TRACK_NUMBER_GAP",
+            "Track numbering has a gap between the lowest and highest number on a disc.");
+    }
+
+    bool inconsistentTrackTotals = false;
+    bool trackTotalMismatch = false;
+    for (const auto& [disc, totals] : trackTotalsByDisc) {
+        inconsistentTrackTotals = inconsistentTrackTotals || totals.size() > 1;
+        if (totals.size() == 1 && !discsWithUnnumberedTracks.contains(disc)) {
+            trackTotalMismatch = trackTotalMismatch ||
+                trackNumbersByDisc[disc].size() != static_cast<std::size_t>(*totals.begin());
+        }
+    }
+    if (inconsistentTrackTotals) {
+        addAlbumFinding(tracks, "INCONSISTENT_TRACK_TOTAL",
+            "Tracks on the same disc declare different track totals.");
+    }
+    else if (trackTotalMismatch) {
+        addAlbumFinding(tracks, "TRACK_TOTAL_MISMATCH",
+            "The number of uniquely numbered tracks on a disc differs from its declared total.");
+    }
+
+    bool discNumberGap = false;
+    if (discNumbers.size() > 1) {
+        for (auto number = *discNumbers.begin(); number < *discNumbers.rbegin();) {
+            ++number;
+            if (!discNumbers.contains(number)) {
+                discNumberGap = true;
+                break;
+            }
+        }
+    }
+    if (discNumberGap) {
+        addAlbumFinding(tracks, "DISC_NUMBER_GAP",
+            "Disc numbering has a gap between the lowest and highest disc number.");
+    }
+    if (discTotals.size() > 1) {
+        addAlbumFinding(tracks, "INCONSISTENT_DISC_TOTAL",
+            "Tracks declare different totals for the number of discs.");
+    }
+    else if (discTotals.size() == 1 &&
+        discNumbers.size() != static_cast<std::size_t>(*discTotals.begin())) {
+        addAlbumFinding(tracks, "DISC_TOTAL_MISMATCH",
+            "The number of distinct discs differs from the declared disc total.");
+    }
+}
+
+}
 
 
 
@@ -49,6 +338,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
 
     // Map to collect tracks per folder
     std::map<fs::path, TrackInfoList> albumMap;
+    albumMap[albumCollectionDirPath];
 
     spdlog::info("First pass: Find all folders, Please wait (might take a few minutes)...");
 
@@ -127,7 +417,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
             if (albumListPtr->size() >= batchSize) {
                 if (bIncludeMetadata) {
                     spdlog::info("Collecting metadata for batch {}/{}...", batchCount + 1, totalBatchCount);
-                    ImportMetadata(albumListPtr, albumIndex, albumMap.size(), AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+                    ImportMetadata(albumListPtr, albumIndex, albumMap.size(), AppSettingsJson::AppSetting()->UseAsyncMetadataReads);
                 }
                 albumIndex += batchSize;
                 spdlog::info("Yielding batch {} with {} albums", ++batchCount, albumListPtr->size());
@@ -142,7 +432,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     if (!albumListPtr->empty()) {
         if (bIncludeMetadata) {
             spdlog::info("Collecting metadata for final batch {}/{}...", batchCount + 1, totalBatchCount);
-            ImportMetadata(albumListPtr, albumIndex, albumMap.size(), AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+            ImportMetadata(albumListPtr, albumIndex, albumMap.size(), AppSettingsJson::AppSetting()->UseAsyncMetadataReads);
         }
         if (albumMap.size() > AppSettingsJson::AppSetting()->AlbumsSplitThreshold)
         {
@@ -246,7 +536,7 @@ MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollect
     if (bIncludeMetadata) {
         spdlog::info("Third pass: Collecting Metadata...");
 
-        auto nAlbums = ImportMetadata(albumListPtr, 0, 0, AppSettingsJson::AppSetting()->UseAsyncFFmpegCalls);
+        auto nAlbums = ImportMetadata(albumListPtr, 0, 0, AppSettingsJson::AppSetting()->UseAsyncMetadataReads);
 
         spdlog::info("Third pass: Completed, ffmpeg issues: {} [{}]", FFmpeg::get_ffmpeg_logs().size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();
@@ -319,13 +609,14 @@ std::pair<long long, long long> AlbumCollection::GetNumberOfItemsInFolder(std::f
 
 
 //Load all media media information from the preloaded album list (albumList)
-size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr, size_t currentCount, size_t totalCount, bool bAsync)
+size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList> albumListPtr,
+    size_t currentCount, size_t totalCount, bool bAsync,
+    const std::map<std::string, MediaRecord>* cachedRecords)
 {
 	if (albumListPtr == nullptr || albumListPtr->empty())
 	{
 		return 0;
 	}
-
     size_t albumCount = 0;
        
     for (auto& [albumPath, trackList] : *albumListPtr)
@@ -350,64 +641,111 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         struct MetadataTarget
         {
             std::filesystem::path path;
-            FFprobeOutput* mediaInfo;
-            std::optional<std::wstring>* mediaInfoString;
+            MediaTrack* track;
             std::optional<std::string>* lastError;
         };
         std::vector<MetadataTarget> metadataTargets;
-        if (bAsync)
-        {
-            metadataTargets.reserve(trackList.size());
-        }
+        metadataTargets.reserve(trackList.size());
 
-        for (auto& [trackName, size, mediaInfo, mediaInfoString, lastError] : trackList)
+        size_t reusedRecords = 0;
+        for (auto& track : trackList)
         {
-            std::filesystem::path trackPath = albumPath.path() / std::filesystem::path(trackName);
+            std::filesystem::path trackPath = albumPath.path() / track.trackPath;
 
             if (MediaTrack::IsValidMedia(trackPath)) {
-				auto bIncludeAudioQualityMetrics = AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics;
-                if (bAsync)
-                {
-                    metadataTargets.push_back({
-                        trackPath.lexically_normal(),
-                        &mediaInfo,
-                        &mediaInfoString,
-                        &lastError
-                    });
+                const auto cacheKey = CommonUtils::path_to_utf8(trackPath.lexically_normal());
+                const auto cached = cachedRecords == nullptr
+                    ? std::map<std::string, MediaRecord>::const_iterator{}
+                    : cachedRecords->find(cacheKey);
+                if (cachedRecords != nullptr && cached != cachedRecords->end() &&
+                    cached->second.relativePath == CommonUtils::path_to_utf8(track.trackPath) &&
+                    scanTierRank(cached->second.scanTier) >=
+                        scanTierRank(AppSettingsJson::AppSetting()->ScanTier) &&
+                    cacheRecordMatches(trackPath, cached->second)) {
+                    track.catalogRecord = cached->second;
+                    track.LastErroString.reset();
+                    track.formatInfo = makeLegacyProjection(cached->second);
+                    ++reusedRecords;
+                    continue;
                 }
-                else
-                {
-                    auto result = MediaTrack::ReadMetadataInfoFromFile(
-                        trackPath.lexically_normal().native(), bIncludeAudioQualityMetrics);
-                    mediaInfoString = std::move(result.rawJson);
-                    mediaInfo = std::move(result.mediaInfo);
-                    lastError = std::move(result.error);
-                    CommonUtils::show_progress_bar(progressInfoPtr, CommonUtils::ProgressBarType::SubProgress);
-                }
+                metadataTargets.push_back({
+                    trackPath.lexically_normal(),
+                    &track,
+                    &track.LastErroString
+                });
             }
         }
 
-        if (bAsync)
-        {
-            if (!metadataTargets.empty())
-            {
-                const auto settings = AppSettingsJson::AppSetting();
+        if (reusedRecords > 0) {
+            spdlog::info("Reused {} unchanged metadata record(s) in album '{}'.",
+                reusedRecords, CommonUtils::path_to_utf8(albumPath.path()));
+        }
+        if (!metadataTargets.empty()) {
+            const auto settings = AppSettingsJson::AppSetting();
+            if (bAsync) {
                 const unsigned int hardwareConcurrency = std::thread::hardware_concurrency();
                 const size_t automaticLimit = hardwareConcurrency == 0 ? 4 : hardwareConcurrency;
                 const size_t threadLimit = settings->MetadataScanMaxThreads > 0
                     ? static_cast<size_t>(settings->MetadataScanMaxThreads)
                     : automaticLimit;
-                const bool bIncludeAudioQualityMetrics = settings->ExtraAudioQualityMetrics;
                 BoundedTaskRunner::ForEach(metadataTargets.size(), threadLimit, [&](size_t targetIndex) {
                     auto& target = metadataTargets[targetIndex];
-                    auto result = MediaTrack::ReadMetadataInfoFromFile(
-                        target.path.native(), bIncludeAudioQualityMetrics);
-                    *target.mediaInfo = std::move(result.mediaInfo);
-                    *target.mediaInfoString = std::move(result.rawJson);
+                    auto result = TagLibReader::Read(target.path,
+                        CommonUtils::path_to_utf8(target.track->trackPath));
+                    target.track->catalogRecord = std::move(result.record);
+                    if (target.track->catalogRecord) {
+                        target.track->formatInfo = makeLegacyProjection(*target.track->catalogRecord);
+                    }
                     *target.lastError = std::move(result.error);
                 });
             }
+            else {
+                for (auto& target : metadataTargets) {
+                    auto result = TagLibReader::Read(target.path,
+                        CommonUtils::path_to_utf8(target.track->trackPath));
+                    target.track->catalogRecord = std::move(result.record);
+                    target.track->LastErroString = std::move(result.error);
+                    if (target.track->catalogRecord) {
+                        target.track->formatInfo = makeLegacyProjection(*target.track->catalogRecord);
+                    }
+                    CommonUtils::show_progress_bar(progressInfoPtr, CommonUtils::ProgressBarType::SubProgress);
+                }
+            }
         }
+
+        const auto settings = AppSettingsJson::AppSetting();
+        const int requestedTier = scanTierRank(settings->ScanTier);
+        if (requestedTier > 0) {
+            std::vector<MetadataTarget> decodeTargets;
+            decodeTargets.reserve(trackList.size());
+            for (auto& track : trackList) {
+                if (!track.catalogRecord ||
+                    scanTierRank(track.catalogRecord->scanTier) >= requestedTier) {
+                    continue;
+                }
+                decodeTargets.push_back({
+                    albumPath.path() / track.trackPath,
+                    &track,
+                    &track.LastErroString
+                });
+            }
+            if (!decodeTargets.empty()) {
+                const unsigned int hardwareConcurrency = std::thread::hardware_concurrency();
+                const size_t automaticLimit = hardwareConcurrency <= 1
+                    ? 1 : std::min<std::size_t>(4, hardwareConcurrency / 2);
+                const size_t decodeLimit = settings->DecodeWorkers > 0
+                    ? static_cast<size_t>(settings->DecodeWorkers)
+                    : automaticLimit;
+                BoundedTaskRunner::ForEach(decodeTargets.size(), decodeLimit,
+                    [&](size_t targetIndex) {
+                        auto& target = decodeTargets[targetIndex];
+                        applyScanTier(target.path, *target.track->catalogRecord);
+                        target.track->formatInfo =
+                            makeLegacyProjection(*target.track->catalogRecord);
+                    });
+            }
+        }
+        validateAlbumTags(trackList);
     }
     
     auto subProgressInfoPtr = std::make_shared<CommonUtils::ProgressBarInfo>("Processing...", albumCount, albumListPtr->size(), "Completed.", 20);
@@ -493,8 +831,14 @@ void AlbumCollection::SaveAlbumsToJSON_LasrError(std::list<MediaTrack>& mediaTra
 
         // 2. Add the file size.
         trackObj.AddMember("File Size", static_cast<unsigned long long>(track.fs_fileSize), allocator);
-        trackObj.AddMember("format_duration", static_cast<unsigned long long>(track.formatInfo.format.duration.value_or(0.0)), allocator);
-        trackObj.AddMember("format_format_name", rapidjson::Value(track.formatInfo.format.format_name.c_str(), allocator), allocator);
+        if (track.formatInfo.format.duration) {
+            trackObj.AddMember("format_duration",
+                static_cast<unsigned long long>(*track.formatInfo.format.duration), allocator);
+        }
+        if (track.formatInfo.format.format_name) {
+            trackObj.AddMember("format_format_name",
+                rapidjson::Value(track.formatInfo.format.format_name->c_str(), allocator), allocator);
+        }
         
         trackObj.AddMember("Error Reason", rapidjson::Value(track.LastErroString.value_or("***NO FOUND***").c_str(), allocator), allocator);
 
@@ -533,7 +877,8 @@ void AlbumCollection::SaveAlbumsToJSON_LasrError(std::list<MediaTrack>& mediaTra
 
 
 
-bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr, std::filesystem::path path)
+bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr,
+    std::filesystem::path path, const std::filesystem::path& libraryRoot)
 {
     rapidjson::Document mediaDoc;
     mediaDoc.SetArray(); // Top-level array for albums
@@ -552,6 +897,11 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
         rapidjson::Value albumPathStringVal;
         albumPathStringVal.SetString(albumPathString.c_str(), static_cast<SizeType>(albumPathString.size()), allocator);
         albumObj.AddMember("Album Path", albumPathStringVal, allocator);
+        const auto libraryRootString = CommonUtils::path_to_utf8(libraryRoot);
+        rapidjson::Value libraryRootValue;
+        libraryRootValue.SetString(libraryRootString.c_str(),
+            static_cast<SizeType>(libraryRootString.size()), allocator);
+        albumObj.AddMember("Library Root", libraryRootValue, allocator);
 
         rapidjson::Value albumFolderStringVal;
         albumFolderStringVal.SetString(albumFolderString.c_str(), static_cast<SizeType>(albumFolderString.size()), allocator);
@@ -562,7 +912,8 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
 
         for (auto& item : trackList)
         {
-            auto& [trackName, size, mediaInfo, mediaInfoString, lastError] = item;
+            auto& trackName = item.trackPath;
+            auto& lastError = item.LastErroString;
             std::filesystem::path trackPath = albumPath.path() / std::filesystem::path(trackName);
 
             if (MediaTrack::IsFileAcceptedAudioFile(trackPath)) {
@@ -572,20 +923,9 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                     batchHasErrors = true;
                     continue;
                 }
-                const bool hasAudioStream = std::ranges::any_of(mediaInfo.streams, [](const Stream& stream) {
-                    if (stream.codec_type != "audio" || !stream.codec_name || stream.codec_name->empty() ||
-                        !stream.sample_rate || !stream.channels || *stream.channels <= 0) {
-                        return false;
-                    }
-                    int sampleRate = 0;
-                    const auto [end, error] = std::from_chars(
-                        stream.sample_rate->data(),
-                        stream.sample_rate->data() + stream.sample_rate->size(),
-                        sampleRate);
-                    return error == std::errc{} && end == stream.sample_rate->data() + stream.sample_rate->size() &&
-                        sampleRate > 0;
-                });
-                if (!hasAudioStream) {
+                if (!item.catalogRecord || !item.catalogRecord->sampleRateHz ||
+                    *item.catalogRecord->sampleRateHz <= 0 || !item.catalogRecord->channels ||
+                    *item.catalogRecord->channels <= 0) {
                     spdlog::error("Metadata extraction produced no usable audio stream for '{}'.",
                         CommonUtils::path_to_utf8(trackPath));
                     batchHasErrors = true;
@@ -593,33 +933,8 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                 }
 
                 rapidjson::Document trackDoc;
-
-                std::string jsonString{};
-				if (mediaInfoString.has_value())
-				{
-                    jsonString = PlatformUtils::wstringToUtf8_ver2(mediaInfoString.value());
-				}
-				else
-				{
-					jsonString = MediaTrack::toJsonString(item.formatInfo);
-				}
-
-              //  std::string utf8Json = PlatformUtils::wstringToUtf8_ver2(mediaInfoString);
-
-                trackDoc.Parse(jsonString.c_str());
-                // or, more broadly, strip all control codes except \n, \r, \t
-                if (trackDoc.HasParseError() && trackDoc.GetParseError() == ParseErrorCode::kParseErrorStringInvalidEncoding) {
-                    jsonString.erase(
-                        std::remove_if(
-                            jsonString.begin(), jsonString.end(),
-                            [](unsigned char c) {
-                                return (c < 0x20) && (c != '\n') && (c != '\r') && (c != '\t');
-                            }
-                        ),
-                        jsonString.end()
-                    );
-                    trackDoc.Parse(jsonString.c_str());
-                }
+                const std::string jsonString = SerializeMediaRecord(*item.catalogRecord);
+                trackDoc.Parse(jsonString.data(), jsonString.size());
                 if (trackDoc.HasParseError()) {
                     // Get error code and message
                     rapidjson::ParseErrorCode errorCode = trackDoc.GetParseError();
@@ -651,7 +966,7 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
             mediaDoc.PushBack(albumObj, allocator);
         }
         else {
-            spdlog::error("Album '{}' has no serializable FLAC or MP3 tracks.",
+            spdlog::error("Album '{}' has no serializable tracks from the configured catalog extensions.",
                 CommonUtils::path_to_utf8(albumPath.path()));
             batchHasErrors = true;
         }
@@ -788,6 +1103,10 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
 
         std::string albumPathStr = albumVal["Album Path"].GetString();
         std::wstring albumpath = CommonUtils::utf8ToWstring(albumPathStr);
+        std::optional<std::filesystem::path> libraryRoot;
+        if (albumVal.HasMember("Library Root") && albumVal["Library Root"].IsString()) {
+            libraryRoot = CommonUtils::utf8ToWstring(albumVal["Library Root"].GetString());
+        }
 
         std::string albumFolderStr = albumVal["Folder"].GetString();
         std::wstring albumFolder = CommonUtils::utf8ToWstring(albumFolderStr);
@@ -802,8 +1121,39 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
 
         const auto& mediaTrackList = albumVal["Tracks"].GetArray();
         for (SizeType i = 0; i < mediaTrackList.Size(); i++) {
-            if (!mediaTrackList[i].IsObject() ||
-                !mediaTrackList[i].HasMember("format") || !mediaTrackList[i]["format"].IsObject()) {
+            if (!mediaTrackList[i].IsObject()) {
+                spdlog::error("Track {} in album '{}' has invalid metadata structure",
+                    i, albumPathStr);
+                return nullptr;
+            }
+            if (mediaTrackList[i].HasMember("schemaVersion")) {
+                if (!libraryRoot) {
+                    spdlog::error("Schema-v2 album '{}' is missing Library Root; rescan is required.",
+                        albumPathStr);
+                    return nullptr;
+                }
+                std::string parseError;
+                auto record = ParseMediaRecord(mediaTrackList[i], &parseError);
+                if (!record) {
+                    spdlog::error("Track {} in album '{}' has invalid catalog metadata: {}",
+                        i, albumPathStr, parseError);
+                    return nullptr;
+                }
+                std::filesystem::path relativePath = CommonUtils::utf8ToWstring(record->relativePath);
+                MediaTrack track{
+                    relativePath,
+                    record->sizeBytes,
+                    makeLegacyProjection(*record),
+                    std::nullopt,
+                    std::nullopt
+                };
+                track.catalogRecord = std::move(record);
+                track.libraryRoot = *libraryRoot;
+                trackList.push_back(std::move(track));
+                continue;
+            }
+            if (!mediaTrackList[i].HasMember("format") ||
+                !mediaTrackList[i]["format"].IsObject()) {
                 spdlog::error("Track {} in album '{}' has invalid metadata structure",
                     i, albumPathStr);
                 return nullptr;
@@ -1076,12 +1426,28 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
 
         // Extract metadata from first track
         std::string artist;
-        const auto& [trackName, size, mediaInfo, mediaInfoString, lastError] = trackList[0];
-        if (mediaInfo.format.tags && mediaInfo.format.tags->contains("album")) {
-            albumName = mediaInfo.format.tags->at("album");
-            if (mediaInfo.format.tags->contains("artist")) {
-                artist = mediaInfo.format.tags->at("artist");
+        const auto& firstTrack = trackList[0];
+        if (firstTrack.catalogRecord) {
+            const auto& tags = firstTrack.catalogRecord->tags;
+            if (const auto album = tags.find("album"); album != tags.end() && !album->second.empty()) {
+                albumName = album->second.front();
             }
+            if (const auto artists = tags.find("artists"); artists != tags.end() && !artists->second.empty()) {
+                artist = artists->second.front();
+            }
+        }
+        else if (firstTrack.formatInfo.format.tags &&
+            firstTrack.formatInfo.format.tags->contains("album")) {
+            albumName = firstTrack.formatInfo.format.tags->at("album");
+            if (firstTrack.formatInfo.format.tags->contains("artist")) {
+                artist = firstTrack.formatInfo.format.tags->at("artist");
+            }
+        }
+        const auto& trackName = firstTrack.trackPath;
+        const auto& lastError = firstTrack.LastErroString;
+        if (firstTrack.catalogRecord ||
+            (firstTrack.formatInfo.format.tags &&
+                firstTrack.formatInfo.format.tags->contains("album"))) {
             // Sanitize tags (avoid id3v2_priv.ÿþ)
             bool invalidAlbum = false;
             for (char c : albumName) {
@@ -1113,8 +1479,13 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
         // Collect sorted track durations
         std::vector<double> durations;
         durations.reserve(trackList.size());
-        for (const auto& [tName, tSize, tMediaInfo, tJson, tError] : trackList) {
-            durations.push_back(tMediaInfo.format.duration.value_or(0.0));
+        for (const auto& track : trackList) {
+            if (track.catalogRecord) {
+                durations.push_back(track.catalogRecord->durationSeconds.value_or(0.0));
+            }
+            else {
+                durations.push_back(track.formatInfo.format.duration.value_or(0.0));
+            }
         }
         std::ranges::sort(durations);
 
@@ -1170,95 +1541,13 @@ SimilarDirectoryEntryList AlbumCollection::FindDuplicationInGroup(std::shared_pt
 }
 
 
-bool AlbumCollection::ExportToDatabase(std::shared_ptr<DirectoryContentEntryList> albums, std::filesystem::path databasePath)
+bool AlbumCollection::ExportToDatabase(std::shared_ptr<DirectoryContentEntryList> albums,
+    std::filesystem::path databasePath,
+    const std::optional<std::filesystem::path>& libraryRoot)
 {
-    sqlite3* db = nullptr;
-#ifdef _WIN32
-    const auto databasePathUtf8 = CommonUtils::path_to_utf8(databasePath);
-    int rc = sqlite3_open_v2(
-        databasePathUtf8.c_str(), &db,
-        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, "win32-longpath");
-#else
-    const auto databasePathUtf8 = databasePath.u8string();
-    int rc = sqlite3_open(reinterpret_cast<const char*>(databasePathUtf8.c_str()), &db);
-#endif
-    if (rc != SQLITE_OK) {
-        spdlog::error("Cannot open database: {}", sqlite3_errmsg(db));
-        sqlite3_close(db);
+    if (!albums) {
+        spdlog::error("Cannot import a null album collection into SQLite.");
         return false;
     }
-
-    rc = sqlite3_exec(db, MediaTrack::GetCreateTableSQL().c_str(), nullptr, nullptr, nullptr);
-    if (rc != SQLITE_OK) {
-        spdlog::error("Failed to create TracksDB table: {}", sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return false;
-    }
-
-    rc = sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
-    if (rc != SQLITE_OK) {
-        spdlog::error("BEGIN TRANSACTION failed: {}", sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return false;
-    }
-
-    sqlite3_stmt* stmt = nullptr;
-    rc = sqlite3_prepare_v2(db, MediaTrack::GetInsertSQLStatement().c_str(), -1, &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        spdlog::error("Failed to prepare insert statement: {}", sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return false;
-    }
-
-    sqlite3_stmt* deleteAlbumStmt = nullptr;
-    rc = sqlite3_prepare_v2(db, "DELETE FROM TracksDB WHERE album_path = ?;", -1,
-        &deleteAlbumStmt, nullptr);
-    if (rc != SQLITE_OK) {
-        spdlog::error("Failed to prepare album replacement statement: {}", sqlite3_errmsg(db));
-        sqlite3_finalize(stmt);
-        sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
-        sqlite3_close(db);
-        return false;
-    }
-
-    for (const auto& album : *albums) {
-        const std::string albumPath = PlatformUtils::wstringToUtf8_ver2(album.path.path().wstring());
-        sqlite3_bind_text(deleteAlbumStmt, 1, albumPath.c_str(), -1, SQLITE_TRANSIENT);
-        rc = sqlite3_step(deleteAlbumStmt);
-        if (rc != SQLITE_DONE) {
-            spdlog::error("Failed to replace database records for album '{}': {}",
-                albumPath, sqlite3_errmsg(db));
-            sqlite3_finalize(deleteAlbumStmt);
-            sqlite3_finalize(stmt);
-            sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
-            sqlite3_close(db);
-            return false;
-        }
-        sqlite3_reset(deleteAlbumStmt);
-        sqlite3_clear_bindings(deleteAlbumStmt);
-    }
-    sqlite3_finalize(deleteAlbumStmt);
-
-    for (const auto& [dirPath, trackList] : *albums) {
-        std::wstring albumPath = dirPath.path().wstring();
-        for (const auto& track : trackList) {
-            if (!MediaTrack::ExportToDatabase(stmt, albumPath, track)) {
-                sqlite3_finalize(stmt);
-                sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
-                sqlite3_close(db);
-                return false;
-            }
-        }
-    }
-
-    sqlite3_finalize(stmt);
-    rc = sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
-    if (rc != SQLITE_OK) {
-        spdlog::error("COMMIT failed: {}", sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return false;
-    }
-
-    sqlite3_close(db);
-    return true;
+    return CatalogDatabase::Import(*albums, databasePath, libraryRoot);
 }

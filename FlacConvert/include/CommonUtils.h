@@ -138,6 +138,8 @@ namespace CommonUtils
 
     std::uintmax_t stringToUintmax(const std::string& str);
 
+    std::optional<std::string> fileModificationTimeUtc(const fs::path& path);
+
 
     constexpr std::array<char, 4> ProgressCircleChars = { '|', '/', '-', '\\' };
 

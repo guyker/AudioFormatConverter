@@ -134,9 +134,8 @@ struct MediaDirectoryElement
 
 	std::filesystem::path getMediaDBPath(const std::filesystem::path& outDir) const
 	{
-		std::string fileName = outputName() + ".db";
-		return outDir / CommonUtils::path_from_utf8(mediaName.value_or("")) /
-			CommonUtils::path_from_utf8(std::string("media_out_") + fileName);
+		return outDir / CommonUtils::path_from_utf8(outputName()) /
+			CommonUtils::path_from_utf8("catalog-v2.sqlite");
 	}
 };
 
@@ -168,9 +167,11 @@ struct AppSettingsJson
 	std::string DatabaseFileName{};
 
 	int LogLevel { 1 };
-	bool UseAsyncFFmpegCalls { true };
+	bool UseAsyncMetadataReads { true };
+	bool Incremental{ true };
+	std::string ScanTier{ "catalog" };
 	int MetadataScanMaxThreads{ 0 };
-	bool UseFFmpegLibraryAPI { true };
+	int DecodeWorkers{ 0 };
 	bool ExtraAudioQualityMetrics{ false };
 	int MinMatchingTracksForDuplicate{ 1 };
 	int SizeMatchPercentageThreshold{ 3 }; // tracks are identical if the size difference is less than 3%
@@ -180,6 +181,7 @@ struct AppSettingsJson
 	FLACEncodingSettings FLACSettings{};
 	std::vector<MediaDirectoryElement> MediaDirectoryList{};
 	MetadataSidecarSettings MetadataSidecars{};
+	std::vector<std::string> CatalogExtensions{ ".flac", ".mp3" };
 
 	//APP Setting properties - END
 
@@ -202,9 +204,11 @@ struct AppSettingsJson
 			AppSettingsJson::DefaultOutDirectory(),
 			AppSettingsJson::DefaultDatabaseFileName,
 			1,
-			true, //UseAsyncFFmpegCalls
+			true, //UseAsyncMetadataReads
+			true, //Incremental catalog scans
+			"catalog", //ScanTier
 			0, //MetadataScanMaxThreads (automatic)
-			true, //UseFFmpegLibraryAPI
+			0, //DecodeWorkers (automatic)
 			false, //ExtraAudioQualityMetrics
 			1, //MinMatchingTracksForDuplicate
 			3, //SizeMatchPercentageThreshold

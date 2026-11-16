@@ -16,6 +16,8 @@
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
 #include <spdlog/spdlog.h>
+#include <limits>
+#include <stdexcept>
 
 
 namespace JsonUtils {
@@ -36,11 +38,12 @@ namespace JsonUtils {
         // Iterate over the object's members using MemberIterator
         for (rapidjson::Value::ConstMemberIterator itr = jsonValue.MemberBegin(); itr != jsonValue.MemberEnd(); ++itr) {
             // Get the key (tag name) as a string
-            std::string key = itr->name.GetString();
+            std::string key(itr->name.GetString(), itr->name.GetStringLength());
 
             // Get the value, ensure it's a string, and add to the map
             if (itr->value.IsString()) {
-                resultTags[key] = itr->value.GetString();
+                resultTags[key] = std::string(
+                    itr->value.GetString(), itr->value.GetStringLength());
             }
             else {
                 // Handle non-string values (e.g., convert numbers to strings)
@@ -76,20 +79,14 @@ namespace JsonUtils {
         return buffer.GetString();
     }
 
-    // Helper to escape JSON strings (basic version)
     std::string escapeJsonString(const std::string& input) {
-        std::ostringstream oss;
-        for (char c : input) {
-            switch (c) {
-            case '"': oss << "\\\""; break;
-            case '\\': oss << "\\\\"; break;
-            case '\n': oss << "\\n"; break;
-            case '\r': oss << "\\r"; break;
-            case '\t': oss << "\\t"; break;
-            default: oss << c; break;
-            }
+        if (input.size() > (std::numeric_limits<rapidjson::SizeType>::max)()) {
+            throw std::length_error("JSON string is too large to serialize.");
         }
-        return oss.str();
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+        writer.String(input.data(), static_cast<rapidjson::SizeType>(input.size()));
+        return std::string(buffer.GetString() + 1, buffer.GetSize() - 2);
     }
 
 
