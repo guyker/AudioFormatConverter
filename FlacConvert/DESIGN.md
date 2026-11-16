@@ -158,7 +158,9 @@ record without discarding successfully read tags. `ExtraAudioQualityMetrics` is 
 
 `ScanFolderProcessJSONAndFindDuplicates`: load all batches, sort by track count, `AlbumCollection::FindDuplicateAlbums`
 (track count, then sorted durations / size threshold), then re-probe both source folders in parallel and print a
-quality comparison (`MediaTrack::GenerateComparisonReport`). Read-only; folders are opened only when requested.
+quality comparison (`MediaTrack::GenerateComparisonReport`). Re-probed track counts may differ; missing tracks are
+reported and paired duration/tag comparisons use only tracks present in both lists. Read-only; folders are opened
+only when requested.
 
 ### Database import (menu 4, `db import`)
 

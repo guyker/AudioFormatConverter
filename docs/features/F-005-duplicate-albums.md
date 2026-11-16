@@ -26,6 +26,7 @@ than being silently skipped. With `--open` (CLI) or always in the menu, both fol
 - [ ] Without `--open`, no folder is opened.
 - [ ] Empty JSON directory exits non-zero.
 - [ ] Malformed track metadata fails loading instead of producing partial duplicate results.
+- [ ] If source track counts have changed since scanning (including an empty folder), comparison reports the mismatch without crashing or changing files.
 
 ## Known limitations
 - Results are logged, not written to a file.

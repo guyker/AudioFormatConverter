@@ -930,6 +930,40 @@ class ConversionTests(unittest.TestCase):
             self.assert_summary(result, "Failed", 0, unit, failed=1, started=False)
             self.assertIn("No action was started.", result.stdout)
 
+    def test_duplicates_handles_changed_source_track_counts(self):
+        self.track.unlink()
+        albums = [self.source / name for name in ("first", "second")]
+        for album in albums:
+            album.mkdir()
+            for name in ("one.flac", "two.flac"):
+                (album / name).write_bytes(self.fixture.read_bytes())
+        scanned = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "2\nRUN\n")
+        self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
+        json_directory = self.output / "Library"
+        json_file = json_directory / "media_out_Library_1.json"
+        original_json = json_file.read_bytes()
+        for first_count, second_count in ((2, 1), (1, 2), (2, 0), (0, 2), (2, 2)):
+            with self.subTest(first_count=first_count, second_count=second_count):
+                for album, count in zip(albums, (first_count, second_count)):
+                    for index, name in enumerate(("one.flac", "two.flac")):
+                        track = album / name
+                        if index < count:
+                            track.write_bytes(self.fixture.read_bytes())
+                        else:
+                            track.unlink(missing_ok=True)
+                sources_before = {path: path.read_bytes() for path in self.source.rglob("*.flac")}
+                result = run(ARGS.converter, "duplicates", json_directory, "--config", self.config)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.stdout.count("Potentially duplicated albums ["), 1)
+                if first_count != second_count:
+                    self.assertIn(f"Album track count differs: {first_count} vs {second_count}", result.stdout)
+                    self.assertIn("Track missing in one of the albums.", result.stdout)
+                self.assertEqual(json_file.read_bytes(), original_json)
+                self.assertEqual({path: path.read_bytes() for path in self.source.rglob("*.flac")},
+                                 sources_before)
+
     def test_mp3_partial_completion_counts_only_installed_outputs(self):
         second = self.work / "second"
         second.mkdir()

@@ -1129,7 +1129,8 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
             std::string encoder1{};
             std::string encoder2{};
 
-            for (size_t i = 0; i < mediaAlbum1.trackList.size(); i++) {
+            const auto commonTrackCount = std::min(mediaAlbum1.trackList.size(), mediaAlbum2.trackList.size());
+            for (size_t i = 0; i < commonTrackCount; i++) {
                 const auto tSize1 = mediaAlbum1.trackList[i].formatInfo.format.duration.value_or(-1);
                 const auto tSize2 = mediaAlbum2.trackList[i].formatInfo.format.duration.value_or(-1);
 
