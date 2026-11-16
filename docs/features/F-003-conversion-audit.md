@@ -22,7 +22,7 @@ output path and the failure is logged.
 - DESIGN: `FlacConvert/DESIGN.md` → Files and schemas (`conversion-audit.json`); Output-directory anchoring; Contracts
   (ownership, reserved names)
 - K-029 preservation audit, K-030 failure marking and ownership, K-024 sequential stop-on-error,
-  K-036 complete folders and skipped unchanged folders, K-047 output-path safety
+  K-036 complete folders and skipped unchanged folders
 
 ## Acceptance checks
 - [ ] Successful run: report `status: completed`, `errorType: ""`, counts equal plan, no marker.

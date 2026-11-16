@@ -20,7 +20,7 @@ are rejected without modification. The destination must be outside the recorded 
 ## Design and knowledge
 - DESIGN: `FlacConvert/DESIGN.md` → Database import; Output-directory anchoring; Files and schemas (SQLite catalog
   schema v2)
-- K-042 SQLite long-path VFS; K-040 library-relative file identity; K-047 output-path safety
+- K-042 SQLite long-path VFS; K-040 library-relative file identity
 
 ## Acceptance checks
 - [ ] Imported files have stable `(library_id, relative_path)` identity; re-import does not duplicate rows.

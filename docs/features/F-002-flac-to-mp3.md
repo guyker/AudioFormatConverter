@@ -21,7 +21,7 @@ Non-FLAC audio is reported as skipped; companions are copied.
 ## Design and knowledge
 - DESIGN: `FlacConvert/DESIGN.md` → Conversion; Files and schemas (sidecar)
 - K-038 metadata sidecar policy, K-016 channel policy, K-017 MP3 encoding settings, K-025 per-operation menu options,
-  K-029 preservation audit, K-047 output-path safety
+  K-029 preservation audit
 
 ## Acceptance checks
 - [ ] `ctest --preset windows-debug -R mp3-conversion-integration` (or the matching Linux preset) passes.
