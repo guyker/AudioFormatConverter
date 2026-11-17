@@ -12,6 +12,9 @@ conversions writes only that report. Folder names are never changed. Native FLAC
 sidecar when enabled by `MetadataSidecars` (binary by default, JSON optional; both target policies default to
 disabled, F-007).
 Convertible sources below 16-bit or 44.1 kHz are rejected; they are not silently dropped or copied as fallback.
+AAC `.m4a` sources are exempt only from the bit-depth check because AAC does not expose a meaningful source PCM bit
+depth; they still require a verified sample rate of at least 44.1 kHz and produce a warning that lossy-to-FLAC
+conversion cannot restore lost quality.
 Without `--overwrite`, existing targets are never replaced. Exit code 0 only if every planned item was preserved.
 
 ## Entry points
@@ -22,13 +25,14 @@ Without `--overwrite`, existing targets are never replaced. Exit code 0 only if 
 
 ## Design and knowledge
 - DESIGN: `FlacConvert/DESIGN.md` → Key flows / Conversion; Contracts and invariants
-- K-041 install after success, K-013 CD-quality gate, K-014 FFmpeg argument vector, K-038 sidecar policy,
+- K-041 install after success, K-048 codec-aware AAC quality gate, K-014 FFmpeg argument vector, K-038 sidecar policy,
   K-032 configured vs canonical paths, K-026/K-031 output tree layout, K-036 complete folders, skipped unchanged folders
 
 ## Acceptance checks
 - [ ] Source tree byte-identical before and after (hash all files).
 - [ ] Every output FLAC probes as 16-bit, 44100 Hz, same channel count, duration within 0.15 s.
 - [ ] A 24-bit/96 kHz source converts; an 8-bit or 22.05 kHz source is rejected with a non-zero exit.
+- [ ] AAC `.m4a` at 44.1 kHz converts with a lossy-quality warning; AAC below 44.1 kHz is rejected.
 - [ ] Re-running without `--overwrite` on an existing output fails without changing it.
 - [ ] Non-ASCII and >260-character paths convert on Windows.
 - [ ] A near-limit Windows output directory succeeds when marker and temporary filenames would exceed `MAX_PATH`.
@@ -44,7 +48,7 @@ Without `--overwrite`, existing targets are never replaced. Exit code 0 only if 
 
 ## Known limitations
 - Sequential; stops at the first error, earlier outputs remain (K-024).
-- Lossy sources (`.m4a` AAC) are re-encoded to FLAC without quality gain.
+- Lossy sources (`.m4a` AAC) are re-encoded to FLAC without quality gain; the source-rate gate still applies.
 - Skipping is per folder subtree: an MP3-only `CD2` beside a converted `CD1` is skipped and only listed.
 - Directory links/junctions, broken links and special filesystem entries fail explicitly. Regular-file links are
   materialized as file contents; this is not a link/attribute-preserving filesystem backup.

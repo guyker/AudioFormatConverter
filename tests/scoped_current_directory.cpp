@@ -1,11 +1,17 @@
 #include "PlatformUtils.h"
+#include "FolderConvert.h"
 
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+
+#include <spdlog/sinks/ostream_sink.h>
+#include <spdlog/spdlog.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -57,6 +63,30 @@ void requireCompatibleWorkingDirectory()
     require(directory.rfind(L"\\\\?\\", 0) != 0,
         "Child processes would inherit an extended-prefix working directory");
 #endif
+}
+
+void checkMarkerCreatedAfterPlanning(const fs::path& source, const fs::path& output)
+{
+    FolderConversionPlan plan;
+    require(FolderConvert::PrepareConversion(source, output, true, {}, plan) == 0,
+        "Could not prepare marker-conflict fixture");
+    const auto marker = output / ".conversion-in-progress";
+    fs::create_directory(marker);
+    std::ostringstream messages;
+    auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(messages);
+    struct RestoreLogger {
+        std::shared_ptr<spdlog::logger> previous{ spdlog::default_logger() };
+        ~RestoreLogger() { spdlog::set_default_logger(previous); }
+    } restoreLogger;
+    spdlog::set_default_logger(std::make_shared<spdlog::logger>("marker-conflict", sink));
+
+    require(FolderConvert::ExecuteConversion(plan) != 0, "Competing conversion was accepted");
+    require(messages.str().find("Cannot reserve in-progress marker: it already exists") != std::string::npos,
+        "Marker conflict did not explain that the marker already exists");
+    require(messages.str().find(std::error_code{}.message()) == std::string::npos,
+        "Marker conflict reported a successful OS operation as an error");
+    require(fs::is_directory(marker), "Competing run's marker was removed");
+    require(!fs::exists(output / "conversion-audit.json"), "Competing run's audit was written");
 }
 }
 
@@ -146,6 +176,7 @@ int runFixture([[maybe_unused]] bool longPath, [[maybe_unused]] bool extendedPat
         fs::rename(movedOutputAfterRestore, outputAfterRestore, ec);
         require(!ec, "Could not restore the output directory after lock verification");
 #endif
+        if (!longPath && !extendedPath) checkMarkerCreatedAfterPlanning(source, output);
         cleanupFixture(root, output);
     }
     catch (const std::exception& error) {

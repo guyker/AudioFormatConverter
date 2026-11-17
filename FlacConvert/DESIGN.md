@@ -106,8 +106,10 @@ All commands accept `--config <file>`. Exit code is 0 on success, non-zero on an
 
 Per file, `MediaConvertionTask::ConvertFile`:
 
-1. probes the source (`FFmpeg::GetFFprobeMetadataAPI`) and rejects it below 16-bit / 44.1 kHz or if unverifiable
-   (`isAtLeastCDQuality`, K-013); MP3 also requires FLAC codec and mono/stereo unless downmix is enabled (K-016);
+1. probes the source (`FFmpeg::GetFFprobeMetadataAPI`) and rejects it below 16-bit / 44.1 kHz or if required
+   properties are unverifiable (`isAtLeastCDQuality`, K-048). AAC bypasses only the bit-depth check because its
+   encoded stream does not establish source PCM depth; it still requires a verified rate of at least 44.1 kHz and
+   emits a lossy-conversion warning. MP3 also requires FLAC codec and mono/stereo unless downmix is enabled (K-016);
 2. rejects destinations that alias the source or pre-existing temporaries;
 3. for MP3 or native FLAC sources (`FlacMetadata::AppliesTo`), writes and verifies a metadata sidecar to a
    temporary when the run's `ConversionOptions::sidecarFormat` is not `None` (K-038); with format `None` it
@@ -373,5 +375,5 @@ prompt, and `ShowConversionPreview`.
 
 ## Knowledge links
 
-Conversion safety: K-041, K-013, K-014, K-029, K-030, K-032, K-038. Formats: K-016, K-017, K-031. Manual menu: K-024, K-025, K-026, K-027. Catalog/DB: K-005, K-042, K-040. Platform/build: K-006, K-007, K-043, K-044, K-033.
+Conversion safety: K-041, K-048, K-014, K-029, K-030, K-032, K-038. Formats: K-016, K-017, K-031. Manual menu: K-024, K-025, K-026, K-027. Catalog/DB: K-005, K-042, K-040. Platform/build: K-006, K-007, K-043, K-044, K-033.
 Only live entries are listed; superseded history is in `docs/knowledge/index.md` under "Closed".

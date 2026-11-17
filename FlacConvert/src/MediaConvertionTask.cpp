@@ -62,7 +62,7 @@ bool isAtLeastCDQuality(const fs::path& source, const FFprobeOutput& metadata)
     }
 
     const auto sampleRate = parseInteger(audioStream->sample_rate);
-    const auto bitDepth = audioStream->bits_per_sample;
+    const bool isAac = audioStream->codec_name && *audioStream->codec_name == "aac";
     std::vector<std::string> issues;
     if (!sampleRate) {
         issues.emplace_back("sample rate could not be verified");
@@ -70,14 +70,21 @@ bool isAtLeastCDQuality(const fs::path& source, const FFprobeOutput& metadata)
     else if (*sampleRate < 44100) {
         issues.emplace_back("sample rate " + std::to_string(*sampleRate) + " Hz is below 44100 Hz");
     }
-    if (!bitDepth) {
-        issues.emplace_back("bit depth could not be verified");
-    }
-    else if (*bitDepth < 16) {
-        issues.emplace_back("bit depth " + std::to_string(*bitDepth) + " is below 16-bit");
+    if (!isAac) {
+        const auto bitDepth = audioStream->bits_per_sample;
+        if (!bitDepth) {
+            issues.emplace_back("bit depth could not be verified");
+        }
+        else if (*bitDepth < 16) {
+            issues.emplace_back("bit depth " + std::to_string(*bitDepth) + " is below 16-bit");
+        }
     }
 
     if (issues.empty()) {
+        if (isAac) {
+            spdlog::warn("AAC source '{}' is lossy; conversion cannot restore quality lost during AAC encoding.",
+                CommonUtils::path_to_utf8(source));
+        }
         return true;
     }
 

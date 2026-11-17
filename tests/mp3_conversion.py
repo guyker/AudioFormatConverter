@@ -169,6 +169,11 @@ class ConversionTests(unittest.TestCase):
         return json.loads(checked(ARGS.ffprobe, "-v", "error", "-show_format", "-show_streams",
                                   "-of", "json", path).stdout)
 
+    def make_aac_m4a(self, path, sample_rate):
+        checked(ARGS.ffmpeg, "-v", "error", "-f", "lavfi", "-i",
+                f"sine=frequency=997:sample_rate={sample_rate}:duration=1.3", "-ac", "2",
+                "-c:a", "aac", "-b:a", "128k", path)
+
     def mp3(self):
         return self.destination() / Path(self.name).with_suffix(".mp3")
 
@@ -918,6 +923,46 @@ class ConversionTests(unittest.TestCase):
         normalized_names = {item["name"] for item in resources if item["status"] == "Normalized"}
         self.assertTrue(expected_normalized <= normalized_names, expected_normalized - normalized_names)
         self.assertFalse(any(item["fatal"] for item in resources))
+        self.assertEqual(hashlib.sha256(track.read_bytes()).digest(), source_hash)
+
+    def test_aac_m4a_at_cd_sample_rate_converts_with_lossy_warning(self):
+        source = self.work / "aac-source"
+        source.mkdir()
+        track = source / "track.m4a"
+        self.make_aac_m4a(track, 44100)
+        source_stream = self.probe(track)["streams"][0]
+        self.assertEqual((source_stream["codec_name"], source_stream["sample_rate"]), ("aac", "44100"))
+        source_hash = hashlib.sha256(track.read_bytes()).digest()
+        output = self.work / "aac-output"
+
+        result = run(ARGS.converter, "convert", source, "--output-dir", output,
+                     "--config", self.config, "--to", "flac")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        logs = result.stdout + result.stderr
+        self.assertIn("AAC source", logs)
+        self.assertIn("cannot restore quality lost during AAC encoding", logs)
+        destination = output / "FLAC" / source.name
+        audio = self.probe(destination / "track.flac")["streams"][0]
+        self.assertEqual((audio["codec_name"], audio["sample_rate"], audio["bits_per_raw_sample"]),
+                         ("flac", "44100", "16"))
+        self.assertEqual(self.audit(destination)["status"], "completed")
+        self.assertEqual(hashlib.sha256(track.read_bytes()).digest(), source_hash)
+
+    def test_aac_m4a_below_cd_sample_rate_is_rejected(self):
+        source = self.work / "low-rate-aac-source"
+        source.mkdir()
+        track = source / "track.m4a"
+        self.make_aac_m4a(track, 32000)
+        source_stream = self.probe(track)["streams"][0]
+        self.assertEqual((source_stream["codec_name"], source_stream["sample_rate"]), ("aac", "32000"))
+        source_hash = hashlib.sha256(track.read_bytes()).digest()
+        output = self.work / "low-rate-aac-output"
+
+        result = run(ARGS.converter, "convert", source, "--output-dir", output,
+                     "--config", self.config, "--to", "flac")
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("sample rate 32000 Hz is below 44100 Hz", result.stdout + result.stderr)
+        self.assertFalse(list(output.rglob("*.flac")))
         self.assertEqual(hashlib.sha256(track.read_bytes()).digest(), source_hash)
 
     def test_mp3_preview_cancel_and_cross_library_preflight(self):

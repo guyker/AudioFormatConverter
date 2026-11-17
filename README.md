@@ -147,10 +147,12 @@ FlacConvert db import "E:\Catalog\Music" --output-dir "E:\Databases"
 ```
 
 `convert` writes FLAC files to a separate output tree and preserves source files. Sources below 16-bit or 44.1 kHz, or
-whose properties cannot be verified, are rejected and fail the command. Accepted audio is converted to 16-bit, 44.1 kHz
-FLAC with triangular dithering. Existing destinations cause an error unless `--overwrite` is specified. `scan` replaces
-the generated JSON output for that library only after a new scan
-completes. Incremental scans reuse metadata when file path, size, and modification time are unchanged; pass
+whose required properties cannot be verified, are rejected and fail the command. AAC sources (`.m4a`) are exempt from
+the bit-depth check because encoded AAC has no meaningful source PCM bit depth, but still require a verified rate of at
+least 44.1 kHz; a warning notes that lossy-to-FLAC conversion cannot restore lost quality. Accepted audio is converted
+to 16-bit, 44.1 kHz FLAC with triangular dithering. Existing destinations cause an error unless `--overwrite` is
+specified. `scan` replaces the generated JSON output for that library only after a new scan completes. Incremental
+scans reuse metadata when file path, size, and modification time are unchanged; pass
 `--full-rescan` to force rereads. `--tier` accepts `catalog` (default), `integrity`, or `analysis`; configure the
 menu/default tier with `ScanTier`. `CatalogExtensions` selects accepted scan formats; only FLAC and MP3 are enabled
 by default. `DecodeWorkers` caps the independent full-decode stage. `duplicates` reports matches without opening folders; pass `--open` to open matched

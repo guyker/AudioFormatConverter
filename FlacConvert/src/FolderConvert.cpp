@@ -675,8 +675,12 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
         return -1;
     };
     if (!fs::create_directory(outputPath(markerFilename), ec)) {
-        spdlog::error("Cannot reserve in-progress marker (possibly another active run): {}", ec.message());
-        if (ec) return finish("IO");
+        if (ec) {
+            spdlog::error("Cannot reserve in-progress marker: {}", ec.message());
+            return finish("IO");
+        }
+        spdlog::error("Cannot reserve in-progress marker: it already exists "
+            "(another active run or an incomplete previous conversion).");
         return -1;
     }
     std::size_t current = 0;

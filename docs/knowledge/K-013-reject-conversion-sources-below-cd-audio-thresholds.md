@@ -3,7 +3,8 @@ id: K-013
 kind: decision
 title: "Reject conversion sources below CD audio thresholds"
 area: [FlacConvert]
-status: active
+status: superseded
+superseded_by: K-048
 created: 2026-10-10
 reviewed: 2026-11-16
 cites:
