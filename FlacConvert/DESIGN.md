@@ -189,8 +189,10 @@ installing files. For paths that fit the Windows current-directory limit, it ent
 cannot redirect the active operation. For longer Windows paths, it stays in a short ancestor, opens each directory
 from that anchor with delete-sharing disabled, validates the opened directory's resolved path, and exposes absolute
 extended paths through `ResolvePath`. Conversion, scan installation, and catalog publication use these resolved
-paths and check `IsAnchored` before finalizing. `Restore` releases the directory locks before an owned failed
-conversion folder is renamed, preserving the ownership and marker behavior in K-030.
+paths and check `IsAnchored` before finalizing. Windows working-directory changes and restoration use ordinary
+drive/UNC paths, not the extended prefix: legacy FFmpeg launchers such as Chocolatey's .NET shim reject an inherited
+`\\?\` working directory. File I/O retains extended-path support. `Restore` releases the directory locks before an
+owned failed conversion folder is renamed, preserving the ownership and marker behavior in K-030.
 `tests/scoped_current_directory.cpp` checks long-path anchoring and rename denial; generated conversion, scan, and
 database integration fixtures cover the corresponding output paths.
 

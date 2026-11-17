@@ -253,14 +253,14 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
     }
 
 #ifdef _WIN32
-    if (absoluteTarget.native().size() >= MAX_PATH - 12) {
+    if (normalizedWindowsPath(absoluteTarget).native().size() >= MAX_PATH - 12) {
         fs::path shortAnchor = anchor;
-        while (!shortAnchor.empty() && shortAnchor.native().size() >= MAX_PATH) {
+        while (!shortAnchor.empty() && normalizedWindowsPath(shortAnchor).native().size() >= MAX_PATH) {
             const auto parent = shortAnchor.parent_path();
             if (parent == shortAnchor) break;
             shortAnchor = parent;
         }
-        if (shortAnchor.empty() || shortAnchor.native().size() >= MAX_PATH) {
+        if (shortAnchor.empty() || normalizedWindowsPath(shortAnchor).native().size() >= MAX_PATH) {
             spdlog::error("Cannot find a short working-directory anchor for '{}'.",
                 CommonUtils::path_to_utf8(target));
             return false;
@@ -325,7 +325,7 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
             return false;
         }
         if (!currentDirectoryProtectsAnchor &&
-            !SetCurrentDirectoryW(WindowsLongPath(shortAnchor).c_str())) {
+            !SetCurrentDirectoryW(normalizedWindowsPath(shortAnchor).c_str())) {
             const DWORD changeError = GetLastError();
             spdlog::error("Cannot enter short output anchor '{}': {}",
                 CommonUtils::path_to_utf8(shortAnchor),
@@ -434,7 +434,8 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
     }
 #endif
     _saved = true;
-    fs::current_path(anchor, ec);
+    // Legacy launchers (including Chocolatey shims) reject an extended-prefix working directory.
+    fs::current_path(normalizedWindowsPath(anchor), ec);
     if (ec) {
         spdlog::error("Cannot enter safe output anchor '{}': {}",
             CommonUtils::path_to_utf8(anchor), ec.message());
@@ -540,7 +541,7 @@ bool ScopedCurrentDirectory::Restore()
     bool restored = false;
     std::error_code error;
 #ifdef _WIN32
-    restored = SetCurrentDirectoryW(WindowsLongPath(_previousPath).c_str()) != 0;
+    restored = SetCurrentDirectoryW(normalizedWindowsPath(_previousPath).c_str()) != 0;
     if (!restored) error = std::error_code(static_cast<int>(GetLastError()), std::system_category());
 #else
     restored = fchdir(_previousDirectory) == 0;

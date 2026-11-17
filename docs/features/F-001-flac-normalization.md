@@ -31,6 +31,7 @@ Without `--overwrite`, existing targets are never replaced. Exit code 0 only if 
 - [ ] A 24-bit/96 kHz source converts; an 8-bit or 22.05 kHz source is rejected with a non-zero exit.
 - [ ] Re-running without `--overwrite` on an existing output fails without changing it.
 - [ ] Non-ASCII and >260-character paths convert on Windows.
+- [ ] Menu conversion accepts extended-prefix output paths with an FFmpeg launcher shim (see DESIGN's output anchoring).
 - [ ] Replacing an output directory after validation cannot redirect writes into the source library.
 - [ ] `conversion-audit.json` exists with `status: completed` (see F-003).
 - [ ] A written folder retains unsupported audio, extensionless files and audio-free/empty subfolders byte-for-byte.

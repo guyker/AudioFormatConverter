@@ -835,6 +835,30 @@ class ConversionTests(unittest.TestCase):
         self.assertNotIn("Type REPLACE", result.stdout)
         self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
 
+    @unittest.skipUnless(os.name == "nt", "Windows extended paths and inherited working directory")
+    def test_manual_flac_extended_output_paths(self):
+        libraries = [{"isActive": True, "mediaPath": "\\\\?\\" + str(self.source),
+                      "mediaName": "Library"}]
+        for long_path in (False, True):
+            output = self.output
+            if long_path:
+                output = output / ("a" * 90) / ("b" * 90) / ("c" * 90)
+            extended_output = Path("\\\\?\\" + str(output))
+            with self.subTest(long_path=long_path):
+                try:
+                    result = self.legacy(libraries, "1\nRUN\n", OutDirectory=str(extended_output))
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assert_summary(result, "Completed", 1, "audio files")
+                    directory = extended_output / "FLAC" / "Library"
+                    audio = self.probe(directory / self.track.name)["streams"][0]
+                    self.assertEqual((audio["codec_name"], audio["sample_rate"], audio["bits_per_raw_sample"]),
+                                     ("flac", "44100", "16"))
+                    self.assertEqual(self.audit(directory)["status"], "completed")
+                    self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+                finally:
+                    if long_path and extended_output.exists():
+                        shutil.rmtree(extended_output)
+
     def test_mp3_preview_cancel_and_cross_library_preflight(self):
         (self.source / "cover.png").write_bytes(self.image)
         libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]

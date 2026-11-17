@@ -7,6 +7,10 @@
 #include <stdexcept>
 #include <string>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace
@@ -43,9 +47,20 @@ void require(bool condition, const char* message)
 {
     if (!condition) throw std::runtime_error(message);
 }
+
+void requireCompatibleWorkingDirectory()
+{
+#ifdef _WIN32
+    std::wstring directory(MAX_PATH, L'\0');
+    const auto length = GetCurrentDirectoryW(static_cast<DWORD>(directory.size()), directory.data());
+    require(length > 0 && length < directory.size(), "Working directory exceeds the legacy limit");
+    require(directory.rfind(L"\\\\?\\", 0) != 0,
+        "Child processes would inherit an extended-prefix working directory");
+#endif
+}
 }
 
-int main()
+int runFixture([[maybe_unused]] bool longPath, [[maybe_unused]] bool extendedPath)
 {
     const auto originalDirectory = fs::current_path();
     const auto root = fs::temp_directory_path() /
@@ -53,10 +68,13 @@ int main()
             std::chrono::steady_clock::now().time_since_epoch().count()));
     const auto source = root / "source";
 #ifdef _WIN32
-    const auto output = root / std::string(90, 'a') /
-        std::string(90, 'b') / std::string(90, 'c');
+    const auto output = longPath
+        ? root / std::string(90, 'a') / std::string(90, 'b') / std::string(90, 'c')
+        : root / "output";
+    const fs::path configuredOutput = extendedPath ? cleanupPath(output) : output;
 #else
     const auto output = root / "output";
+    const auto configuredOutput = output;
 #endif
 
     std::error_code ec;
@@ -70,12 +88,13 @@ int main()
         }
 
         PlatformUtils::ScopedCurrentDirectory anchor;
-        require(anchor.EnterValidatedDirectory(output, source, true),
+        require(anchor.EnterValidatedDirectory(configuredOutput, source, true),
             "Could not enter the validated output directory");
+        requireCompatibleWorkingDirectory();
         require(anchor.IsAnchored(output), "Output directory was not anchored");
         const auto resolvedRoot = anchor.ResolvePath(".");
 #ifdef _WIN32
-        require(resolvedRoot.is_absolute() && resolvedRoot.native().size() >= 260,
+        require(!longPath || (resolvedRoot.is_absolute() && resolvedRoot.native().size() >= 260),
             "Long-path fallback did not resolve output relative to the locked directory");
 #endif
         const auto outputSentinel = anchor.ResolvePath("output.txt");
@@ -109,6 +128,7 @@ int main()
 #endif
 
         require(anchor.Restore(), "Could not restore the original working directory");
+        requireCompatibleWorkingDirectory();
         require(fs::current_path() == originalDirectory, "Working directory was not restored");
         require(fs::is_regular_file(sourceSentinel), "The source sentinel was removed");
         {
@@ -141,4 +161,18 @@ int main()
     }
 
     return 0;
+}
+
+int main()
+{
+#ifdef _WIN32
+    for (const bool longPath : { false, true }) {
+        for (const bool extendedPath : { false, true }) {
+            if (runFixture(longPath, extendedPath) != 0) return 1;
+        }
+    }
+    return 0;
+#else
+    return runFixture(false, false);
+#endif
 }
