@@ -859,6 +859,67 @@ class ConversionTests(unittest.TestCase):
                     if long_path and extended_output.exists():
                         shutil.rmtree(extended_output)
 
+    @unittest.skipUnless(os.name == "nt", "Windows near-MAX_PATH conversion output")
+    def test_manual_flac_near_max_path_uses_extended_temporary_paths(self):
+        output_root = self.work / "near-max-output"
+        while len(str(output_root / "FLAC" / "Library")) < 235:
+            missing = 235 - len(str(output_root / "FLAC" / "Library"))
+            output_root /= "p" * min(100, missing - 1)
+        destination = output_root / "FLAC" / "Library"
+        self.assertEqual(len(str(destination)), 235)
+        nested_source = self.source / "nested" / "deeper"
+        nested_source.mkdir(parents=True)
+        nested_track = nested_source / self.track.name
+        self.track.rename(nested_track)
+
+        try:
+            result = self.legacy(
+                [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+                "1\nRUN\n", OutDirectory=str(output_root))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assert_summary(result, "Completed", 1, "audio files")
+            self.assertEqual(self.audit(destination)["status"], "completed")
+            extended_destination = Path("\\\\?\\" + str(destination))
+            self.assertTrue((extended_destination / "nested" / "deeper" / self.track.name).is_file())
+            self.assertEqual(hashlib.sha256(nested_track.read_bytes()).digest(), self.original_hash)
+        finally:
+            nested_track.rename(self.track)
+            (self.source / "nested" / "deeper").rmdir()
+            (self.source / "nested").rmdir()
+            extended_output = Path("\\\\?\\" + str(output_root))
+            if extended_output.exists():
+                shutil.rmtree(extended_output)
+
+    def test_m4a_default_stream_tags_do_not_fail_flac_preservation_audit(self):
+        source = self.work / "m4a-source"
+        source.mkdir()
+        track = source / "track.m4a"
+        checked(ARGS.ffmpeg, "-v", "error", "-f", "lavfi", "-i",
+                "sine=frequency=997:sample_rate=48000:duration=1.3", "-ac", "2",
+                "-c:a", "alac", "-sample_fmt", "s32p", "-bits_per_raw_sample", "24",
+                "-metadata", "title=Generated MP4 tags", "-metadata", "album=Test album",
+                track)
+        probe = self.probe(track)
+        stream_tags = probe["streams"][0].get("tags", {})
+        self.assertEqual(stream_tags.get("handler_name"), "SoundHandler")
+        format_tags = probe.get("format", {}).get("tags", {})
+        generated_names = {"handler_name", "language", "vendor_id", "major_brand",
+                           "minor_version", "compatible_brands"}
+        expected_normalized = generated_names.intersection(stream_tags) | generated_names.intersection(format_tags)
+        source_hash = hashlib.sha256(track.read_bytes()).digest()
+
+        result = run(ARGS.converter, "convert", source, "--output-dir", self.output,
+                     "--config", self.config, "--to", "flac")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        destination = self.output / "FLAC" / source.name
+        report = self.audit(destination)
+        self.assertEqual(report["status"], "completed")
+        resources = report["files"][0]["resources"]
+        normalized_names = {item["name"] for item in resources if item["status"] == "Normalized"}
+        self.assertTrue(expected_normalized <= normalized_names, expected_normalized - normalized_names)
+        self.assertFalse(any(item["fatal"] for item in resources))
+        self.assertEqual(hashlib.sha256(track.read_bytes()).digest(), source_hash)
+
     def test_mp3_preview_cancel_and_cross_library_preflight(self):
         (self.source / "cover.png").write_bytes(self.image)
         libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]

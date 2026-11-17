@@ -5,7 +5,7 @@ title: "Audit converted resources before installation and retain verified origin
 area: [FlacConvert]
 status: active
 created: 2026-10-11
-reviewed: 2026-11-16
+reviewed: 2026-11-17
 cites:
   - path: FlacConvert/src/PreservationAudit.cpp
     symbol: PreservationAudit.Compare

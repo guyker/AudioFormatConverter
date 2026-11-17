@@ -253,7 +253,8 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
     }
 
 #ifdef _WIN32
-    if (normalizedWindowsPath(absoluteTarget).native().size() >= MAX_PATH - 12) {
+    constexpr std::size_t longPathFallbackMargin = 64;
+    if (normalizedWindowsPath(absoluteTarget).native().size() >= MAX_PATH - longPathFallbackMargin) {
         fs::path shortAnchor = anchor;
         while (!shortAnchor.empty() && normalizedWindowsPath(shortAnchor).native().size() >= MAX_PATH) {
             const auto parent = shortAnchor.parent_path();
@@ -579,7 +580,8 @@ bool ScopedCurrentDirectory::Restore()
         }
 
         std::wstring value = std::filesystem::absolute(path).lexically_normal().native();
-        if (value.size() < MAX_PATH) {
+        constexpr std::size_t windowsDirectoryPathLimit = MAX_PATH - 12;
+        if (value.size() < windowsDirectoryPathLimit) {
             return value;
         }
         if (value.rfind(L"\\\\", 0) == 0) {

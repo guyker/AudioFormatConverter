@@ -724,6 +724,25 @@ bool isGeneratedTag(const std::string& key)
     return key == "encoder" || key == "encoded_by" || key == "vendor";
 }
 
+bool isGeneratedMp4Tag(const Media& source, const std::string& key,
+    const std::vector<std::string>& values)
+{
+    const auto* inputFormat = source.context->iformat;
+    if (inputFormat == nullptr || inputFormat->name == nullptr ||
+        std::string(inputFormat->name).find("mp4") == std::string::npos) {
+        return false;
+    }
+
+    if (key == "major_brand" || key == "minor_version" || key == "compatible_brands") {
+        return true;
+    }
+    if (values.size() != 1) return false;
+
+    return (key == "handler_name" && values.front() == "SoundHandler") ||
+        (key == "language" && asciiLower(values.front()) == "und") ||
+        (key == "vendor_id" && asciiLower(values.front()) == "0x0000");
+}
+
 bool isAudioDerivedTag(const std::string& key)
 {
     return key.find("replaygain") != std::string::npos ||
@@ -793,10 +812,10 @@ void compareTags(PreservationAudit::Result& result, const Media& source, const M
         const bool equal = sourceValues == outputValues;
         const bool repeated = sourceValues.size() > 1 || outputValues.size() > 1;
 
-        if (isGeneratedTag(key)) {
+        if (isGeneratedTag(key) || isGeneratedMp4Tag(source, key, sourceValues)) {
             if (!equal) {
                 addEntry(result, PreservationAudit::Status::Normalized, "tags", key,
-                    "Generated encoder/vendor metadata differs; informational only.");
+                    "Generated encoder/vendor or MP4 container/stream metadata differs; informational only.");
             }
             continue;
         }

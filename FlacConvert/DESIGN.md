@@ -116,6 +116,9 @@ Per file, `MediaConvertionTask::ConvertFile`:
 5. verifies output codec, rate, depth/channels and duration (±0.15 s);
 6. verifies the archive again (when written) and runs `PreservationAudit::Compare` (K-029); without an archive,
    differences that would otherwise be `SidecarOnly` are fatal (fail-closed).
+   For MP4-family sources, container descriptors (`major_brand`, `minor_version`, `compatible_brands`) and
+   FFmpeg's default stream tags (`handler_name=SoundHandler`, `language=und`, `vendor_id=0x0000`) are treated as
+   generated metadata rather than user-tag losses.
 
 **Sidecar policy.** `MetadataSidecarSettings::Resolve` turns the configured `MetadataSidecars` policy for the target
 (`ConvertToFlac` / `ConvertToMp3`) and the run's disable request into the effective format: `disabled` (default) → none;
@@ -185,10 +188,11 @@ directory aliases; a trailing separator does not change the name.
 ### Output-directory anchoring
 
 `PlatformUtils::ScopedCurrentDirectory` validates that an output root does not overlap its source before creating or
-installing files. For paths that fit the Windows current-directory limit, it enters the output directory so renames
-cannot redirect the active operation. For longer Windows paths, it stays in a short ancestor, opens each directory
+installing files. For Windows targets shorter than `MAX_PATH - 64`, it enters the output directory so renames cannot
+redirect the active operation. Near-limit and longer Windows paths use a short ancestor, open each directory
 from that anchor with delete-sharing disabled, validates the opened directory's resolved path, and exposes absolute
-extended paths through `ResolvePath`. Conversion, scan installation, and catalog publication use these resolved
+extended paths through `ResolvePath`; filesystem paths receive the `\\?\` prefix at the Windows directory path
+limit (`MAX_PATH - 12`). Conversion, scan installation, and catalog publication use these resolved
 paths and check `IsAnchored` before finalizing. Windows working-directory changes and restoration use ordinary
 drive/UNC paths, not the extended prefix: legacy FFmpeg launchers such as Chocolatey's .NET shim reject an inherited
 `\\?\` working directory. File I/O retains extended-path support. `Restore` releases the directory locks before an
