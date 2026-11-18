@@ -155,7 +155,8 @@ specified. `scan` replaces the generated JSON output for that library only after
 scans reuse metadata when file path, size, and modification time are unchanged; pass
 `--full-rescan` to force rereads. `--tier` accepts `catalog` (default), `integrity`, or `analysis`; configure the
 menu/default tier with `ScanTier`. `CatalogExtensions` selects accepted scan formats; only FLAC and MP3 are enabled
-by default. `DecodeWorkers` caps the independent full-decode stage. `duplicates` reports matches without opening folders; pass `--open` to open matched
+by default. Set `JsonBatchTargetBytes` to a positive byte count for size-aware JSON batching (default `0` disables it;
+oversized albums remain intact). `DecodeWorkers` caps the independent full-decode stage. `duplicates` reports matches without opening folders; pass `--open` to open matched
 folders in Explorer. `db import` creates or updates a library-named `catalog-v2.sqlite` database and leaves legacy
 `.db` files untouched.
 

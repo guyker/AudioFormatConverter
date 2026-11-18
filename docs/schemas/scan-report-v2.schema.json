@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AudioFormatConverter scan report",
+  "description": "Per-run diagnostics and summary for a library scan.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "status",
+    "scanTier",
+    "sourceRoot",
+    "outputDirectory",
+    "counts",
+    "durationMs",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "enum": [2]
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": ["completed", "failed"]
+    },
+    "scanTier": {
+      "enum": ["catalog", "integrity", "analysis"]
+    },
+    "sourceRoot": {
+      "type": "string",
+      "minLength": 1
+    },
+    "outputDirectory": {
+      "type": "string",
+      "minLength": 1
+    },
+    "counts": {
+      "type": "object",
+      "required": [
+        "albumsDiscovered",
+        "tracksDiscovered",
+        "albumsSerialized",
+        "tracksSerialized",
+        "batchesStaged",
+        "batchesInstalled",
+        "diagnostics"
+      ],
+      "properties": {
+        "albumsDiscovered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tracksDiscovered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "albumsSerialized": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tracksSerialized": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "batchesStaged": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "batchesInstalled": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "diagnostics": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/diagnostic"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "diagnostic": {
+      "type": "object",
+      "required": [
+        "stage",
+        "source",
+        "code",
+        "severity",
+        "message"
+      ],
+      "properties": {
+        "albumPath": {
+          "type": "string"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "affectedPath": {
+          "type": "string"
+        },
+        "nativeErrorCode": {
+          "type": "integer"
+        },
+        "nativeErrorCategory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "enum": ["error", "warning", "info"]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

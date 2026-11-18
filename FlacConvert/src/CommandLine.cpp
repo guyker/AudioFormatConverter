@@ -32,7 +32,8 @@ const std::string kConfigurationHelp =
     "  MinMatchingTracksForDuplicate (integer, default 1): minimum matching tracks for a duplicate candidate.\n"
     "  SizeMatchPercentageThreshold (integer, default 3): track-duration matching tolerance, in percent.\n"
     "  RecursionDirectorySearchDepth (integer, default 10): maximum directory depth for scans.\n"
-    "  AlbumsSplitThreshold (integer, default 2000): maximum albums per metadata batch.";
+    "  AlbumsSplitThreshold (integer, default 2000): maximum albums per metadata batch.\n"
+    "  JsonBatchTargetBytes (integer, default 0): optional JSON byte target; albums stay intact.";
 
 void add_config_option(CLI::App* command, CommandLineOptions& options)
 {

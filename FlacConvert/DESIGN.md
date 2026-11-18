@@ -159,13 +159,18 @@ reuses the discovered batches. `ScanTier` selects `catalog` (default), `integrit
 overrides the config. Integrity and analysis tiers decode the audio once, report decode/sample/hash results, and
 analysis adds per-channel signal statistics and zero-padded-hi-res findings. Decode failures are retained in the
 record without discarding successfully read tags. Each scan writes `scan-report.json` beside the generated batches with run status, duration, structured diagnostics,
-and distinct discovered, serialized, staged, and installed counts. Filesystem exceptions include their affected path
-when supplied; accepted audio paths are also linked as track paths. FFmpeg warnings/errors without a thread-local
+and distinct discovered, serialized, staged, and installed counts. Discovery counts advance as accepted tracks are
+encountered and can be partial on discovery failure. Filesystem exceptions include their affected path and native
+error code and category when supplied; accepted audio paths are also linked as track paths. Library-level diagnostics
+omit `albumPath`. FFmpeg warnings/errors without a thread-local
 file capture are recorded at scan scope, never guessed to belong to a track. Record-level non-fatal diagnostics
 remain in the corresponding catalog record; a failed scan writes the report separately without installing staged
 catalog JSON. The report contract is
-`docs/schemas/scan-report-v1.schema.json`. `ExtraAudioQualityMetrics` is deprecated and ignored.
-Batching remains album-count based (`AlbumsSplitThreshold`), not serialized-size based. Failures before safe output
+`docs/schemas/scan-report-v2.schema.json`. Version 2 omits `albumPath` for library-level diagnostics;
+the version 1 schema remains available for older reports. `ExtraAudioQualityMetrics` is deprecated and ignored.
+`AlbumsSplitThreshold` limits metadata batches. `JsonBatchTargetBytes` defaults to 0 (disabled); when positive,
+serialized albums are streamed to staged JSON files, splitting before an album would exceed the target. An oversized
+album remains intact in its own file and produces a warning. A single album is still buffered in memory. Failures before safe output
 path validation, or failures that prevent writing the report itself, are visible only through the application log.
 
 ### Duplicates (menu 3, `duplicates`)
@@ -259,6 +264,7 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | `MinMatchingTracksForDuplicate`, `SizeMatchPercentageThreshold` | 1, 3 | Duplicate search |
 | `RecursionDirectorySearchDepth` | 10 | Discovery |
 | `AlbumsSplitThreshold` | 2000 (>0) | JSON batch size |
+| `JsonBatchTargetBytes` | 0 (disabled) | Optional output JSON byte target; albums remain intact |
 | `FLACSettings.ffmpeg_exe_name` | `ffmpeg` | Conversion executable; the other `FLACSettings` strings are not used at runtime |
 | `MetadataSidecars.Format` | `binary` (`binary`\|`json`) | Sidecar encoding for conversions |
 | `MetadataSidecars.ConvertToFlac`, `MetadataSidecars.ConvertToMp3` | `disabled` (`disabled`\|`optional`\|`required`) | Per-target sidecar policy; invalid values fail loading |

@@ -18,6 +18,12 @@ static void require(bool condition, const char* message) {
 int main(int argc, char** argv) {
     try {
         require(argc == 3, "Expected generated FLAC and MP3 fixtures");
+        const auto missing = std::filesystem::path(argv[1]).parent_path() / "missing-fixture.flac";
+        const auto missingResult = TagLibReader::Read(missing, "missing-fixture.flac");
+        require(!missingResult.record && missingResult.diagnostics.size() == 1 &&
+            missingResult.diagnostics.front().nativeErrorCode.has_value() &&
+            missingResult.diagnostics.front().nativeErrorCategory.has_value(),
+            "Filesystem diagnostic did not retain the native error");
         {
             TagLib::FLAC::File file(argv[1]);
             require(file.isValid(), "TagLib could not open the FLAC fixture for tag setup");

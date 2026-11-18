@@ -778,18 +778,18 @@ void DecodeAnalyzer::Analyze(const std::filesystem::path& filePath,
     analyzeAudio(filePath, record, includeSignalAnalysis);
     for (const auto& log : logCapture.TakeLogs()) {
         record.diagnostics.push_back({
-            log.stage, "ffmpeg", "ffmpeg_log", log.level,
+            log.stage, "ffmpeg", DiagnosticCode::FfmpegLog, ParseDiagnosticSeverity(log.level).value(),
             log.component + ": " + log.message
         });
     }
     if (record.integrity.status == "failed" && record.integrity.error) {
         record.diagnostics.push_back({
-            "decode", "ffmpeg", "decode_failed", "error", *record.integrity.error
+            "decode", "ffmpeg", DiagnosticCode::DecodeFailed, DiagnosticSeverity::Error, *record.integrity.error
         });
     }
     else if (record.integrity.status == "unsupported" && record.integrity.error) {
         record.diagnostics.push_back({
-            "decode", "ffmpeg", "decode_unsupported", "warning", *record.integrity.error
+            "decode", "ffmpeg", DiagnosticCode::DecodeUnsupported, DiagnosticSeverity::Warning, *record.integrity.error
         });
     }
 }

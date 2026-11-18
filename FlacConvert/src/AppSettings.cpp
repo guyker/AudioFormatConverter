@@ -285,6 +285,7 @@ std::string AppSettingsJson::toJsonString() const {
     doc.AddMember("SizeMatchPercentageThreshold", SizeMatchPercentageThreshold, allocator);
     doc.AddMember("RecursionDirectorySearchDepth", RecursionDirectorySearchDepth, allocator);
     doc.AddMember("AlbumsSplitThreshold", AlbumsSplitThreshold, allocator);
+    doc.AddMember("JsonBatchTargetBytes", JsonBatchTargetBytes, allocator);
 
     rapidjson::StringBuffer buffer;
     rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
@@ -328,6 +329,10 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
     if (doc.HasMember("AlbumsSplitThreshold") &&
         (!doc["AlbumsSplitThreshold"].IsInt() || doc["AlbumsSplitThreshold"].GetInt() <= 0)) {
         spdlog::error("AlbumsSplitThreshold must be a positive integer.");
+        return false;
+    }
+    if (doc.HasMember("JsonBatchTargetBytes") && !doc["JsonBatchTargetBytes"].IsUint64()) {
+        spdlog::error("JsonBatchTargetBytes must be a non-negative integer.");
         return false;
     }
     if (doc.HasMember("LogLevel") &&
@@ -542,6 +547,9 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
     }
     if (doc.HasMember("AlbumsSplitThreshold") && doc["AlbumsSplitThreshold"].IsInt()) {
         AlbumsSplitThreshold = doc["AlbumsSplitThreshold"].GetInt();
+    }
+    if (doc.HasMember("JsonBatchTargetBytes")) {
+        JsonBatchTargetBytes = doc["JsonBatchTargetBytes"].GetUint64();
     }
     
     return true;

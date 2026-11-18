@@ -36,15 +36,17 @@
 namespace {
 
 TagLibReadResult failedRead(std::string stage, std::string source, std::string code,
-    std::string message)
+    std::string message, const std::error_code& error = {})
 {
     auto diagnosticMessage = message;
     return {
         std::nullopt,
         std::move(message),
         { MediaDiagnostic{
-            std::move(stage), std::move(source), std::move(code), "error",
-            std::move(diagnosticMessage)
+            std::move(stage), std::move(source), std::move(code), DiagnosticSeverity::Error,
+            std::move(diagnosticMessage),
+            error ? std::optional<int>(error.value()) : std::nullopt,
+            error ? std::optional<std::string>(error.category().name()) : std::nullopt
         } }
     };
 }
@@ -575,8 +577,8 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
     std::error_code ec;
     const auto fileSize = std::filesystem::file_size(filePath, ec);
     if (ec) {
-        return failedRead("metadata", "filesystem", "file_size_failed",
-            "Cannot read file size: " + ec.message());
+        return failedRead("metadata", "filesystem", DiagnosticCode::FileSizeFailed,
+            "Cannot read file size: " + ec.message(), ec);
     }
     record.sizeBytes = fileSize;
     record.modifiedUtc = CommonUtils::fileModificationTimeUtc(filePath);
@@ -590,12 +592,12 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
     {
         TagLib::FileStream stream(name, true);
         if (!stream.isOpen()) {
-            return failedRead("tags", "taglib", "taglib_open_failed",
+            return failedRead("tags", "taglib", DiagnosticCode::TaglibOpenFailed,
                 "TagLib could not open the audio file read-only.");
         }
         TagLib::FileRef file(&stream, true, TagLib::AudioProperties::Fast);
         if (file.isNull()) {
-            return failedRead("tags", "taglib", "taglib_read_failed",
+            return failedRead("tags", "taglib", DiagnosticCode::TaglibReadFailed,
                 "TagLib could not identify or read the audio file.");
         }
         readProperties(record, file.properties(), tagScope(extension),
@@ -625,14 +627,14 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
         }
         for (const auto& log : ffmpegLogs) {
             record.diagnostics.push_back({
-                log.stage, "ffmpeg", "ffmpeg_log", log.level,
+                log.stage, "ffmpeg", DiagnosticCode::FfmpegLog, ParseDiagnosticSeverity(log.level).value(),
                 log.component + ": " + log.message
             });
         }
         if (!probeError.empty()) {
             const auto message = "FFmpeg container metadata read failed: " + probeError;
             record.diagnostics.push_back({
-                "chapters", "ffmpeg", "ffmpeg_probe_failed", "error", message
+                "chapters", "ffmpeg", DiagnosticCode::FfmpegProbeFailed, DiagnosticSeverity::Error, message
             });
             return { std::nullopt, message, std::move(record.diagnostics) };
         }
@@ -656,7 +658,7 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
                 (source.end_time && !chapter.endSeconds)) {
                 const std::string message = "FFmpeg returned an invalid chapter time.";
                 record.diagnostics.push_back({
-                    "chapters", "ffmpeg", "invalid_chapter_time", "error", message
+                    "chapters", "ffmpeg", DiagnosticCode::InvalidChapterTime, DiagnosticSeverity::Error, message
                 });
                 return { std::nullopt, message, std::move(record.diagnostics) };
             }
@@ -665,7 +667,7 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
                     *chapter.startSeconds > *chapter.endSeconds)) {
                 const std::string message = "FFmpeg returned a chapter with an inverted time range.";
                 record.diagnostics.push_back({
-                    "chapters", "ffmpeg", "inverted_chapter_time", "error", message
+                    "chapters", "ffmpeg", DiagnosticCode::InvertedChapterTime, DiagnosticSeverity::Error, message
                 });
                 return { std::nullopt, message, std::move(record.diagnostics) };
             }

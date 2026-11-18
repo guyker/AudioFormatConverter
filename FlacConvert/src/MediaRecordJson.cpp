@@ -250,7 +250,7 @@ std::string SerializeMediaRecord(const MediaRecord& record)
             writeString(writer, "stage", diagnostic.stage);
             writeString(writer, "source", diagnostic.source);
             writeString(writer, "code", diagnostic.code);
-            writeString(writer, "severity", diagnostic.severity);
+            writeString(writer, "severity", DiagnosticSeverityName(diagnostic.severity));
             writeString(writer, "message", diagnostic.message);
             writer.EndObject();
         }
@@ -523,20 +523,22 @@ std::optional<MediaRecord> ParseMediaRecord(const rapidjson::Value& value, std::
                 return std::nullopt;
             }
             MediaDiagnostic diagnostic;
+            std::string severity;
             if (!readRequiredString(item, "stage", diagnostic.stage) ||
                 !readRequiredString(item, "source", diagnostic.source) ||
                 !readRequiredString(item, "code", diagnostic.code) ||
-                !readRequiredString(item, "severity", diagnostic.severity) ||
+                !readRequiredString(item, "severity", severity) ||
                 !readRequiredString(item, "message", diagnostic.message)) {
                 fail(error, "Diagnostic is missing stage, source, code, severity, or message.");
                 return std::nullopt;
             }
+            const auto parsedSeverity = ParseDiagnosticSeverity(severity);
             if (diagnostic.stage.empty() || diagnostic.source.empty() || diagnostic.code.empty() ||
-                (diagnostic.severity != "error" && diagnostic.severity != "warning" &&
-                    diagnostic.severity != "info")) {
+                !parsedSeverity) {
                 fail(error, "Diagnostic stage, source, code, or severity is invalid.");
                 return std::nullopt;
             }
+            diagnostic.severity = *parsedSeverity;
             record.diagnostics.push_back(std::move(diagnostic));
         }
     }

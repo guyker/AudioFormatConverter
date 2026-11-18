@@ -1009,7 +1009,8 @@ class ConversionTests(unittest.TestCase):
         libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
         result = self.legacy(libraries, "2\n\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("Albums: 1; tracks: 1; JSON batches to write: 1", result.stdout)
+        self.assertIn("Albums: 1; tracks: 1; metadata batches: 1", result.stdout)
+        self.assertIn("JSON output count is determined during serialization.", result.stdout)
         self.assertFalse(self.output.exists())
         result = self.legacy(libraries, "2\nRUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

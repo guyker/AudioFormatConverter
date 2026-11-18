@@ -4,7 +4,56 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <stdexcept>
 #include <vector>
+
+namespace DiagnosticCode
+{
+    inline constexpr const char* MetadataReadFailed = "metadata_read_failed";
+    inline constexpr const char* AudioPropertiesMissing = "audio_properties_missing";
+    inline constexpr const char* RecordJsonInvalid = "record_json_invalid";
+    inline constexpr const char* AlbumHasNoSerializableTracks = "album_has_no_serializable_tracks";
+    inline constexpr const char* FfmpegLog = "ffmpeg_log";
+    inline constexpr const char* FfmpegLogUnattributed = "ffmpeg_log_unattributed";
+    inline constexpr const char* FfmpegProbeFailed = "ffmpeg_probe_failed";
+    inline constexpr const char* DecodeFailed = "decode_failed";
+    inline constexpr const char* DecodeUnsupported = "decode_unsupported";
+    inline constexpr const char* InvalidChapterTime = "invalid_chapter_time";
+    inline constexpr const char* InvertedChapterTime = "inverted_chapter_time";
+    inline constexpr const char* FileSizeFailed = "file_size_failed";
+    inline constexpr const char* TaglibOpenFailed = "taglib_open_failed";
+    inline constexpr const char* TaglibReadFailed = "taglib_read_failed";
+    inline constexpr const char* ScanStagingFailed = "scan_staging_failed";
+    inline constexpr const char* StagingDirectoryFailed = "staging_directory_failed";
+    inline constexpr const char* StagedJsonWriteFailed = "staged_json_write_failed";
+    inline constexpr const char* ScanFilesystemFailed = "scan_filesystem_failed";
+    inline constexpr const char* ScanFailed = "scan_failed";
+    inline constexpr const char* NoAlbumsFound = "no_albums_found";
+    inline constexpr const char* OutputDirectoryUnavailable = "output_directory_unavailable";
+    inline constexpr const char* GeneratedJsonInstallFailed = "generated_json_install_failed";
+    inline constexpr const char* AlbumExceedsBatchTarget = "album_exceeds_batch_target";
+}
+
+enum class DiagnosticSeverity { Error, Warning, Info };
+
+inline const char* DiagnosticSeverityName(DiagnosticSeverity severity)
+{
+    switch (severity) {
+    case DiagnosticSeverity::Error: return "error";
+    case DiagnosticSeverity::Warning: return "warning";
+    case DiagnosticSeverity::Info: return "info";
+    }
+    throw std::logic_error("Invalid diagnostic severity");
+}
+
+inline std::optional<DiagnosticSeverity> ParseDiagnosticSeverity(std::string_view severity)
+{
+    if (severity == "error") return DiagnosticSeverity::Error;
+    if (severity == "warning") return DiagnosticSeverity::Warning;
+    if (severity == "info") return DiagnosticSeverity::Info;
+    return std::nullopt;
+}
 
 struct RawMetadataTag
 {
@@ -76,16 +125,20 @@ struct MediaDiagnostic
     std::string stage;
     std::string source;
     std::string code;
-    std::string severity;
+    DiagnosticSeverity severity{ DiagnosticSeverity::Error };
     std::string message;
+    std::optional<int> nativeErrorCode;
+    std::optional<std::string> nativeErrorCategory;
 };
 
 struct ScanDiagnostic
 {
-    std::string albumPath;
+    std::optional<std::string> albumPath;
     std::optional<std::string> filePath;
     MediaDiagnostic diagnostic;
     std::optional<std::string> affectedPath;
+    std::optional<int> nativeErrorCode;
+    std::optional<std::string> nativeErrorCategory;
 };
 
 struct MediaRecord

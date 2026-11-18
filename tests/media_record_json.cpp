@@ -44,7 +44,7 @@ int main(int argc, char** argv)
             "ZERO_PADDED_HIRES", "warning", "high", "Observed 16 used bits in a 24-bit file."
         });
         record.diagnostics.push_back({
-            "chapters", "ffmpeg", "ffmpeg_log", "warning", "No chapters were found."
+            "chapters", "ffmpeg", "ffmpeg_log", DiagnosticSeverity::Warning, "No chapters were found."
         });
         record.chapterSupport = "supported";
         record.rawTags.push_back({

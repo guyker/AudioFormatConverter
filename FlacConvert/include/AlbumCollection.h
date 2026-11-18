@@ -46,6 +46,12 @@
 
 enum class SortBy { AlbumName, Artist, AlbumArtist, Year, TrackCount };
 
+struct ScanDiscoveryCounts
+{
+	size_t albums{ 0 };
+	size_t tracks{ 0 };
+};
+
 class AlbumCollection
 {
 public:
@@ -54,7 +60,7 @@ public:
 
 	// load albums from directory / Directly from media files FLAC/MP3
 	// bIncludeMetadata = true - load media metadata / Calling ImportMetadata
-	CommonUtils::Generator<MediaAlbumListPtr> LoadAlbumsCo(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata = false, size_t batchSize = 1000);
+	CommonUtils::Generator<MediaAlbumListPtr> LoadAlbumsCo(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata = false, size_t batchSize = 1000, ScanDiscoveryCounts* counts = nullptr);
 	MediaAlbumListPtr LoadAlbums(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata = false);
 
 	//Import/update Media Metadata from the current loaded Album Collection (get JSON from media files)
@@ -73,7 +79,8 @@ public:
 	std::shared_ptr<DirectoryContentEntryList> LoadAlbumsFromJSON(std::filesystem::path dirPath);
 	//Save album list and metadata to JSON file
 	bool SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr,
-		std::filesystem::path path, const std::filesystem::path& libraryRoot,
+		const std::filesystem::path& libraryRoot,
+		const std::function<bool(const std::filesystem::path&, const std::string&, size_t)>& writeAlbum,
 		std::vector<ScanDiagnostic>* diagnostics = nullptr);
 
 

@@ -329,7 +329,7 @@ void validateAlbumTags(TrackInfoList& tracks)
 
 
 
-CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata, size_t batchSize) {
+CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata, size_t batchSize, ScanDiscoveryCounts* counts) {
 
     std::chrono::steady_clock::time_point startTimePoint = std::chrono::steady_clock::now();
     //std::chrono::steady_clock::time_point endLoadTime = startLoadTime;
@@ -371,6 +371,10 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     for (auto& [folderPath, trackList] : albumMap) {
         for (const auto& entry : fs::directory_iterator(folderPath)) {
             if (entry.is_regular_file() && MediaTrack::IsFileAcceptedAudioFile(entry)) {
+                if (counts) {
+                    if (trackList.empty()) ++counts->albums;
+                    ++counts->tracks;
+                }
                 uintmax_t fileSize = fs::file_size(entry.path());
                 trackList.push_back({ entry.path().filename(), fileSize, FFprobeOutput{}, std::nullopt, std::nullopt });
             }
@@ -702,7 +706,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
                     }
                     else if (target.track->LastErroString && target.track->diagnostics.empty()) {
                         target.track->diagnostics.push_back({
-                            "metadata", "taglib", "metadata_read_failed", "error",
+                            "metadata", "taglib", DiagnosticCode::MetadataReadFailed, DiagnosticSeverity::Error,
                             *target.track->LastErroString
                         });
                     }
@@ -725,7 +729,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
                     }
                     else if (target.track->LastErroString && target.track->diagnostics.empty()) {
                         target.track->diagnostics.push_back({
-                            "metadata", "taglib", "metadata_read_failed", "error",
+                            "metadata", "taglib", DiagnosticCode::MetadataReadFailed, DiagnosticSeverity::Error,
                             *target.track->LastErroString
                         });
                     }
@@ -777,12 +781,10 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
 
 
 bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr,
-    std::filesystem::path path, const std::filesystem::path& libraryRoot,
+    const std::filesystem::path& libraryRoot,
+    const std::function<bool(const std::filesystem::path&, const std::string&, size_t)>& writeAlbum,
     std::vector<ScanDiagnostic>* diagnostics)
 {
-    rapidjson::Document mediaDoc;
-    mediaDoc.SetArray(); // Top-level array for albums
-    rapidjson::Document::AllocatorType& allocator = mediaDoc.GetAllocator();
     bool batchHasErrors = false;
 
     const auto reportDiagnostic = [diagnostics](const std::filesystem::path& albumPath,
@@ -794,13 +796,17 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                 trackPath
                     ? std::optional<std::string>(CommonUtils::path_to_utf8(*trackPath))
                     : std::nullopt,
-                diagnostic
+                diagnostic, std::nullopt,
+                diagnostic.nativeErrorCode, diagnostic.nativeErrorCategory
             });
         }
     };
 
     for (auto& [albumPath, trackList] : *albumListPtr)
     {
+        rapidjson::Document mediaDoc;
+        auto& allocator = mediaDoc.GetAllocator();
+        bool albumHasErrors = false;
         // Create album object
         rapidjson::Value albumObj(rapidjson::kObjectType);
 
@@ -836,13 +842,14 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                         CommonUtils::path_to_utf8(trackPath), *lastError);
                     if (item.diagnostics.empty()) {
                         item.diagnostics.push_back({
-                            "metadata", "taglib", "metadata_read_failed", "error", *lastError
+                            "metadata", "taglib", DiagnosticCode::MetadataReadFailed, DiagnosticSeverity::Error, *lastError
                         });
                     }
                     for (const auto& diagnostic : item.diagnostics) {
                         reportDiagnostic(albumPath.path(), trackPath, diagnostic);
                     }
                     batchHasErrors = true;
+                    albumHasErrors = true;
                     continue;
                 }
                 if (!item.catalogRecord || !item.catalogRecord->sampleRateHz ||
@@ -859,12 +866,13 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                         }
                     }
                     const MediaDiagnostic diagnostic{
-                        "metadata", "catalog", "audio_properties_missing", "error",
+                        "metadata", "catalog", DiagnosticCode::AudioPropertiesMissing, DiagnosticSeverity::Error,
                         "Metadata extraction produced no usable sample-rate/channel data."
                     };
                     item.diagnostics.push_back(diagnostic);
                     reportDiagnostic(albumPath.path(), trackPath, diagnostic);
                     batchHasErrors = true;
+                    albumHasErrors = true;
                     continue;
                 }
 
@@ -878,7 +886,7 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                     size_t errorOffset = trackDoc.GetErrorOffset();
                     item.LastErroString = errorMsg;
                     const MediaDiagnostic diagnostic{
-                        "serialization", "rapidjson", "record_json_invalid", "error",
+                        "serialization", "rapidjson", DiagnosticCode::RecordJsonInvalid, DiagnosticSeverity::Error,
                         std::string(errorMsg) + " at offset " + std::to_string(errorOffset)
                     };
                         for (const auto& recordDiagnostic : item.catalogRecord->diagnostics) {
@@ -889,6 +897,7 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                     spdlog::error("Error parsing metadata JSON for '{}': {} at offset {}",
                         CommonUtils::path_to_utf8(trackPath), errorMsg, errorOffset);
                     batchHasErrors = true;
+                    albumHasErrors = true;
                     continue;
                 }
                 else
@@ -909,63 +918,27 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
             // Add Tracks to album
             albumObj.AddMember("Tracks", trackMediaArray, allocator);
 
-            // Add album object to top-level array (no key)
-            mediaDoc.PushBack(albumObj, allocator);
+            StringBuffer buffer;
+            Writer<StringBuffer> writer(buffer);
+            if (!albumHasErrors && (!albumObj.Accept(writer) ||
+                !writeAlbum(albumPath.path(),
+                    std::string(buffer.GetString(), buffer.GetSize()), trackList.size()))) {
+                batchHasErrors = true;
+            }
         }
         else {
             const auto message =
                 "Album has no serializable tracks from the configured catalog extensions.";
             spdlog::error("{} '{}'.", message, CommonUtils::path_to_utf8(albumPath.path()));
             const MediaDiagnostic diagnostic{
-                "serialization", "catalog", "album_has_no_serializable_tracks", "error", message
+                "serialization", "catalog", DiagnosticCode::AlbumHasNoSerializableTracks, DiagnosticSeverity::Error, message
             };
             reportDiagnostic(albumPath.path(), std::nullopt, diagnostic);
             batchHasErrors = true;
         }
     }
 
-    if (batchHasErrors) {
-        return false;
-    }
-
-    if (fs::exists(path)) {
-        std::error_code ec;
-        if (!fs::remove(path, ec)) {
-            spdlog::error("Failed to remove existing file: {}", ec.message());
-        }
-    }
-
-    StringBuffer buffer;
-    Writer<StringBuffer> writer(buffer);
-    mediaDoc.Accept(writer);
-    const char* json = buffer.GetString();
-
-
-    fs::path parent = path.parent_path();
-    if (!parent.empty() && !fs::exists(parent)) {
-        // 2. Create all levels of directories
-        std::error_code ec;
-        if (!fs::create_directories(parent, ec)) {
-            std::cerr << "Failed to create directories: " << ec.message() << "\n";
-            return false;
-        }
-    }
-
-    // Save the JSON string to a file
-    std::ofstream file(path);
-    if (!file.is_open()) {
-        spdlog::error("Unable to open JSON file for writing: {}", CommonUtils::path_to_utf8(path));
-        return false;
-    }
-    file << json;
-    file.close();
-    if (!file) {
-        spdlog::error("Failed to write or close JSON file: {}", CommonUtils::path_to_utf8(path));
-        return false;
-    }
-
-
-    return true;
+    return !batchHasErrors;
 }
 
 

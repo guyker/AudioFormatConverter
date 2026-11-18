@@ -73,8 +73,15 @@ def main():
         report_path = output / library.name / "scan-report.json"
         validate_report(report_path)
         report = json.loads(report_path.read_text(encoding="utf-8"))
-        if report["schemaVersion"] != 1 or report["status"] != "completed":
+        if report["schemaVersion"] != 2 or report["status"] != "completed":
             raise AssertionError("A successful scan did not write a completed scan report")
+        invalid_report_path = root / "invalid-report.json"
+        for invalid_report in (dict(report, schemaVersion=1),
+                               dict(report, diagnostics=[{"stage": "invalid"}])):
+            invalid_report_path.write_text(json.dumps(invalid_report), encoding="utf-8")
+            if subprocess.run([report_validator, report_schema, str(invalid_report_path)],
+                              capture_output=True).returncode == 0:
+                raise AssertionError("Report schema validation accepted an invalid version or diagnostic")
         counts = report["counts"]
         if (counts["albumsDiscovered"] != 1 or counts["tracksDiscovered"] != 1 or
                 counts["albumsSerialized"] != 1 or counts["tracksSerialized"] != 1 or
@@ -120,6 +127,115 @@ def main():
                 failed_counts["batchesStaged"] != 0 or
                 failed_counts["batchesInstalled"] != 0):
             raise AssertionError("The failed scan report misrepresented staged or installed output")
+
+        multiple_library = root / "multiple-albums"
+        broken_album = multiple_library / "a-broken"
+        valid_album = multiple_library / "z-valid"
+        broken_album.mkdir(parents=True)
+        valid_album.mkdir()
+        (broken_album / "broken.flac").write_bytes(b"not an audio stream")
+        (valid_album / "valid.flac").write_bytes(track.read_bytes())
+        small_batches = root / "small-batches.json"
+        small_batches.write_text(json.dumps({"AlbumsSplitThreshold": 1}), encoding="utf-8")
+        multiple_output = root / "multiple-output"
+        result = subprocess.run(
+            [converter, "scan", str(multiple_library), "--config", str(small_batches),
+             "--output-dir", str(multiple_output)], capture_output=True, timeout=30)
+        if result.returncode == 0:
+            raise AssertionError("Invalid first batch unexpectedly succeeded")
+        multiple_report_path = multiple_output / multiple_library.name / "scan-report.json"
+        validate_report(multiple_report_path)
+        multiple_report = json.loads(multiple_report_path.read_text(encoding="utf-8"))
+        if (multiple_report["counts"]["albumsDiscovered"] != 2 or
+                multiple_report["counts"]["tracksDiscovered"] != 2):
+            raise AssertionError("Discovery counts omit albums after a failed first batch")
+        generic_failures = [item for item in multiple_report["diagnostics"]
+                            if item["code"] == "scan_failed"]
+        if not generic_failures or any("albumPath" in item for item in generic_failures):
+            raise AssertionError("Library-scoped failure was attributed to an album")
+
+        sized_library = root / "sized-library"
+        for index in range(3):
+            folder = sized_library / f"album-{index}"
+            folder.mkdir(parents=True)
+            (folder / "track.flac").write_bytes(track.read_bytes())
+        (sized_library / "album-0" / "track-2.flac").write_bytes(track.read_bytes())
+        sized_output = root / "sized-output"
+        size_config = root / "size-config.json"
+        size_config.write_text(json.dumps({"Incremental": False}), encoding="utf-8")
+        command = [converter, "scan", str(sized_library), "--config", str(size_config),
+                   "--output-dir", str(sized_output)]
+        subprocess.run(command, check=True)
+        sized_dir = sized_output / sized_library.name
+        initial_parts = list(sized_dir.glob("media_out_*.json"))
+        if len(initial_parts) != 1:
+            raise AssertionError("Disabled byte target changed album-count batching")
+        initial_albums = json.loads(initial_parts[0].read_text(encoding="utf-8"))
+        album_sizes = [len(json.dumps(album, ensure_ascii=False, separators=(",", ":"))
+                           .encode("utf-8")) for album in initial_albums]
+        byte_target = max(album_sizes) + 2
+        size_config.write_text(json.dumps({
+            "Incremental": False, "JsonBatchTargetBytes": byte_target
+        }), encoding="utf-8")
+        subprocess.run(command, check=True)
+        sized_parts = list(sized_dir.glob("media_out_*.json"))
+        if len(sized_parts) != 3:
+            raise AssertionError("Byte target did not split three intact albums")
+        for part in sized_parts:
+            if part.stat().st_size > byte_target or len(json.loads(part.read_text(encoding="utf-8"))) != 1:
+                raise AssertionError("A normal batch exceeded the byte target or split an album")
+        sized_albums = [album for part in sized_parts
+                        for album in json.loads(part.read_text(encoding="utf-8"))]
+        if sorted((album["Album Path"], len(album["Tracks"])) for album in sized_albums) != \
+                sorted((album["Album Path"], len(album["Tracks"])) for album in initial_albums):
+            raise AssertionError("Size-aware batching lost or duplicated albums or tracks")
+        exact_target = sum(part.stat().st_size for part in sorted(sized_parts)[:2]) - 1
+        size_config.write_text(json.dumps({
+            "Incremental": False, "JsonBatchTargetBytes": exact_target
+        }), encoding="utf-8")
+        subprocess.run(command, check=True)
+        exact_parts = list(sized_dir.glob("media_out_*.json"))
+        if len(exact_parts) != 2 or not any(part.stat().st_size == exact_target for part in exact_parts):
+            raise AssertionError("Albums that exactly fit the byte target were unnecessarily split")
+        size_config.write_text(json.dumps({
+            "Incremental": False, "JsonBatchTargetBytes": 1
+        }), encoding="utf-8")
+        subprocess.run(command, check=True)
+        oversized_report_path = sized_dir / "scan-report.json"
+        validate_report(oversized_report_path)
+        oversized_report = json.loads(oversized_report_path.read_text(encoding="utf-8"))
+        oversized = [item for item in oversized_report["diagnostics"]
+                     if item["code"] == "album_exceeds_batch_target"]
+        if len(oversized) != 3 or any("albumPath" not in item for item in oversized):
+            raise AssertionError("Oversized albums were not individually identified")
+        previous_parts = {part.name: part.read_bytes()
+                          for part in sized_dir.glob("media_out_*.json")}
+        (sized_library / "album-2" / "track.flac").write_bytes(b"not an audio stream")
+        failed_sized_scan = subprocess.run(command, capture_output=True, timeout=30)
+        if failed_sized_scan.returncode == 0:
+            raise AssertionError("Invalid track succeeded during size-aware scan")
+        if {part.name: part.read_bytes() for part in sized_dir.glob("media_out_*.json")} != previous_parts:
+            raise AssertionError("Failed size-aware scan changed the installed catalog")
+        failed_sized_report = json.loads(oversized_report_path.read_text(encoding="utf-8"))
+        if failed_sized_report["counts"]["batchesStaged"] < 1:
+            raise AssertionError("The later-album failure did not exercise staged batch cleanup")
+        size_config.write_text(json.dumps({"Incremental": False}), encoding="utf-8")
+        if subprocess.run(command, capture_output=True, timeout=30).returncode == 0:
+            raise AssertionError("Invalid track succeeded without byte splitting")
+        partially_serialized = json.loads(oversized_report_path.read_text(encoding="utf-8"))["counts"]
+        if (partially_serialized["albumsSerialized"] < 1 or
+                partially_serialized["batchesStaged"] != 0 or
+                partially_serialized["batchesInstalled"] != 0):
+            raise AssertionError("Serialized albums were not distinguished from finished batches")
+        if {part.name: part.read_bytes() for part in sized_dir.glob("media_out_*.json")} != previous_parts:
+            raise AssertionError("Failed unsplit scan changed the installed catalog")
+        for invalid_target in (-1, 1.5, "100"):
+            size_config.write_text(json.dumps({
+                "JsonBatchTargetBytes": invalid_target
+            }), encoding="utf-8")
+            invalid = subprocess.run(command, capture_output=True, timeout=30)
+            if invalid.returncode == 0:
+                raise AssertionError("Invalid JSON byte target was accepted")
 
         if os.name == "nt":
             long_output = root / "long-output" / ("a" * 90) / ("b" * 90)

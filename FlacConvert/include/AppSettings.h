@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <filesystem>
 #include <vector>
 #include <tuple>
@@ -160,6 +162,7 @@ struct AppSettingsJson
 	int SizeMatchPercentageThreshold{ 3 }; // legacy name; maximum track-duration difference in percent
 	int RecursionDirectorySearchDepth{ 10 }; // max depth for recursive search
 	int AlbumsSplitThreshold{ 2000 }; // max number of album in each chunk (this help with memory usage and performance)
+	std::uint64_t JsonBatchTargetBytes{ 0 };
 
 	FLACEncodingSettings FLACSettings{};
 	std::vector<MediaDirectoryElement> MediaDirectoryList{};
@@ -197,6 +200,7 @@ struct AppSettingsJson
 			3, //SizeMatchPercentageThreshold
 			10, //RecursionDirectorySearchDepth
 			2000, //AlbumsSplitThreshold
+			0, //JsonBatchTargetBytes (disabled)
 			{
 				 L"ffmpeg",
 				 L"-map 0:a:0 -af aresample=osf=s16:osr=44100:dither_method=triangular -c:a flac -y -v warning -stats",

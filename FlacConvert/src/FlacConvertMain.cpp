@@ -188,8 +188,7 @@ struct ScanReport
     std::string scanTier;
     std::string sourceRoot;
     std::string outputDirectory;
-    std::size_t albumsDiscovered{ 0 };
-    std::size_t tracksDiscovered{ 0 };
+    ScanDiscoveryCounts discovery;
     std::size_t albumsSerialized{ 0 };
     std::size_t tracksSerialized{ 0 };
     std::size_t batchesStaged{ 0 };
@@ -204,7 +203,7 @@ std::string serializeScanReport(const ScanReport& report)
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
     writer.StartObject();
     writer.Key("schemaVersion");
-    writer.Int(1);
+    writer.Int(2);
     writer.Key("runId");
     writer.String(report.runId.data(), static_cast<rapidjson::SizeType>(report.runId.size()));
     writer.Key("status");
@@ -219,9 +218,9 @@ std::string serializeScanReport(const ScanReport& report)
     writer.Key("counts");
     writer.StartObject();
     writer.Key("albumsDiscovered");
-    writer.Uint64(report.albumsDiscovered);
+    writer.Uint64(report.discovery.albums);
     writer.Key("tracksDiscovered");
-    writer.Uint64(report.tracksDiscovered);
+    writer.Uint64(report.discovery.tracks);
     writer.Key("albumsSerialized");
     writer.Uint64(report.albumsSerialized);
     writer.Key("tracksSerialized");
@@ -239,9 +238,11 @@ std::string serializeScanReport(const ScanReport& report)
     writer.StartArray();
     for (const auto& entry : report.diagnostics) {
         writer.StartObject();
-        writer.Key("albumPath");
-        writer.String(entry.albumPath.data(),
-            static_cast<rapidjson::SizeType>(entry.albumPath.size()));
+        if (entry.albumPath) {
+            writer.Key("albumPath");
+            writer.String(entry.albumPath->data(),
+                static_cast<rapidjson::SizeType>(entry.albumPath->size()));
+        }
         if (entry.filePath) {
             writer.Key("filePath");
             writer.String(entry.filePath->data(),
@@ -251,6 +252,15 @@ std::string serializeScanReport(const ScanReport& report)
             writer.Key("affectedPath");
             writer.String(entry.affectedPath->data(),
                 static_cast<rapidjson::SizeType>(entry.affectedPath->size()));
+        }
+        if (entry.nativeErrorCode) {
+            writer.Key("nativeErrorCode");
+            writer.Int(*entry.nativeErrorCode);
+        }
+        if (entry.nativeErrorCategory) {
+            writer.Key("nativeErrorCategory");
+            writer.String(entry.nativeErrorCategory->data(),
+                static_cast<rapidjson::SizeType>(entry.nativeErrorCategory->size()));
         }
         writer.Key("stage");
         writer.String(entry.diagnostic.stage.data(),
@@ -262,8 +272,7 @@ std::string serializeScanReport(const ScanReport& report)
         writer.String(entry.diagnostic.code.data(),
             static_cast<rapidjson::SizeType>(entry.diagnostic.code.size()));
         writer.Key("severity");
-        writer.String(entry.diagnostic.severity.data(),
-            static_cast<rapidjson::SizeType>(entry.diagnostic.severity.size()));
+        writer.String(DiagnosticSeverityName(entry.diagnostic.severity));
         writer.Key("message");
         writer.String(entry.diagnostic.message.data(),
             static_cast<rapidjson::SizeType>(entry.diagnostic.message.size()));
@@ -998,7 +1007,8 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                 << "  Output: " << pathToUtf8(target) << '\n'
                 << "  Diagnostics: " << pathToUtf8(target / "scan-report.json") << '\n'
                 << "  Albums: " << albumCount << "; tracks: " << tracks
-                << "; JSON batches to write: " << batches.size() << '\n'
+                << "; metadata batches: " << batches.size() << '\n'
+                << "  JSON output count is determined during serialization.\n"
                 << "  Existing generated JSON files to replace: " << previous << '\n'
                 << "  Overwrite: generated JSON only; databases and sources unchanged.\n";
             if (batches.empty()) {
@@ -1066,9 +1076,9 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         const auto appendUnscopedFfmpegLogs = [&] {
             for (const auto& log : unscopedFfmpegLogs.TakeLogs()) {
                 scanReport.diagnostics.push_back({
-                    scanReport.sourceRoot,
                     std::nullopt,
-                    { log.stage, "ffmpeg", "ffmpeg_log_unattributed", log.level,
+                    std::nullopt,
+                    { log.stage, "ffmpeg", DiagnosticCode::FfmpegLogUnattributed, ParseDiagnosticSeverity(log.level).value(),
                         log.component + ": " + log.message },
                     std::nullopt
                 });
@@ -1098,12 +1108,24 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         try {
             stagingRoot = makeScanStagingDirectory(libraryIoPath);
         }
+        catch (const fs::filesystem_error& error) {
+            spdlog::error("Cannot create scan staging directory: {}", error.what());
+            const auto affected = !error.path1().empty() ? error.path1() : error.path2();
+            scanReport.diagnostics.push_back({
+                std::nullopt, std::nullopt,
+                { "discovery", "filesystem", DiagnosticCode::ScanStagingFailed, DiagnosticSeverity::Error, error.what() },
+                affected.empty() ? std::nullopt : std::optional<std::string>(pathToUtf8(affected)),
+                error.code().value(), error.code().category().name()
+            });
+            writeFailureReport(nullptr);
+            return 1;
+        }
         catch (const std::exception& error) {
             spdlog::error("Cannot create scan staging directory: {}", error.what());
             scanReport.diagnostics.push_back({
-                pathToUtf8(libraryIoPath),
                 std::nullopt,
-                { "discovery", "filesystem", "scan_staging_failed", "error", error.what() }
+                std::nullopt,
+                { "discovery", "filesystem", DiagnosticCode::ScanStagingFailed, DiagnosticSeverity::Error, error.what() }
             });
             writeFailureReport(nullptr);
             return 1;
@@ -1121,9 +1143,10 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         if (ec) {
             spdlog::error("Cannot create staging directory '{}': {}", pathToUtf8(stagedDirectory), ec.message());
             scanReport.diagnostics.push_back({
-                pathToUtf8(libraryIoPath),
                 std::nullopt,
-                { "serialization", "filesystem", "staging_directory_failed", "error", ec.message() }
+                std::nullopt,
+                { "serialization", "filesystem", DiagnosticCode::StagingDirectoryFailed, DiagnosticSeverity::Error, ec.message() },
+                pathToUtf8(stagedDirectory), ec.value(), ec.category().name()
             });
             writeFailureReport(nullptr);
             cleanupStaging();
@@ -1135,28 +1158,95 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         try {
             const auto writeBatch = [&](const MediaAlbumListPtr& albumListPtr) {
                 spdlog::info("Received batch with {} albums", albumListPtr->size());
-                scanReport.albumsDiscovered += albumListPtr->size();
-                std::size_t tracksInBatch = 0;
-                for (const auto& album : *albumListPtr) {
-                    tracksInBatch += album.trackList.size();
-                }
-                scanReport.tracksDiscovered += tracksInBatch;
                 if (bIncludeMetadata) {
                     ac.ImportMetadata(albumListPtr, 0, albumListPtr->size(),
                         settings->UseAsyncMetadataReads,
                         useIncrementalCache ? &cachedRecords : nullptr);
                 }
                 ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
-                const auto stagedBatch = ++count;
-                if (!ac.SaveAlbumsToJSON(albumListPtr, mediaEntry.getMediaJsonPath(stagingRoot, stagedBatch),
-                    libraryIoPath, &scanReport.diagnostics)) {
+                std::ofstream output;
+                fs::path outputPath;
+                std::uint64_t outputBytes = 0;
+                std::size_t outputAlbums = 0;
+                const auto reportWriteFailure = [&](const std::string& message,
+                    const std::optional<fs::path>& albumPath = std::nullopt) {
+                    scanReport.diagnostics.push_back({
+                        albumPath ? std::optional<std::string>(pathToUtf8(*albumPath)) : std::nullopt,
+                        std::nullopt,
+                        { "serialization", "filesystem", DiagnosticCode::StagedJsonWriteFailed,
+                            DiagnosticSeverity::Error, message },
+                        pathToUtf8(outputPath)
+                    });
+                };
+                const auto finishOutput = [&] {
+                    if (!output.is_open()) return true;
+                    output.put(']');
+                    output.close();
+                    if (!output) {
+                        spdlog::error("Failed to write or close staged album JSON.");
+                        reportWriteFailure("Failed to write or close staged album JSON.");
+                        return false;
+                    }
+                    ++scanReport.batchesStaged;
+                    outputAlbums = 0;
+                    outputBytes = 0;
+                    return true;
+                };
+                const auto writeAlbum = [&](const fs::path& albumPath, const std::string& json,
+                    std::size_t trackCount) {
+                    ++scanReport.albumsSerialized;
+                    scanReport.tracksSerialized += trackCount;
+                    const auto albumBytes = static_cast<std::uint64_t>(json.size());
+                    const auto target = settings->JsonBatchTargetBytes;
+                    if (outputAlbums > 0 && target > 0 &&
+                        (outputBytes >= target || albumBytes >= target - outputBytes ||
+                            target - outputBytes - albumBytes < 2)) {
+                        if (!finishOutput()) return false;
+                    }
+                    if (!output.is_open()) {
+                        outputPath = mediaEntry.getMediaJsonPath(stagingRoot, ++count);
+                        output.open(outputPath, std::ios::binary | std::ios::trunc);
+                        if (!output) {
+                            spdlog::error("Cannot open staged JSON '{}'.", pathToUtf8(outputPath));
+                            reportWriteFailure("Cannot open staged album JSON.", albumPath);
+                            return false;
+                        }
+                        output.put('[');
+                        outputBytes = 1;
+                    }
+                    if (target > 0 && (target < 2 || albumBytes > target - 2)) {
+                        scanReport.diagnostics.push_back({
+                            pathToUtf8(albumPath), std::nullopt,
+                            { "serialization", "catalog", DiagnosticCode::AlbumExceedsBatchTarget,
+                                DiagnosticSeverity::Warning, "Album exceeds the JSON batch byte target." }
+                        });
+                    }
+                    if (outputAlbums > 0) {
+                        output.put(',');
+                        ++outputBytes;
+                    }
+                    output.write(json.data(), static_cast<std::streamsize>(json.size()));
+                    if (!output) {
+                        spdlog::error("Cannot write staged album JSON for '{}'.", pathToUtf8(albumPath));
+                        reportWriteFailure("Cannot write staged album JSON.", albumPath);
+                        return false;
+                    }
+                    outputBytes += albumBytes;
+                    ++outputAlbums;
+                    return true;
+                };
+                if (!ac.SaveAlbumsToJSON(albumListPtr, libraryIoPath, writeAlbum,
+                    &scanReport.diagnostics) || !finishOutput()) {
                     throw std::runtime_error("Failed to write an album JSON file.");
                 }
-                scanReport.albumsSerialized += albumListPtr->size();
-                scanReport.tracksSerialized += tracksInBatch;
-                ++scanReport.batchesStaged;
             };
             if (preview) {
+                for (const auto& albums : preparedAlbums[libraryIndex]) {
+                    scanReport.discovery.albums += albums->size();
+                    for (const auto& album : *albums) {
+                        scanReport.discovery.tracks += album.trackList.size();
+                    }
+                }
                 for (const auto& albums : preparedAlbums[libraryIndex]) {
                     writeBatch(albums);
                 }
@@ -1164,7 +1254,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             }
             else {
                 for (auto albums : ac.LoadAlbumsCo(
-                    libraryIoPath, false, settings->AlbumsSplitThreshold)) {
+                    libraryIoPath, false, settings->AlbumsSplitThreshold, &scanReport.discovery)) {
                     writeBatch(albums);
                 }
             }
@@ -1172,14 +1262,17 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         catch (const std::filesystem::filesystem_error& e) {
             spdlog::error("Filesystem error: {}", e.what());
             const auto affected = !e.path1().empty() ? e.path1() : e.path2();
+            std::error_code typeError;
             const bool isTrackPath = !affected.empty() &&
+                fs::is_regular_file(affected, typeError) && !typeError &&
                 MediaTrack::IsFileAcceptedAudioFile(affected);
             scanReport.diagnostics.push_back({
-                pathToUtf8(isTrackPath ? affected.parent_path() : libraryIoPath),
+                isTrackPath ? std::optional<std::string>(pathToUtf8(affected.parent_path())) : std::nullopt,
                 isTrackPath ? std::optional<std::string>(pathToUtf8(affected)) : std::nullopt,
-                { "scan", "filesystem", "scan_filesystem_failed", "error", e.what() },
+                { "scan", "filesystem", DiagnosticCode::ScanFilesystemFailed, DiagnosticSeverity::Error, e.what() },
                 affected.empty() ? std::nullopt
-                    : std::optional<std::string>(pathToUtf8(affected))
+                    : std::optional<std::string>(pathToUtf8(affected)),
+                e.code().value(), e.code().category().name()
             });
             writeFailureReport(nullptr);
             cleanupStaging();
@@ -1188,9 +1281,9 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         catch (const std::exception& e) {
             spdlog::error("General error: {}", e.what());
             scanReport.diagnostics.push_back({
-                pathToUtf8(libraryIoPath),
                 std::nullopt,
-                { "scan", "catalog", "scan_failed", "error", e.what() }
+                std::nullopt,
+                { "scan", "catalog", DiagnosticCode::ScanFailed, DiagnosticSeverity::Error, e.what() }
             });
             writeFailureReport(nullptr);
             cleanupStaging();
@@ -1199,9 +1292,9 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         if (count == 0) {
             spdlog::error("No albums found; preserving existing output at '{}'.", pathToUtf8(targetDirectory));
             scanReport.diagnostics.push_back({
-                pathToUtf8(libraryIoPath),
                 std::nullopt,
-                { "discovery", "catalog", "no_albums_found", "error",
+                std::nullopt,
+                { "discovery", "catalog", DiagnosticCode::NoAlbumsFound, DiagnosticSeverity::Error,
                     "No albums found; existing generated JSON was preserved." }
             });
             writeFailureReport(nullptr);
@@ -1212,9 +1305,9 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         if (!targetDirectoryAnchor.EnterValidatedDirectory(
                 targetDirectory, libraryIoPath, true)) {
             scanReport.diagnostics.push_back({
-                pathToUtf8(libraryIoPath),
                 std::nullopt,
-                { "installation", "filesystem", "output_directory_unavailable", "error",
+                std::nullopt,
+                { "installation", "filesystem", DiagnosticCode::OutputDirectoryUnavailable, DiagnosticSeverity::Error,
                     "Cannot safely enter the scan output directory." }
             });
             writeFailureReport(nullptr);
@@ -1229,9 +1322,9 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                 spdlog::error("Scan output directory changed during installation.");
             }
             scanReport.diagnostics.push_back({
-                pathToUtf8(libraryIoPath),
                 std::nullopt,
-                { "installation", "filesystem", "generated_json_install_failed", "error",
+                std::nullopt,
+                { "installation", "filesystem", DiagnosticCode::GeneratedJsonInstallFailed, DiagnosticSeverity::Error,
                     targetStillAnchored
                         ? "Could not install generated JSON files."
                         : "Scan output directory changed during installation." }

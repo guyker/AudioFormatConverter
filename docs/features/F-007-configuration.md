@@ -17,6 +17,8 @@ directory and offer to create a default file.
 accepted as an alias when the new key is absent. `CatalogExtensions` defaults to `.flac` and `.mp3`; additional supported TagLib formats can be
 enabled explicitly. `UseFFmpegLibraryAPI` is deprecated, ignored with a warning, and omitted when configuration is
 saved.
+`JsonBatchTargetBytes` is a non-negative integer, default `0` (disabled); a positive value sets the desired
+maximum JSON batch size, except for individual oversized albums.
 
 ## Entry points
 - `AppSettings.cpp#AppSettingsJson::LoadForCommandLine` (CLI), `AppSettings.cpp#AppSettingsJson::AppSetting` (menu)
@@ -30,6 +32,7 @@ saved.
 - [ ] `--config missing.json` exits non-zero with a clear message.
 - [ ] With no config file, `convert` works using defaults.
 - [ ] `AlbumsSplitThreshold: 0` is rejected.
+- [ ] Negative or non-integer `JsonBatchTargetBytes` is rejected.
 - [ ] `MediaDirectoryList` must contain objects, and a closed input stream exits the configuration prompt.
 - [ ] `MetadataScanMaxThreads: -1` is rejected; `0` selects automatic concurrency.
 - [ ] `CatalogExtensions` accepts only supported extensions and matching is case-insensitive.
