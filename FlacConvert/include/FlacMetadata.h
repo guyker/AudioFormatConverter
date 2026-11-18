@@ -14,8 +14,8 @@ std::filesystem::path SidecarPath(std::filesystem::path audio, MetadataSidecarFo
 
 // Archive: original leading ID3, fLaC marker/metadata blocks and trailing APE/ID3v1; no audio frames.
 // Binary writes the archive bytes; Json writes readableMetadataJson (a JSON object or empty) plus the
-// archive bytes in Base64; None writes no sidecar. Every format prepares temporaryInput when appended
-// tags must be removed before decoding.
+// archive bytes in Base64; None writes no sidecar. A non-empty temporaryInput is prepared when
+// appended tags must be removed before decoding; an empty path archives metadata without copying audio.
 bool Save(const std::filesystem::path& source, const std::filesystem::path& sidecar,
     MetadataSidecarFormat format, const std::string& readableMetadataJson,
     const std::filesystem::path& temporaryInput, bool& preparedInput);

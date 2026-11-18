@@ -29,6 +29,16 @@ def checked(*args):
     return result
 
 
+def refresh_manifest_batch(directory, json_file):
+    manifest_path = directory / "scan-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    batch = next(item for item in manifest["batches"] if item["file"] == json_file.name)
+    content = json_file.read_bytes()
+    batch["sizeBytes"] = len(content)
+    batch["sha256"] = hashlib.sha256(content).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
 @contextmanager
 def deny_delete(path, share=3):
     import ctypes
@@ -1285,6 +1295,10 @@ class ConversionTests(unittest.TestCase):
             [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}], "2\nRUN\n")
         self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
         albums = (self.output / "Library" / "media_out_Library_1.json").read_bytes()
+        albums_data = json.loads(albums)
+        for album in albums_data:
+            album.pop("Scan Manifest ID", None)
+        albums = json.dumps(albums_data).encode("utf-8")
         stem = self.source.name
         destination = self.output / stem
         destination.mkdir(exist_ok=True)
@@ -1390,6 +1404,7 @@ class ConversionTests(unittest.TestCase):
                            if track["file"]["relativePath"] == "one.flac")
         first_track["tags"]["title"] = ["Updated title"]
         json_file.write_text(json.dumps(data), encoding="utf-8")
+        refresh_manifest_batch(json_directory, json_file)
         result = run(ARGS.converter, "db", "import", json_directory, "--output-dir", database_output)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         with closing(sqlite3.connect(database)) as connection:
@@ -1407,6 +1422,7 @@ class ConversionTests(unittest.TestCase):
                 "BEGIN SELECT RAISE(ABORT, 'test refresh failure'); END")
         first_track["tags"]["title"] = ["Failed refresh"]
         json_file.write_text(json.dumps(data), encoding="utf-8")
+        refresh_manifest_batch(json_directory, json_file)
         result = run(ARGS.converter, "db", "import", json_directory, "--output-dir", database_output)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         with closing(sqlite3.connect(database)) as connection:
@@ -1423,6 +1439,7 @@ class ConversionTests(unittest.TestCase):
         first_album["Tracks"] = [track for track in first_album["Tracks"]
                                  if track["file"]["relativePath"] == "one.flac"]
         json_file.write_text(json.dumps(data), encoding="utf-8")
+        refresh_manifest_batch(json_directory, json_file)
         result = run(ARGS.converter, "db", "import", json_directory, "--output-dir", database_output)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         with closing(sqlite3.connect(database)) as connection:
@@ -1496,6 +1513,7 @@ class ConversionTests(unittest.TestCase):
             for batches in (expected, actual):
                 for batch in batches:
                     for album in batch:
+                        album.pop("Scan Manifest ID", None)
                         for track in album["Tracks"]:
                             track["file"].pop("modifiedUtc", None)
             self.assertEqual(actual, expected)

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AudioFormatConverter scan manifest",
+  "description": "Integrity and completeness inventory for one successful scan output set.",
+  "type": "object",
+  "required": [
+    "schema",
+    "schemaVersion",
+    "scanId",
+    "batchIntegrity",
+    "archivePolicy",
+    "batches",
+    "archives",
+    "unsupportedFormats"
+  ],
+  "properties": {
+    "schema": {
+      "const": "AudioFormatConverter.ScanManifest"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "scanId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "batchIntegrity": {
+      "type": "string"
+    },
+    "archivePolicy": {
+      "type": "string"
+    },
+    "batches": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["file", "sizeBytes", "sha256"],
+        "properties": {
+          "file": {
+            "type": "string",
+            "pattern": "^media_out_.*\\.json$"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "archives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sourcePath", "file", "sizeBytes", "sha256"],
+        "properties": {
+          "sourcePath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "file": {
+            "type": "string",
+            "pattern": "^scan_metadata_[0-9a-f]{64}\\.flac-metadata$"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "unsupportedFormats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["format", "count"],
+        "properties": {
+          "format": {
+            "type": "string",
+            "minLength": 1
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -13,12 +13,22 @@ from contextlib import closing
 from pathlib import Path
 
 
-def main():
-    if len(sys.argv) != 5:
-        raise SystemExit(
-            "usage: scan_root_audio.py CONVERTER FFMPEG REPORT_VALIDATOR REPORT_SCHEMA")
+def refresh_manifest_batch(directory, batch_path):
+    manifest_path = directory / "scan-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    batch = next(item for item in manifest["batches"] if item["file"] == batch_path.name)
+    content = batch_path.read_bytes()
+    batch["sizeBytes"] = len(content)
+    batch["sha256"] = hashlib.sha256(content).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    converter, ffmpeg, report_validator, report_schema = sys.argv[1:]
+
+def main():
+    if len(sys.argv) != 6:
+        raise SystemExit(
+            "usage: scan_root_audio.py CONVERTER FFMPEG REPORT_VALIDATOR REPORT_SCHEMA MANIFEST_SCHEMA")
+
+    converter, ffmpeg, report_validator, report_schema, manifest_schema = sys.argv[1:]
 
     def validate_report(report_path):
         report_path_arg = str(report_path.resolve())
@@ -44,6 +54,7 @@ def main():
              "-metadata", "musicbrainz_albumid=not-a-uuid", str(track)],
             check=True,
         )
+        original_track_hash = hashlib.sha256(track.read_bytes()).hexdigest()
         subprocess.run(
             [converter, "scan", str(library), "--output-dir", str(output)],
             check=True,
@@ -51,6 +62,94 @@ def main():
         files = list((output / library.name).glob("media_out_*.json"))
         if len(files) != 1:
             raise AssertionError(f"Expected one generated JSON file, found {len(files)}")
+        manifest_path = output / library.name / "scan-manifest.json"
+        subprocess.run(
+            [report_validator, manifest_schema, str(manifest_path.resolve())],
+            check=True,
+        )
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        batch_entry = manifest["batches"][0]
+        if (batch_entry["file"] != files[0].name or
+                batch_entry["sha256"] != hashlib.sha256(files[0].read_bytes()).hexdigest()):
+            raise AssertionError("The scan manifest does not integrity-protect its JSON batch")
+        if len(manifest["archives"]) != 1:
+            raise AssertionError("Native FLAC metadata was not archived")
+        archive_entry = manifest["archives"][0]
+        archive_path = output / library.name / archive_entry["file"]
+        if (not archive_path.is_file() or archive_entry["sourcePath"] != track.name or
+                archive_entry["sha256"] != hashlib.sha256(archive_path.read_bytes()).hexdigest() or
+                archive_path.stat().st_size != archive_entry["sizeBytes"] or
+                archive_path.stat().st_size >= track.stat().st_size):
+            raise AssertionError("FLAC metadata archive is missing, unverified, or contains audio")
+        if hashlib.sha256(track.read_bytes()).hexdigest() != original_track_hash:
+            raise AssertionError("Scanning modified its FLAC source")
+
+        archive_library = root / "archive-library"
+        archive_album = archive_library / "album"
+        archive_album.mkdir(parents=True)
+        archived_flac = archive_album / "track.flac"
+        shutil.copyfile(track, archived_flac)
+        archived_mp3 = archive_album / "track.mp3"
+        subprocess.run(
+            [ffmpeg, "-v", "error", "-y", "-i", str(archived_flac), "-c:a", "libmp3lame",
+             "-q:a", "4", str(archived_mp3)],
+            check=True,
+        )
+        archive_flac_hash = hashlib.sha256(archived_flac.read_bytes()).hexdigest()
+        archive_mp3_hash = hashlib.sha256(archived_mp3.read_bytes()).hexdigest()
+        archive_output = root / "archive-output"
+        archive_output.mkdir()
+        archive_target = archive_output / archive_library.name
+        archive_target.mkdir()
+        unrelated_bytes = b"unrelated output must survive"
+        database_bytes = b"database placeholder must survive"
+        (archive_target / "unrelated.txt").write_bytes(unrelated_bytes)
+        (archive_target / "catalog-v2.sqlite").write_bytes(database_bytes)
+        archive_command = [
+            converter, "scan", str(archive_library), "--output-dir", str(archive_output)]
+        subprocess.run(archive_command, check=True)
+        archive_manifest_path = archive_target / "scan-manifest.json"
+        archive_manifest = json.loads(archive_manifest_path.read_text(encoding="utf-8"))
+        previous_manifest_bytes = archive_manifest_path.read_bytes()
+        if (len(archive_manifest["archives"]) != 1 or
+                not any(item["format"] == "mp3" and item["count"] == 1
+                        for item in archive_manifest["unsupportedFormats"])):
+            raise AssertionError("Native FLAC-only archive coverage was not reported")
+        previous_archive = archive_target / archive_manifest["archives"][0]["file"]
+        previous_archive_bytes = previous_archive.read_bytes()
+        previous_batch_files = list(archive_target.glob("media_out_*.json"))
+        previous_batch_bytes = {item.name: item.read_bytes() for item in previous_batch_files}
+        new_flac = archive_album / "new.flac"
+        shutil.copyfile(archived_flac, new_flac)
+        collision_name = "scan_metadata_" + hashlib.sha256(
+            ("album" + os.sep + "new.flac").encode("utf-8")).hexdigest() + ".flac-metadata"
+        collision_path = archive_target / collision_name
+        collision_bytes = b"unmanaged collision"
+        collision_path.write_bytes(collision_bytes)
+        failed_archive_install = subprocess.run(
+            archive_command, capture_output=True, timeout=30)
+        if failed_archive_install.returncode == 0:
+            raise AssertionError("A colliding unowned archive path was overwritten")
+        if (archive_manifest_path.read_bytes() != previous_manifest_bytes or
+                {item.name: item.read_bytes() for item in archive_target.glob("media_out_*.json")} !=
+                previous_batch_bytes or previous_archive.read_bytes() != previous_archive_bytes or
+                collision_path.read_bytes() != collision_bytes):
+            raise AssertionError("A failed archive install did not roll back prior scan outputs")
+        if hashlib.sha256(archived_flac.read_bytes()).hexdigest() != archive_flac_hash:
+            raise AssertionError("A failed scan modified its FLAC source")
+        new_flac.unlink()
+        collision_path.unlink()
+        archived_flac.unlink()
+        subprocess.run(archive_command, check=True)
+        latest_manifest = json.loads(archive_manifest_path.read_text(encoding="utf-8"))
+        if latest_manifest["archives"] or previous_archive.exists():
+            raise AssertionError("A successful scan did not retire the previous FLAC archives")
+        if ((archive_target / "unrelated.txt").read_bytes() != unrelated_bytes or
+                (archive_target / "catalog-v2.sqlite").read_bytes() != database_bytes):
+            raise AssertionError("A successful scan changed unrelated output files")
+        if (hashlib.sha256(archived_mp3.read_bytes()).hexdigest() != archive_mp3_hash or
+                hashlib.sha256(track.read_bytes()).hexdigest() != original_track_hash):
+            raise AssertionError("A metadata scan modified source audio")
         albums = json.loads(files[0].read_text(encoding="utf-8"))
         if len(albums) != 1 or len(albums[0].get("Tracks", [])) != 1:
             raise AssertionError("The root-level audio track was omitted from scan output")
@@ -259,6 +358,21 @@ def main():
         expected_db_paths = db_paths()
         if len(expected_db_paths) != 4:
             raise AssertionError("Database import did not reassemble the split album")
+        missing_batch = sized_parts[0]
+        missing_batch_bytes = missing_batch.read_bytes()
+        missing_batch.unlink()
+        for check_command in (import_command, [converter, "duplicates", str(sized_dir)]):
+            if subprocess.run(check_command, capture_output=True, timeout=30).returncode == 0:
+                raise AssertionError("A missing complete JSON batch was accepted")
+        if db_paths() != expected_db_paths:
+            raise AssertionError("A missing batch changed the existing database")
+        missing_batch.write_bytes(missing_batch_bytes)
+
+        manifest_bytes = (sized_dir / "scan-manifest.json").read_bytes()
+        (sized_dir / "scan-manifest.json").unlink()
+        if subprocess.run(import_command, capture_output=True, timeout=30).returncode == 0:
+            raise AssertionError("Catalog batches were accepted without their manifest")
+        (sized_dir / "scan-manifest.json").write_bytes(manifest_bytes)
         fragment_file = next(part for part in sized_parts
                              if any("Fragment" in album for album in
                                     json.loads(part.read_text(encoding="utf-8"))))
@@ -562,6 +676,7 @@ def main():
                 if item["file"]["relativePath"] != removed_path
             ]}
         ]), encoding="utf-8")
+        refresh_manifest_batch(extended_file.parent, extended_file)
         subprocess.run(
             [converter, "db", "import", str(extended_output / library.name),
              "--output-dir", str(extended_database_output)],
@@ -830,7 +945,10 @@ def main():
         menu_output = root / "menu-output"
         menu_json = menu_output / library.name
         menu_json.mkdir(parents=True)
-        fixture_json = files[0].read_bytes()
+        menu_fixture = json.loads(files[0].read_text(encoding="utf-8"))
+        for album in menu_fixture:
+            album.pop("Scan Manifest ID", None)
+        fixture_json = json.dumps(menu_fixture).encode("utf-8")
         for index in (1, 3, 1000):
             (menu_json / f"media_out_{library.name}_{index}.json").write_bytes(fixture_json)
         menu_config_dir = root / "menu-config"
@@ -951,6 +1069,7 @@ def main():
         scanned_json = next((duplicate_output / duplicates_library.name).glob("media_out_*.json"))
         legacy_albums = json.loads(scanned_json.read_text(encoding="utf-8"))
         for album in legacy_albums:
+            album.pop("Scan Manifest ID", None)
             for index, record in enumerate(album["Tracks"]):
                 tags = {key: values[0] for key, values in record["tags"].items() if values}
                 if "artists" in tags:
@@ -974,6 +1093,8 @@ def main():
         mixed_dir = root / "mixed-duplicates"
         mixed_dir.mkdir()
         mixed_albums = json.loads(scanned_json.read_text(encoding="utf-8"))
+        for album in mixed_albums:
+            album.pop("Scan Manifest ID", None)
         mixed_index = next(index for index, album in enumerate(mixed_albums)
                            if Path(album["Album Path"]).name == "copy-one")
         mixed_albums[mixed_index] = legacy_albums[mixed_index]
@@ -988,6 +1109,8 @@ def main():
         invalid_dir = root / "invalid-duplicate-path"
         invalid_dir.mkdir()
         invalid_albums = json.loads(scanned_json.read_text(encoding="utf-8"))
+        for album in invalid_albums:
+            album.pop("Scan Manifest ID", None)
         invalid_index = next(index for index, album in enumerate(invalid_albums)
                              if Path(album["Album Path"]).name == "copy-one")
         invalid_albums[invalid_index]["Tracks"][0]["file"]["relativePath"] = "../outside.flac"

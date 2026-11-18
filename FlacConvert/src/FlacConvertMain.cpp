@@ -25,14 +25,21 @@
 #include <sstream>
 #include <string>
 #include <set>
+#include <map>
+#include <memory>
 #include <system_error>
 #include <any>
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <rapidjson/document.h>
+#include <rapidjson/istreamwrapper.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+extern "C" {
+#include <libavutil/sha.h>
+}
 
 #include "AlbumCollection.h"
 #include "CommandLine.h"
@@ -179,6 +186,411 @@ bool isGeneratedJsonOutput(const fs::directory_entry& entry, std::error_code& ec
     });
     return filename.starts_with("media_out_") &&
         MediaTrack::FileExtension(entry.path()) == u8".json";
+}
+
+struct ScanManifestBatch
+{
+    std::string file;
+    std::uint64_t sizeBytes{ 0 };
+    std::string sha256;
+};
+
+struct ScanManifestArchive
+{
+    std::string sourcePath;
+    std::string file;
+    std::uint64_t sizeBytes{ 0 };
+    std::string sha256;
+};
+
+struct ScanManifestData
+{
+    std::string id;
+    std::vector<ScanManifestBatch> batches;
+    std::vector<ScanManifestArchive> archives;
+    std::map<std::string, std::size_t> unsupportedFormats;
+};
+
+std::optional<std::string> sha256File(const fs::path& path)
+{
+    std::unique_ptr<AVSHA, decltype(&av_free)> hash(av_sha_alloc(), &av_free);
+    if (!hash || av_sha_init(hash.get(), 256) < 0) return std::nullopt;
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return std::nullopt;
+    std::array<std::uint8_t, 64 * 1024> buffer{};
+    while (input) {
+        input.read(reinterpret_cast<char*>(buffer.data()),
+            static_cast<std::streamsize>(buffer.size()));
+        const auto count = input.gcount();
+        if (count > 0) {
+            av_sha_update(hash.get(), buffer.data(), static_cast<unsigned int>(count));
+        }
+    }
+    if (!input.eof()) return std::nullopt;
+    std::array<std::uint8_t, 32> digest{};
+    av_sha_final(hash.get(), digest.data());
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string result;
+    result.reserve(digest.size() * 2);
+    for (const auto byte : digest) {
+        result.push_back(hex[byte >> 4]);
+        result.push_back(hex[byte & 0x0f]);
+    }
+    return result;
+}
+
+std::optional<std::string> sha256Text(const std::string& value)
+{
+    std::unique_ptr<AVSHA, decltype(&av_free)> hash(av_sha_alloc(), &av_free);
+    if (!hash || av_sha_init(hash.get(), 256) < 0) return std::nullopt;
+    av_sha_update(hash.get(), reinterpret_cast<const std::uint8_t*>(value.data()),
+        static_cast<unsigned int>(value.size()));
+    std::array<std::uint8_t, 32> digest{};
+    av_sha_final(hash.get(), digest.data());
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string result;
+    result.reserve(digest.size() * 2);
+    for (const auto byte : digest) {
+        result.push_back(hex[byte >> 4]);
+        result.push_back(hex[byte & 0x0f]);
+    }
+    return result;
+}
+
+bool isLowerHex(const std::string& value)
+{
+    return std::ranges::all_of(value, [](unsigned char ch) {
+        return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f');
+    });
+}
+
+bool isSafeManifestBatchName(const std::string& name)
+{
+    return name.starts_with("media_out_") && name.ends_with(".json") &&
+        fs::path(name).filename() == fs::path(name) &&
+        name.find_first_of("/\\") == std::string::npos;
+}
+
+bool isSafeManifestArchiveName(const std::string& name)
+{
+    constexpr std::string_view prefix = "scan_metadata_";
+    constexpr std::string_view suffix = ".flac-metadata";
+    return name.size() == prefix.size() + 64 + suffix.size() &&
+        name.starts_with(prefix) && name.ends_with(suffix) &&
+        isLowerHex(name.substr(prefix.size(), 64)) &&
+        name.find_first_of("/\\") == std::string::npos;
+}
+
+bool parseScanManifest(const fs::path& path, ScanManifestData& manifest)
+{
+    std::error_code ec;
+    const auto status = fs::symlink_status(path, ec);
+    if (ec || !fs::is_regular_file(status)) {
+        spdlog::error("Scan manifest is not a regular file: '{}'.", pathToUtf8(path));
+        return false;
+    }
+    std::ifstream input(path, std::ios::binary);
+    if (!input) {
+        spdlog::error("Cannot open scan manifest '{}'.", pathToUtf8(path));
+        return false;
+    }
+    rapidjson::Document document;
+    rapidjson::IStreamWrapper stream(input);
+    document.ParseStream(stream);
+    if (document.HasParseError() || !document.IsObject() ||
+        !document.HasMember("schema") || !document["schema"].IsString() ||
+        std::string(document["schema"].GetString()) != "AudioFormatConverter.ScanManifest" ||
+        !document.HasMember("schemaVersion") || !document["schemaVersion"].IsInt() ||
+        document["schemaVersion"].GetInt() != 1 ||
+        !document.HasMember("scanId") || !document["scanId"].IsString() ||
+        document["scanId"].GetStringLength() == 0 ||
+        !document.HasMember("batches") || !document["batches"].IsArray() ||
+        document["batches"].Empty() ||
+        !document.HasMember("archives") || !document["archives"].IsArray()) {
+        spdlog::error("Invalid scan manifest '{}'.", pathToUtf8(path));
+        return false;
+    }
+
+    ScanManifestData parsed;
+    parsed.id = std::string(document["scanId"].GetString(),
+        document["scanId"].GetStringLength());
+    std::set<std::string> names;
+    for (const auto& batch : document["batches"].GetArray()) {
+        if (!batch.IsObject() || !batch.HasMember("file") || !batch["file"].IsString() ||
+            !batch.HasMember("sizeBytes") || !batch["sizeBytes"].IsUint64() ||
+            !batch.HasMember("sha256") || !batch["sha256"].IsString()) {
+            spdlog::error("Invalid batch entry in scan manifest '{}'.", pathToUtf8(path));
+            return false;
+        }
+        ScanManifestBatch item{
+            std::string(batch["file"].GetString(), batch["file"].GetStringLength()),
+            batch["sizeBytes"].GetUint64(),
+            std::string(batch["sha256"].GetString(), batch["sha256"].GetStringLength())
+        };
+        if (!isSafeManifestBatchName(item.file) || item.sha256.size() != 64 ||
+            !isLowerHex(item.sha256) || !names.insert(item.file).second) {
+            spdlog::error("Unsafe or duplicate batch reference in scan manifest '{}'.", pathToUtf8(path));
+            return false;
+        }
+        parsed.batches.push_back(std::move(item));
+    }
+    names.clear();
+    for (const auto& archive : document["archives"].GetArray()) {
+        if (!archive.IsObject() || !archive.HasMember("sourcePath") ||
+            !archive["sourcePath"].IsString() || !archive.HasMember("file") ||
+            !archive["file"].IsString() || !archive.HasMember("sizeBytes") ||
+            !archive["sizeBytes"].IsUint64() || !archive.HasMember("sha256") ||
+            !archive["sha256"].IsString()) {
+            spdlog::error("Invalid archive entry in scan manifest '{}'.", pathToUtf8(path));
+            return false;
+        }
+        ScanManifestArchive item{
+            std::string(archive["sourcePath"].GetString(), archive["sourcePath"].GetStringLength()),
+            std::string(archive["file"].GetString(), archive["file"].GetStringLength()),
+            archive["sizeBytes"].GetUint64(),
+            std::string(archive["sha256"].GetString(), archive["sha256"].GetStringLength())
+        };
+        if (!isSafeManifestArchiveName(item.file) || item.sha256.size() != 64 ||
+            !isLowerHex(item.sha256) || !names.insert(item.file).second) {
+            spdlog::error("Unsafe or duplicate archive reference in scan manifest '{}'.", pathToUtf8(path));
+            return false;
+        }
+        parsed.archives.push_back(std::move(item));
+    }
+    if (document.HasMember("unsupportedFormats")) {
+        if (!document["unsupportedFormats"].IsArray()) {
+            spdlog::error("Invalid unsupportedFormats in scan manifest '{}'.", pathToUtf8(path));
+            return false;
+        }
+        for (const auto& format : document["unsupportedFormats"].GetArray()) {
+            if (!format.IsObject() || !format.HasMember("format") || !format["format"].IsString() ||
+                !format.HasMember("count") || !format["count"].IsUint64() ||
+                format["count"].GetUint64() > (std::numeric_limits<std::size_t>::max)()) {
+                spdlog::error("Invalid unsupported format entry in scan manifest '{}'.", pathToUtf8(path));
+                return false;
+            }
+            parsed.unsupportedFormats.emplace(
+                std::string(format["format"].GetString(), format["format"].GetStringLength()),
+                static_cast<std::size_t>(format["count"].GetUint64()));
+        }
+    }
+    manifest = std::move(parsed);
+    return true;
+}
+
+bool writeScanManifest(const fs::path& stagedDirectory, ScanManifestData& manifest)
+{
+    std::error_code ec;
+    for (fs::directory_iterator it(stagedDirectory, ec), end; !ec && it != end; it.increment(ec)) {
+        if (!isGeneratedJsonOutput(*it, ec)) continue;
+        if (ec) break;
+        const auto size = fs::file_size(it->path(), ec);
+        const auto digest = ec ? std::nullopt : sha256File(it->path());
+        if (ec || !digest) {
+            spdlog::error("Cannot inventory staged scan batch '{}'.", pathToUtf8(it->path()));
+            return false;
+        }
+        manifest.batches.push_back({
+            pathToUtf8(it->path().filename()), size, *digest
+        });
+    }
+    if (ec || manifest.batches.empty()) {
+        spdlog::error("Cannot inventory all staged scan batches: {}",
+            ec ? ec.message() : "no batches were written");
+        return false;
+    }
+    std::ranges::sort(manifest.batches, {}, &ScanManifestBatch::file);
+
+    rapidjson::StringBuffer buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    writer.StartObject();
+    writer.Key("schema"); writer.String("AudioFormatConverter.ScanManifest");
+    writer.Key("schemaVersion"); writer.Int(1);
+    writer.Key("scanId"); writer.String(manifest.id.data(),
+        static_cast<rapidjson::SizeType>(manifest.id.size()));
+    writer.Key("batchIntegrity");
+    writer.String("SHA-256 of every staged media_out_*.json file; consumers must match the complete set.");
+    writer.Key("archivePolicy");
+    writer.String("Exact native FLAC metadata bytes only; non-native formats are listed as unsupported.");
+    writer.Key("batches"); writer.StartArray();
+    for (const auto& batch : manifest.batches) {
+        writer.StartObject();
+        writer.Key("file"); writer.String(batch.file.data(),
+            static_cast<rapidjson::SizeType>(batch.file.size()));
+        writer.Key("sizeBytes"); writer.Uint64(batch.sizeBytes);
+        writer.Key("sha256"); writer.String(batch.sha256.data(),
+            static_cast<rapidjson::SizeType>(batch.sha256.size()));
+        writer.EndObject();
+    }
+    writer.EndArray();
+    writer.Key("archives"); writer.StartArray();
+    for (const auto& archive : manifest.archives) {
+        writer.StartObject();
+        writer.Key("sourcePath"); writer.String(archive.sourcePath.data(),
+            static_cast<rapidjson::SizeType>(archive.sourcePath.size()));
+        writer.Key("file"); writer.String(archive.file.data(),
+            static_cast<rapidjson::SizeType>(archive.file.size()));
+        writer.Key("sizeBytes"); writer.Uint64(archive.sizeBytes);
+        writer.Key("sha256"); writer.String(archive.sha256.data(),
+            static_cast<rapidjson::SizeType>(archive.sha256.size()));
+        writer.EndObject();
+    }
+    writer.EndArray();
+    writer.Key("unsupportedFormats"); writer.StartArray();
+    for (const auto& [format, count] : manifest.unsupportedFormats) {
+        writer.StartObject();
+        writer.Key("format"); writer.String(format.data(),
+            static_cast<rapidjson::SizeType>(format.size()));
+        writer.Key("count"); writer.Uint64(count);
+        writer.EndObject();
+    }
+    writer.EndArray();
+    writer.EndObject();
+
+    const auto path = stagedDirectory / "scan-manifest.json";
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    output.write(buffer.GetString(), static_cast<std::streamsize>(buffer.GetSize()));
+    output.close();
+    if (!output) {
+        spdlog::error("Cannot write scan manifest '{}'.", pathToUtf8(path));
+        return false;
+    }
+    return true;
+}
+
+bool validateScanManifest(const fs::path& inputDirectory,
+    const std::vector<fs::path>& jsonFiles, const DirectoryContentEntryList* albums)
+{
+    const auto path = inputDirectory / "scan-manifest.json";
+    std::error_code ec;
+    const auto status = fs::symlink_status(path, ec);
+    if (ec == std::errc::no_such_file_or_directory ||
+        (!ec && status.type() == fs::file_type::not_found)) {
+        if (albums != nullptr && std::ranges::any_of(*albums, [](const MediaAlbum& album) {
+                return album.scanManifestId.has_value();
+            })) {
+            spdlog::error("Catalog batches refer to a missing scan manifest.");
+            return false;
+        }
+        return true;
+    }
+    if (ec || !fs::is_regular_file(status)) {
+        spdlog::error("Cannot safely read scan manifest '{}'.", pathToUtf8(path));
+        return false;
+    }
+    ScanManifestData manifest;
+    if (!parseScanManifest(path, manifest)) return false;
+    std::map<std::string, const fs::path*> actual;
+    for (const auto& file : jsonFiles) {
+        std::error_code parentError;
+        const bool isInInputDirectory = fs::equivalent(
+            file.parent_path(), inputDirectory, parentError);
+        if (parentError || !isInInputDirectory ||
+            !actual.emplace(pathToUtf8(file.filename()), &file).second) {
+            spdlog::error("Duplicate or unexpected JSON batch path '{}'.", pathToUtf8(file));
+            return false;
+        }
+    }
+    if (actual.size() != manifest.batches.size()) {
+        spdlog::error("Scan batch set is incomplete or contains unlisted files.");
+        return false;
+    }
+    for (const auto& batch : manifest.batches) {
+        const auto found = actual.find(batch.file);
+        if (found == actual.end()) {
+            spdlog::error("Scan batch '{}' is missing.", batch.file);
+            return false;
+        }
+        const auto size = fs::file_size(*found->second, ec);
+        const auto digest = ec ? std::nullopt : sha256File(*found->second);
+        if (ec || !digest || size != batch.sizeBytes || *digest != batch.sha256) {
+            spdlog::error("Scan batch '{}' does not match its manifest.", batch.file);
+            return false;
+        }
+    }
+    for (const auto& archive : manifest.archives) {
+        const auto archivePath = inputDirectory / pathFromUtf8(archive.file);
+        const auto archiveStatus = fs::symlink_status(archivePath, ec);
+        if (ec || !fs::is_regular_file(archiveStatus)) {
+            spdlog::error("Metadata archive '{}' is missing or unsafe.", archive.file);
+            return false;
+        }
+        const auto size = fs::file_size(archivePath, ec);
+        const auto digest = ec ? std::nullopt : sha256File(archivePath);
+        if (ec || !digest || size != archive.sizeBytes || *digest != archive.sha256) {
+            spdlog::error("Metadata archive '{}' does not match its manifest.", archive.file);
+            return false;
+        }
+    }
+    if (albums != nullptr) {
+        for (const auto& album : *albums) {
+            if (!album.scanManifestId || *album.scanManifestId != manifest.id) {
+                spdlog::error("Album '{}' has a missing or inconsistent scan manifest identity.",
+                    pathToUtf8(album.path.path()));
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool archiveBatchMetadata(const MediaAlbumListPtr& albums, const fs::path& libraryRoot,
+    const fs::path& stagedDirectory, ScanManifestData& manifest,
+    std::vector<ScanDiagnostic>& diagnostics)
+{
+    for (const auto& album : *albums) {
+        for (const auto& track : album.trackList) {
+            const auto source = album.path.path() / track.trackPath;
+            if (!MediaTrack::IsFileAcceptedAudioFile(source)) continue;
+            const auto fail = [&](const std::string& message) {
+                spdlog::error("Cannot archive metadata for '{}': {}", pathToUtf8(source), message);
+                diagnostics.push_back({
+                    pathToUtf8(album.path.path()), pathToUtf8(source),
+                    { "metadata_archive", "flac", DiagnosticCode::ScanMetadataArchiveFailed,
+                        DiagnosticSeverity::Error, message }
+                });
+                return false;
+            };
+            if (!track.catalogRecord) return fail("Track has no catalog record.");
+            std::string extension = pathToUtf8(source.extension());
+            std::ranges::transform(extension, extension.begin(), [](unsigned char ch) {
+                return static_cast<char>(std::tolower(ch));
+            });
+            std::string format = track.catalogRecord->format;
+            std::ranges::transform(format, format.begin(), [](unsigned char ch) {
+                return static_cast<char>(std::tolower(ch));
+            });
+            if (extension != ".flac" || format != "flac") {
+                const auto unsupported = format.empty() ? extension : format;
+                ++manifest.unsupportedFormats[unsupported];
+                continue;
+            }
+            const auto relativePath = source.lexically_relative(libraryRoot);
+            if (relativePath.empty() || relativePath.is_absolute() ||
+                std::ranges::any_of(relativePath, [](const fs::path& component) {
+                    return component == "..";
+                })) {
+                return fail("Track path is not inside the scanned library.");
+            }
+            const auto sourcePath = pathToUtf8(relativePath);
+            const auto pathHash = sha256Text(sourcePath);
+            if (!pathHash) return fail("Cannot calculate a stable archive name.");
+            const auto archiveName = "scan_metadata_" + *pathHash + ".flac-metadata";
+            const auto stagedArchive = stagedDirectory / archiveName;
+            bool preparedInput = false;
+            if (!FlacMetadata::Save(source, stagedArchive, MetadataSidecarFormat::Binary,
+                    "", {}, preparedInput) || preparedInput ||
+                !FlacMetadata::Verify(source, stagedArchive, MetadataSidecarFormat::Binary)) {
+                return fail("Native FLAC metadata archive creation or verification failed.");
+            }
+            std::error_code ec;
+            const auto size = fs::file_size(stagedArchive, ec);
+            const auto digest = ec ? std::nullopt : sha256File(stagedArchive);
+            if (ec || !digest) return fail("Cannot inventory the verified metadata archive.");
+            manifest.archives.push_back({ sourcePath, archiveName, size, *digest });
+        }
+    }
+    return true;
 }
 
 struct ScanReport
@@ -450,6 +862,80 @@ bool installGeneratedFiles(const fs::path& stagedDirectory, const fs::path& targ
         removeCreatedDirectory();
         return false;
     }
+    if (!validateScanManifest(stagedDirectory, stagedFiles, nullptr)) {
+        spdlog::error("Staged scan files do not match their manifest.");
+        removeCreatedDirectory();
+        return false;
+    }
+
+    ScanManifestData stagedManifest;
+    const auto stagedManifestPath = stagedDirectory / "scan-manifest.json";
+    if (!parseScanManifest(stagedManifestPath, stagedManifest)) {
+        removeCreatedDirectory();
+        return false;
+    }
+    std::set<std::string> previousNames;
+    for (const auto& file : previousCandidates) {
+        previousNames.insert(pathToUtf8(file.filename()));
+    }
+
+    const auto previousManifestPath = targetDirectory / "scan-manifest.json";
+    const auto previousManifestStatus = fs::symlink_status(previousManifestPath, ec);
+    if (ec == std::errc::no_such_file_or_directory ||
+        (!ec && previousManifestStatus.type() == fs::file_type::not_found)) {
+        ec.clear();
+    }
+    else if (ec || !fs::is_regular_file(previousManifestStatus)) {
+        spdlog::error("Refusing to replace an unsafe prior scan manifest '{}'.",
+            pathToUtf8(previousManifestPath));
+        removeCreatedDirectory();
+        return false;
+    }
+    else {
+        ScanManifestData previousManifest;
+        if (!parseScanManifest(previousManifestPath, previousManifest)) {
+            removeCreatedDirectory();
+            return false;
+        }
+        previousCandidates.push_back(previousManifestPath);
+        previousNames.insert("scan-manifest.json");
+        for (const auto& archive : previousManifest.archives) {
+            const auto previousArchivePath = targetDirectory / pathFromUtf8(archive.file);
+            const auto archiveStatus = fs::symlink_status(previousArchivePath, ec);
+            if (ec == std::errc::no_such_file_or_directory ||
+                (!ec && archiveStatus.type() == fs::file_type::not_found)) {
+                ec.clear();
+                continue;
+            }
+            if (ec || !fs::is_regular_file(archiveStatus)) {
+                spdlog::error("Refusing to replace unsafe prior metadata archive '{}'.",
+                    pathToUtf8(previousArchivePath));
+                removeCreatedDirectory();
+                return false;
+            }
+            previousCandidates.push_back(previousArchivePath);
+            previousNames.insert(archive.file);
+        }
+    }
+
+    for (const auto& archive : stagedManifest.archives) {
+        const auto stagedArchivePath = stagedDirectory / pathFromUtf8(archive.file);
+        const auto targetArchivePath = targetDirectory / pathFromUtf8(archive.file);
+        const auto targetStatus = fs::symlink_status(targetArchivePath, ec);
+        if (ec == std::errc::no_such_file_or_directory ||
+            (!ec && targetStatus.type() == fs::file_type::not_found)) {
+            ec.clear();
+        }
+        else if (ec || !fs::is_regular_file(targetStatus) ||
+            !previousNames.contains(archive.file)) {
+            spdlog::error("Refusing to overwrite an unrelated metadata archive '{}'.",
+                pathToUtf8(targetArchivePath));
+            removeCreatedDirectory();
+            return false;
+        }
+        stagedFiles.push_back(stagedArchivePath);
+    }
+    stagedFiles.push_back(stagedManifestPath);
 
     const fs::path backupDirectory = uniqueSiblingPath(targetDirectory, ".backup-");
     fs::create_directory(backupDirectory, ec);
@@ -558,7 +1044,10 @@ std::map<std::string, MediaRecord> loadCatalogCache(
 {
     std::map<std::string, MediaRecord> cache;
     const auto files = findJsonFiles(directory);
-    if (files.empty()) return cache;
+    if (files.empty()) {
+        validateScanManifest(directory, files, nullptr);
+        return cache;
+    }
 
     const auto normalizedRoot = fs::absolute(libraryRoot).lexically_normal();
     AlbumCollection collection;
@@ -571,6 +1060,10 @@ std::map<std::string, MediaRecord> loadCatalogCache(
             return {};
         }
         allAlbums->insert(allAlbums->end(), albums->begin(), albums->end());
+    }
+    if (!validateScanManifest(directory, files, allAlbums.get())) {
+        spdlog::warn("Ignoring the incremental metadata cache because its scan manifest is incomplete.");
+        return {};
     }
     if (!collection.ReassembleAlbums(allAlbums)) {
         spdlog::warn("Ignoring the incremental metadata cache because its albums are incomplete.");
@@ -1250,6 +1743,8 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         }
 
         AlbumCollection ac;
+        ScanManifestData scanManifest;
+        scanManifest.id = scanReport.runId;
         int count = 0;
         try {
             const auto writeBatch = [&](const MediaAlbumListPtr& albumListPtr) {
@@ -1258,6 +1753,9 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                     ac.ImportMetadata(albumListPtr, 0, albumListPtr->size(),
                         settings->UseAsyncMetadataReads,
                         useIncrementalCache ? &cachedRecords : nullptr);
+                }
+                for (auto& album : *albumListPtr) {
+                    album.scanManifestId = scanManifest.id;
                 }
                 ac.SortAlbums(albumListPtr, { { SortBy::AlbumArtist, true } });
                 std::ofstream output;
@@ -1336,10 +1834,40 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                     if (lastFragment) ++scanReport.albumsSerialized;
                     return true;
                 };
+                const auto writeAlbumStream = [&](const fs::path& albumPath,
+                    const AlbumCollection::AlbumJsonStreamWriter& serializer,
+                    std::size_t trackCount) {
+                    if (!output.is_open()) {
+                        outputPath = mediaEntry.getMediaJsonPath(stagingRoot, ++count);
+                        output.open(outputPath, std::ios::binary | std::ios::trunc);
+                        if (!output) {
+                            spdlog::error("Cannot open staged JSON '{}'.", pathToUtf8(outputPath));
+                            reportWriteFailure("Cannot open staged album JSON.", albumPath);
+                            return false;
+                        }
+                        output.put('[');
+                        outputBytes = 1;
+                    }
+                    if (outputAlbums > 0) output.put(',');
+                    if (!output || !serializer(output) || !output) {
+                        spdlog::error("Cannot stream staged album JSON for '{}'.", pathToUtf8(albumPath));
+                        reportWriteFailure("Cannot stream staged album JSON.", albumPath);
+                        return false;
+                    }
+                    ++outputAlbums;
+                    scanReport.tracksSerialized += trackCount;
+                    ++scanReport.albumsSerialized;
+                    return true;
+                };
                 if (!ac.SaveAlbumsToJSON(albumListPtr, libraryIoPath, writeAlbum,
                     settings->JsonBatchTargetBytes, pathToUtf8(stagingRoot.filename()),
-                    &scanReport.diagnostics) || !finishOutput()) {
+                    &scanReport.diagnostics, writeAlbumStream) || !finishOutput()) {
                     throw std::runtime_error("Failed to write an album JSON file.");
+                }
+                if (!archiveBatchMetadata(
+                        albumListPtr, libraryIoPath, stagedDirectory,
+                        scanManifest, scanReport.diagnostics)) {
+                    throw std::runtime_error("Failed to create a verified native FLAC metadata archive.");
                 }
             };
             if (preview) {
@@ -1398,6 +1926,26 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                 std::nullopt,
                 { "discovery", "catalog", DiagnosticCode::NoAlbumsFound, DiagnosticSeverity::Error,
                     "No albums found; existing generated JSON was preserved." }
+            });
+            writeFailureReport(nullptr);
+            cleanupStaging();
+            return 1;
+        }
+        for (const auto& [format, unsupportedCount] : scanManifest.unsupportedFormats) {
+            scanReport.diagnostics.push_back({
+                std::nullopt, std::nullopt,
+                { "metadata_archive", "catalog", "metadata_archive_unsupported",
+                    DiagnosticSeverity::Warning,
+                    "Byte-exact metadata archives are native-FLAC-only; " +
+                        std::to_string(unsupportedCount) + " track(s) in format '" + format +
+                        "' were not archived." }
+            });
+        }
+        if (!writeScanManifest(stagedDirectory, scanManifest)) {
+            scanReport.diagnostics.push_back({
+                std::nullopt, std::nullopt,
+                { "manifest", "filesystem", DiagnosticCode::ScanManifestInvalid,
+                    DiagnosticSeverity::Error, "Could not write a complete scan manifest." }
             });
             writeFailureReport(nullptr);
             cleanupStaging();
@@ -1613,6 +2161,9 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
     }
     if (jsonFiles.empty()) {
         spdlog::error("No generated album JSON files found.");
+        return 1;
+    }
+    if (!validateScanManifest(jsonFiles.front().parent_path(), jsonFiles, albumListPtr.get())) {
         return 1;
     }
     if (!albumCollection.ReassembleAlbums(albumListPtr)) {
@@ -1856,6 +2407,9 @@ int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList,
             }
             albums->insert(albums->end(), part->begin(), part->end());
         }
+        if (!validateScanManifest(plan.json.front().parent_path(), plan.json, albums.get())) {
+            return 1;
+        }
         if (!albumCollection.ReassembleAlbums(albums)) {
             return 1;
         }
@@ -1892,6 +2446,9 @@ int ImportJsonDirectoryToDatabase(const fs::path& jsonDirectory, const fs::path&
             return 1;
         }
         albums->insert(albums->end(), part->begin(), part->end());
+    }
+    if (!validateScanManifest(inputDirectory, jsonFiles, albums.get())) {
+        return 1;
     }
     if (!albumCollection.ReassembleAlbums(albums)) {
         return 1;

@@ -11,8 +11,10 @@ not prove file identity; legacy records do not have this check. Candidate select
 changes. Signal-quality
 metrics are not currently computed; the report explicitly says analysis was not run. Read-only.
 Malformed album/track structures or catalog records without usable audio technical metadata fail JSON loading rather
-than being silently skipped. Split album fragments are validated and reassembled before matching; incomplete or
-inconsistent fragments fail the operation. With `--open` (CLI) or always in the menu, both folders are opened in the file manager.
+than being silently skipped. Manifest-marked scans validate the complete batch set, batch hashes, and referenced
+metadata archives before matching. Split album fragments are validated and reassembled before matching; incomplete or
+inconsistent fragments fail the operation. Legacy batches without a manifest ID remain readable. With `--open` (CLI)
+or always in the menu, both folders are opened in the file manager.
 
 ## Entry points
 - `FlacConvert duplicates <json dir> [--open]` → `FlacConvertMain.cpp#RunWithArguments`
@@ -30,6 +32,7 @@ inconsistent fragments fail the operation. With `--open` (CLI) or always in the 
 - [ ] Without `--open`, no folder is opened.
 - [ ] Empty JSON directory exits non-zero.
 - [ ] Malformed track metadata fails loading instead of producing partial duplicate results.
+- [ ] Missing, extra, or modified manifest-marked batches and missing/corrupt referenced archives fail before matching.
 - [ ] Unreadable re-probed tracks fail the command rather than producing a successful comparison.
 - [ ] Compilations with the same track artists and different filename order remain candidates; nested album tracks are not included in their parent comparison.
 - [ ] If source track counts have changed since scanning (including an empty folder), comparison reports the mismatch without crashing or changing files.

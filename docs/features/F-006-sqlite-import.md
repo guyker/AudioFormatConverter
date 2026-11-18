@@ -11,7 +11,9 @@ remove tracks missing from albums included in the import; albums absent from the
 batches for a menu library or the complete CLI directory import share one transaction and roll back together on
 failure. The old `.db` file is never migrated, overwritten, or deleted; incompatible files at the new catalog path
 are rejected without modification. The destination must be outside the recorded source library.
+Manifest-marked scans validate the complete batch set, batch hashes, and referenced metadata archives before import.
 Split albums are validated and reassembled before import; incomplete or inconsistent fragments fail before database writes.
+Legacy batches without a manifest ID remain readable.
 
 ## Entry points
 - `FlacConvert db import <json dir> [--output-dir]` → `FlacConvertMain.cpp#ImportJsonDirectoryToDatabase`
@@ -35,6 +37,7 @@ Split albums are validated and reassembled before import; incomplete or inconsis
 - [ ] Import into the recorded source library is rejected before creating the database.
 - [ ] Re-importing analysis records updates the scan tier and both available SHA-256 projections.
 - [ ] An incomplete split album is rejected without changing the existing database.
+- [ ] Missing, extra, or modified manifest-marked batches and missing/corrupt referenced archives are rejected without changing the database.
 
 ## Known limitations
 - Only schema-v2 catalog JSON is accepted; legacy JSON must be regenerated with `scan`.

@@ -35,6 +35,8 @@ namespace DiagnosticCode
     inline constexpr const char* OutputDirectoryUnavailable = "output_directory_unavailable";
     inline constexpr const char* GeneratedJsonInstallFailed = "generated_json_install_failed";
     inline constexpr const char* TrackExceedsBatchLimit = "track_exceeds_batch_limit";
+    inline constexpr const char* ScanMetadataArchiveFailed = "scan_metadata_archive_failed";
+    inline constexpr const char* ScanManifestInvalid = "scan_manifest_invalid";
 }
 
 enum class DiagnosticSeverity { Error, Warning, Info };

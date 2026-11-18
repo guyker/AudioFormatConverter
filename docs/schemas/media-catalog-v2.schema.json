@@ -25,6 +25,11 @@
           "type": "string",
           "description": "Directory leaf name; descriptive only and not a stable identifier."
         },
+        "Scan Manifest ID": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifies the complete scan-manifest.json required to validate this generated batch set."
+        },
         "Fragment": {
           "type": "object",
           "description": "Zero-based fragment index and total for a split album. Consumers must reassemble and validate all fragments before processing the album.",

@@ -249,7 +249,7 @@ bool Process(const std::filesystem::path& source, std::ostream* output, std::ist
     if (!*output) {
         return fail("metadata sidecar write failed");
     }
-    if (trailerStart < fileEnd) {
+    if (trailerStart < fileEnd && !temporaryInput.empty()) {
         // Raw FLAC demuxing treats appended tags as damaged audio under -xerror.
         // Decode a temporary byte-identical copy without those already-backed-up tags.
         std::ofstream cleanInput(temporaryInput, std::ios::binary | std::ios::trunc);

@@ -158,9 +158,13 @@ scans reuse metadata when file path, size, and modification time are unchanged; 
 `--full-rescan` to force rereads. `--tier` accepts `catalog` (default), `integrity`, or `analysis`; configure the
 menu/default tier with `ScanTier`. `CatalogExtensions` selects accepted scan formats; only FLAC and MP3 are enabled
 by default. Set `JsonBatchTargetBytes` to a positive hard byte limit for JSON batching (default `0` disables it);
-oversized albums split into track fragments, and a scan fails if a track cannot fit. `DecodeWorkers` caps the independent full-decode stage. `duplicates` reports matches without opening folders; pass `--open` to open matched
-folders in Explorer. `db import` creates or updates a library-named `catalog-v2.sqlite` database and leaves legacy
-`.db` files untouched.
+oversized albums split into track fragments, and a scan fails if a track cannot fit. Unlimited batches stream one
+track record at a time. Successful scans also write `scan-manifest.json`, which protects the complete JSON batch set
+with SHA-256 and lists metadata-only archives for native FLAC files; other formats are reported as unsupported for
+byte-exact archiving. Duplicate detection, database import, and incremental cache reuse validate the manifest before
+using marked batches. `DecodeWorkers` caps the independent full-decode stage. `duplicates` reports matches without
+opening folders; pass `--open` to open matched folders in Explorer. `db import` creates or updates a library-named
+`catalog-v2.sqlite` database and leaves legacy `.db` files untouched.
 
 ### FLAC output preservation
 

@@ -19,7 +19,12 @@ batches, and installed batches. Discovery counts can be partial if enumeration f
 `albumPath`. Filesystem diagnostics carry an `affectedPath` and native error code/category when available; track paths also populate `filePath`. FFmpeg warnings/errors without a thread-local file context are captured
 at scan scope and intentionally remain unattributed to a track.
 FFmpeg format and stream tags are included with separate source scopes; older incremental records are reread to
-populate this inventory.
+populate this inventory. Each successful scan also writes `scan-manifest.json`, which inventories every batch by
+filename, size, and SHA-256 and lists verified metadata-only archives for native FLAC files. Album records carry the
+manifest scan ID. Duplicate detection, database import, and incremental cache reuse reject missing, extra, or changed
+batches before using the records. Legacy batches without a manifest ID remain readable. Native FLAC archives retain
+the original FLAC marker, metadata blocks, and recognized leading/trailing ID3/APE tags without copying audio;
+unsupported formats and counts are listed in the manifest and scan warnings.
 
 The reader records findings for missing title/artist/album tags, malformed track/disc numbers, non-ISO dates,
 malformed MusicBrainz UUIDs, ISRCs and EAN/UPC/GTIN check digits, inconsistent album-level tags within a directory,
@@ -39,7 +44,8 @@ unchanged records are reused only when the source path, file size, full-precisio
 `scan --full-rescan` forces metadata rereads.
 Set `JsonBatchTargetBytes` to a positive hard byte limit; the default 0 disables size-based splitting. Albums that
 exceed it are split into indexed track fragments. If one track and its envelope cannot fit, the scan fails and
-preserves prior catalog files. Duplicate detection and database import validate and reassemble fragment sets first.
+preserves prior catalog files. Duplicate detection and database import validate the complete manifest inventory and
+then reassemble fragment sets before use.
 
 ## Entry points
 - `FlacConvert scan <library> [--output-dir] [--full-rescan] [--tier catalog|integrity|analysis]` → `FlacConvertMain.cpp#RunWithArguments`
@@ -51,8 +57,9 @@ preserves prior catalog files. Duplicate detection and database import validate 
 ## Design and knowledge
 - DESIGN: `FlacConvert/DESIGN.md` → Scan to JSON; Files and schemas (album JSON)
 - Schema: `docs/schemas/media-catalog-v2.schema.json`
+- Manifest schema: `docs/schemas/scan-manifest-v1.schema.json`
 - Scan report schema: `docs/schemas/scan-report-v2.schema.json` (version 1 remains available for older reports)
-- K-005 staged JSON replacement; K-035 fail scans before installing incomplete metadata
+- K-051 manifest-owned scan output replacement; K-035 fail scans before installing incomplete metadata
 
 ## Acceptance checks
 - [ ] Output JSON validates against the v2 schema and contains one object per album with non-empty `Tracks`.
@@ -80,20 +87,26 @@ preserves prior catalog files. Duplicate detection and database import validate 
 - [ ] On Windows, scan installs valid schema-v2 JSON under an output path longer than `MAX_PATH`.
 - [ ] With the byte target disabled, batch count = ceil(albums / `AlbumsSplitThreshold`).
 - [ ] With a byte limit, all batches fit, large albums reassemble correctly, and an oversized track fails safely.
+- [ ] A successful scan writes a manifest whose batch hashes/sizes match the complete batch set and whose archives verify against native FLAC sources.
+- [ ] Missing or modified batches, missing archives, and a missing manifest for manifest-marked albums fail before duplicate, database, or cache use.
+- [ ] Unsupported formats are identified and counted without claiming byte-exact archive coverage.
+- [ ] A failed scan/install preserves the previous manifest, JSON batches, and metadata archives; unrelated files and databases remain unchanged.
+- [ ] A successful rescan retires only archives owned by the previous manifest and keeps the latest successful scan's archives.
+- [ ] With `JsonBatchTargetBytes=0`, serialization streams the album wrapper and one track record at a time.
 - [ ] Missing, duplicate, inconsistent or mixed album fragments are rejected before database import or duplicate detection.
 - [ ] With async metadata reads enabled, scan succeeds when the configured worker cap is lower than the album's track count.
 - [ ] Same-size source edits within one second invalidate incremental cache records, and album-level findings are recomputed after cache reuse.
 
 ## Known limitations
 - `CatalogExtensions` defaults to `.flac` and `.mp3`; other formats require explicit opt-in.
-- `rawTags` contains decoded tag entries, not byte-exact source metadata. Native metadata inventory is partial for FLAC/MP3 and unsupported for additional formats; the JSON catalog is not a byte-exact archive.
+- `rawTags` contains decoded tag entries, not byte-exact source metadata. Only native FLAC metadata bytes are archived; MP3 and other formats are listed as unsupported for byte-exact archive coverage.
 - Files and paths skipped because their extensions are not configured are not currently emitted in a separate discovery inventory.
 - Scan diagnostics cover surfaced read, probe, decode, serialization, and installation errors; they are not a complete dump of all FFmpeg log levels or an exhaustive inventory of skipped files.
 - Unscoped FFmpeg warnings/errors are recorded at scan scope, not guessed to belong to a track. Scan preflight and
   report-write failures attempt a report in a safe system temporary directory; failures before the scan is
   initialized, or when that directory is unavailable or overlaps a source library, can only be logged.
-- With the byte limit disabled, each album is buffered in memory while serialized.
-- Without a batch manifest, consumers cannot detect an album when all of its fragments or its entire JSON batch are missing.
+- The manifest detects output changes relative to the generated inventory; it is not a signed authenticity mechanism.
+- Legacy catalogs without a manifest can still be consumed, but cannot provide manifest-level detection of a missing complete batch.
 - Compressed ID3 frame handling depends on whether the build includes ZLIB.
 - Analysis includes per-track EBU R128 values when the filter is available, sample statistics and a fixed -60 dBFS leading/trailing silence threshold; it does not calculate album loudness or detect upsampling/lossy-origin cutoffs.
 - True effective resolution, Chromaprint fingerprints, full native block inventory, and some planned quality heuristics remain unavailable.

@@ -50,7 +50,8 @@ add_test(NAME scan-root-level-audio
         "$<TARGET_FILE:FlacConvert>"
         "${FFMPEG_EXECUTABLE}"
         "$<TARGET_FILE:scan_report_schema_test>"
-        "${PROJECT_SOURCE_DIR}/docs/schemas/scan-report-v2.schema.json")
+        "${PROJECT_SOURCE_DIR}/docs/schemas/scan-report-v2.schema.json"
+        "${PROJECT_SOURCE_DIR}/docs/schemas/scan-manifest-v1.schema.json")
 add_test(NAME taglib-reader-smoke
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_native_regression.py"
         taglib

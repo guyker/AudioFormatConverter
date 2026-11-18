@@ -30,6 +30,7 @@ struct MediaAlbum
     std::optional<std::size_t> fragmentIndex;
     std::optional<std::size_t> fragmentCount;
     std::optional<std::string> fragmentSet;
+    std::optional<std::string> scanManifestId;
 };
 
 using SimilarAlbumIndexPairs = std::vector<std::tuple<std::size_t, std::size_t>>;

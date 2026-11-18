@@ -3,7 +3,8 @@ id: K-005
 kind: decision
 title: "Scan replaces generated JSON files without swapping the library directory"
 area: [FlacConvert]
-status: active
+status: superseded
+superseded_by: K-051
 created: 2026-10-09
 reviewed: 2026-11-16
 cites:

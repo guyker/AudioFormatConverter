@@ -785,10 +785,11 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
 
 bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr,
     const std::filesystem::path& libraryRoot,
-    const std::function<bool(const std::filesystem::path&, const std::optional<std::filesystem::path>&,
-        const std::string&, size_t, bool)>& writeAlbum,
+    const AlbumJsonBatchWriter& writeAlbum,
     std::uint64_t byteLimit, const std::string& fragmentSet,
-    std::vector<ScanDiagnostic>* diagnostics)
+    std::vector<ScanDiagnostic>* diagnostics,
+    const std::function<bool(const std::filesystem::path&,
+        const AlbumJsonStreamWriter&, size_t)>& writeAlbumStream)
 {
     bool batchHasErrors = false;
 
@@ -833,6 +834,12 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
         rapidjson::Value albumFolderStringVal;
         albumFolderStringVal.SetString(albumFolderString.c_str(), static_cast<SizeType>(albumFolderString.size()), allocator);
         albumObj.AddMember("Folder", albumFolderStringVal, allocator);
+        if (album.scanManifestId) {
+            rapidjson::Value manifestIdValue;
+            manifestIdValue.SetString(album.scanManifestId->data(),
+                static_cast<SizeType>(album.scanManifestId->size()), allocator);
+            albumObj.AddMember("Scan Manifest ID", manifestIdValue, allocator);
+        }
 
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
@@ -922,11 +929,6 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                         continue;
                     }
                     serializedTrackBytes += static_cast<std::uint64_t>(jsonString.size());
-                    if (byteLimit == 0) {
-                        Value childValue;
-                        childValue.CopyFrom(trackDoc, allocator);
-                        trackMediaArray.PushBack(childValue, allocator);
-                    }
                 }
             }
         }
@@ -934,6 +936,49 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
         if (serializableTracks > 0)
         {
             if (albumHasErrors) {
+                continue;
+            }
+            if (byteLimit == 0) {
+                if (!writeAlbumStream) {
+                    spdlog::error("No streaming JSON writer was provided for an unlimited batch.");
+                    batchHasErrors = true;
+                    continue;
+                }
+                const AlbumJsonStreamWriter serializer = [&](std::ostream& output) {
+                    rapidjson::OStreamWrapper stream(output);
+                    rapidjson::Writer<rapidjson::OStreamWrapper> writer(stream);
+                    if (!writer.StartObject() ||
+                        !writer.Key("Album Path") ||
+                        !writer.String(albumPathString.data(),
+                            static_cast<rapidjson::SizeType>(albumPathString.size())) ||
+                        !writer.Key("Library Root") ||
+                        !writer.String(libraryRootString.data(),
+                            static_cast<rapidjson::SizeType>(libraryRootString.size())) ||
+                        !writer.Key("Folder") ||
+                        !writer.String(albumFolderString.data(),
+                            static_cast<rapidjson::SizeType>(albumFolderString.size()))) {
+                        return false;
+                    }
+                    if (album.scanManifestId &&
+                        (!writer.Key("Scan Manifest ID") ||
+                            !writer.String(album.scanManifestId->data(),
+                                static_cast<rapidjson::SizeType>(album.scanManifestId->size())))) {
+                        return false;
+                    }
+                    if (!writer.Key("Tracks") || !writer.StartArray()) return false;
+                    for (const auto& track : trackList) {
+                        const auto trackPath = albumPath.path() / track.trackPath;
+                        if (!MediaTrack::IsFileAcceptedAudioFile(trackPath)) continue;
+                        const auto trackJson = SerializeMediaRecord(*track.catalogRecord);
+                        if (!writer.RawValue(trackJson.data(), trackJson.size(), rapidjson::kObjectType)) {
+                            return false;
+                        }
+                    }
+                    return writer.EndArray() && writer.EndObject() && static_cast<bool>(output);
+                };
+                if (!writeAlbumStream(albumPath.path(), serializer, serializableTracks)) {
+                    batchHasErrors = true;
+                }
                 continue;
             }
             bool fragmentTracks = false;
@@ -993,6 +1038,12 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                     folderValue.SetString(albumFolderString.c_str(),
                         static_cast<SizeType>(albumFolderString.size()), fragmentAllocator);
                     fragmentObject.AddMember("Folder", folderValue, fragmentAllocator);
+                    if (album.scanManifestId) {
+                        Value manifestIdValue;
+                        manifestIdValue.SetString(album.scanManifestId->data(),
+                            static_cast<SizeType>(album.scanManifestId->size()), fragmentAllocator);
+                        fragmentObject.AddMember("Scan Manifest ID", manifestIdValue, fragmentAllocator);
+                    }
                     if (serializableTracks > 1) {
                         Value fragmentInfo(kObjectType);
                         fragmentInfo.AddMember("index", static_cast<std::uint64_t>(index), fragmentAllocator);
@@ -1136,6 +1187,16 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
         std::optional<std::size_t> fragmentIndex;
         std::optional<std::size_t> fragmentCount;
         std::optional<std::string> fragmentSet;
+        std::optional<std::string> scanManifestId;
+        if (albumVal.HasMember("Scan Manifest ID")) {
+            if (!albumVal["Scan Manifest ID"].IsString() ||
+                albumVal["Scan Manifest ID"].GetStringLength() == 0) {
+                spdlog::error("Album entry {} has invalid scan manifest identity.", iAlbumCount);
+                return nullptr;
+            }
+            scanManifestId = std::string(albumVal["Scan Manifest ID"].GetString(),
+                albumVal["Scan Manifest ID"].GetStringLength());
+        }
         if (albumVal.HasMember("Fragment")) {
             const auto& fragment = albumVal["Fragment"];
             if (!fragment.IsObject() || !fragment.HasMember("index") ||
@@ -1231,7 +1292,9 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
 
         if (trackList.size() > 0) {
             std::filesystem::directory_entry entry{ albumpath };
-            albumListPtr->push_back({ entry, std::move(trackList), fragmentIndex, fragmentCount, fragmentSet });
+            albumListPtr->push_back({
+                entry, std::move(trackList), fragmentIndex, fragmentCount, fragmentSet, scanManifestId
+            });
         }
 
     }

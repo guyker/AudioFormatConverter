@@ -27,6 +27,27 @@ int main(int argc, char** argv) {
         const auto binary = MetadataSidecarFormat::Binary;
         require(FlacMetadata::Save(source, sidecar, binary, "", scratch / "clean.flac", prepared), "Save failed");
         require(FlacMetadata::Verify(source, sidecar, binary), "Valid archive rejected");
+        const auto trailingSource = scratch / "trailing-tags.flac";
+        std::filesystem::copy_file(source, trailingSource);
+        std::string id3v1(128, '\0');
+        id3v1.replace(0, 3, "TAG");
+        {
+            std::ofstream output(trailingSource, std::ios::binary | std::ios::app);
+            output.write(id3v1.data(), static_cast<std::streamsize>(id3v1.size()));
+            output.close();
+            require(static_cast<bool>(output), "Cannot create trailing-tag fixture");
+        }
+        const auto archiveOnly = scratch / "archive-only.flac-metadata";
+        std::error_code cleanupError;
+        std::filesystem::remove(scratch / "clean.flac", cleanupError);
+        prepared = false;
+        require(FlacMetadata::Save(trailingSource, archiveOnly, binary, "", {}, prepared),
+            "Archive-only save failed for appended ID3v1");
+        require(!prepared, "Archive-only save unexpectedly prepared an audio copy");
+        require(!std::filesystem::exists(scratch / "clean.flac"),
+            "Archive-only save wrote a cleaned audio copy");
+        require(FlacMetadata::Verify(trailingSource, archiveOnly, binary),
+            "Archive-only save did not preserve appended ID3v1");
         std::ifstream input(sidecar, std::ios::binary);
         std::string original((std::istreambuf_iterator<char>(input)), {});
         input.close();

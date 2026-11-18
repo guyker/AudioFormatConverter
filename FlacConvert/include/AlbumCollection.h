@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <optional>
 #include <map>
+#include <cstdint>
 
 
 #include <iostream>
@@ -57,6 +58,9 @@ class AlbumCollection
 public:
 
 	AlbumCollection() = default;
+	using AlbumJsonStreamWriter = std::function<bool(std::ostream&)>;
+	using AlbumJsonBatchWriter = std::function<bool(const std::filesystem::path&,
+		const std::optional<std::filesystem::path>&, const std::string&, size_t, bool)>;
 
 	// load albums from directory / Directly from media files FLAC/MP3
 	// bIncludeMetadata = true - load media metadata / Calling ImportMetadata
@@ -81,10 +85,11 @@ public:
 	//Save album list and metadata to JSON file
 	bool SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr,
 		const std::filesystem::path& libraryRoot,
-		const std::function<bool(const std::filesystem::path&, const std::optional<std::filesystem::path>&,
-			const std::string&, size_t, bool)>& writeAlbum,
+		const AlbumJsonBatchWriter& writeAlbum,
 		std::uint64_t byteLimit, const std::string& fragmentSet,
-		std::vector<ScanDiagnostic>* diagnostics = nullptr);
+		std::vector<ScanDiagnostic>* diagnostics = nullptr,
+		const std::function<bool(const std::filesystem::path&,
+			const AlbumJsonStreamWriter&, size_t)>& writeAlbumStream = {});
 
 
 
