@@ -616,7 +616,7 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
         record.durationSeconds && *record.durationSeconds == 0) {
         record.durationSeconds.reset();
     }
-    if (extension == ".flac" || extension == ".mp3") {
+    {
         std::string probeError;
         FFprobeOutput probe;
         std::vector<FFmpeg::FFmpegLogItem> ffmpegLogs;
@@ -634,11 +634,33 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
         if (!probeError.empty()) {
             const auto message = "FFmpeg container metadata read failed: " + probeError;
             record.diagnostics.push_back({
-                "chapters", "ffmpeg", DiagnosticCode::FfmpegProbeFailed, DiagnosticSeverity::Error, message
+                "chapters", "ffmpeg", DiagnosticCode::FfmpegProbeFailed,
+                extension == ".flac" || extension == ".mp3"
+                    ? DiagnosticSeverity::Error : DiagnosticSeverity::Warning, message
             });
-            return { std::nullopt, message, std::move(record.diagnostics) };
+            if (extension == ".flac" || extension == ".mp3") {
+                return { std::nullopt, message, std::move(record.diagnostics) };
+            }
+            validateTagValues(record);
+            return { std::move(record), std::nullopt, {} };
         }
-        if (probe.format.format_name && !probe.format.format_name->empty()) {
+        if (probe.format.tags) {
+            for (const auto& [key, value] : *probe.format.tags) {
+                addRawTag(record, "ffmpeg.format", key, value,
+                    std::nullopt, std::nullopt, std::nullopt, std::nullopt, false);
+            }
+        }
+        for (const auto& stream : probe.streams) {
+            if (!stream.tags || !stream.index) continue;
+            const auto scope = "ffmpeg.stream." + std::to_string(*stream.index);
+            for (const auto& [key, value] : *stream.tags) {
+                addRawTag(record, scope, key, value,
+                    std::nullopt, std::nullopt, std::nullopt, std::nullopt, false);
+            }
+        }
+        record.metadataInventoryVersion = 1;
+        if ((extension == ".flac" || extension == ".mp3") &&
+            probe.format.format_name && !probe.format.format_name->empty()) {
             record.format = *probe.format.format_name;
         }
         if (!record.durationSeconds && probe.format.duration && *probe.format.duration > 0) {

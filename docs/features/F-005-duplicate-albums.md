@@ -11,7 +11,8 @@ not prove file identity; legacy records do not have this check. Candidate select
 changes. Signal-quality
 metrics are not currently computed; the report explicitly says analysis was not run. Read-only.
 Malformed album/track structures or catalog records without usable audio technical metadata fail JSON loading rather
-than being silently skipped. With `--open` (CLI) or always in the menu, both folders are opened in the file manager.
+than being silently skipped. Split album fragments are validated and reassembled before matching; incomplete or
+inconsistent fragments fail the operation. With `--open` (CLI) or always in the menu, both folders are opened in the file manager.
 
 ## Entry points
 - `FlacConvert duplicates <json dir> [--open]` → `FlacConvertMain.cpp#RunWithArguments`

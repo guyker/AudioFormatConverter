@@ -73,6 +73,8 @@ std::string SerializeMediaRecord(const MediaRecord& record)
     writer.StartObject();
     writer.Key("schemaVersion");
     writer.Int(record.schemaVersion);
+    writer.Key("metadataInventoryVersion");
+    writer.Int(record.metadataInventoryVersion);
     writer.Key("file");
     writer.StartObject();
     writeString(writer, "relativePath", record.relativePath);
@@ -315,6 +317,14 @@ std::optional<MediaRecord> ParseMediaRecord(const rapidjson::Value& value, std::
         return std::nullopt;
     }
     record.schemaVersion = *schemaVersion;
+    const auto inventoryVersion = value.FindMember("metadataInventoryVersion");
+    if (inventoryVersion != value.MemberEnd()) {
+        if (!inventoryVersion->value.IsInt() || inventoryVersion->value.GetInt() < 0) {
+            fail(error, "Media record metadataInventoryVersion must be a non-negative integer.");
+            return std::nullopt;
+        }
+        record.metadataInventoryVersion = inventoryVersion->value.GetInt();
+    }
     const auto file = value.FindMember("file");
     const auto technical = value.FindMember("technical");
     const auto tags = value.FindMember("tags");

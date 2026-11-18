@@ -1056,6 +1056,33 @@ class ConversionTests(unittest.TestCase):
         self.assertIn("Database: existing records will be updated", result.stdout)
         self.assertEqual(db.read_bytes(), before_db)
 
+    def test_scan_preview_discovery_failure_writes_fallback_report(self):
+        missing = self.work / "missing-library"
+        fallback_temp = self.work / "fallback-temp"
+        fallback_temp.mkdir()
+        settings = json.loads(self.config.read_text(encoding="utf-8"))
+        settings.update({
+            "OutDirectory": str(self.output),
+            "MediaDirectoryList": [{"isActive": True, "mediaPath": str(missing),
+                                    "mediaName": "Library"}],
+        })
+        (self.work / "config.json").write_text(json.dumps(settings), encoding="utf-8")
+        (self.work / "AppSettingsJsonPersistent.txt").write_text(
+            "UTF8:" + str(self.work), encoding="utf-8")
+        env = dict(os.environ, TEMP=str(fallback_temp), TMP=str(fallback_temp),
+                   TMPDIR=str(fallback_temp))
+        result = subprocess.run([str(ARGS.converter)], input="2\n", cwd=self.work,
+                                capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", env=env)
+        self.assertNotEqual(result.returncode, 0)
+        reports = list(fallback_temp.glob("afc-scan-*/scan-report.json"))
+        self.assertEqual(len(reports), 1, result.stdout + result.stderr)
+        report = json.loads(reports[0].read_text(encoding="utf-8"))
+        self.assertEqual(report["status"], "failed")
+        self.assertTrue(any(item["code"] == "scan_preflight_failed"
+                            for item in report["diagnostics"]))
+        self.assertFalse(self.output.exists())
+
     def test_missing_json_preview_fails_without_output(self):
         libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
         for option in (3, 4):

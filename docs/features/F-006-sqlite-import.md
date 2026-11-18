@@ -11,6 +11,7 @@ remove tracks missing from albums included in the import; albums absent from the
 batches for a menu library or the complete CLI directory import share one transaction and roll back together on
 failure. The old `.db` file is never migrated, overwritten, or deleted; incompatible files at the new catalog path
 are rejected without modification. The destination must be outside the recorded source library.
+Split albums are validated and reassembled before import; incomplete or inconsistent fragments fail before database writes.
 
 ## Entry points
 - `FlacConvert db import <json dir> [--output-dir]` → `FlacConvertMain.cpp#ImportJsonDirectoryToDatabase`
@@ -20,7 +21,7 @@ are rejected without modification. The destination must be outside the recorded 
 ## Design and knowledge
 - DESIGN: `FlacConvert/DESIGN.md` → Database import; Output-directory anchoring; Files and schemas (SQLite catalog
   schema v2)
-- K-042 SQLite long-path VFS; K-040 library-relative file identity
+- K-042 SQLite long-path VFS; K-040 library-relative file identity; K-050 complete album fragments
 
 ## Acceptance checks
 - [ ] Imported files have stable `(library_id, relative_path)` identity; re-import does not duplicate rows.
@@ -33,6 +34,7 @@ are rejected without modification. The destination must be outside the recorded 
 - [ ] An incompatible catalog database is refused without modification; the old `.db` remains untouched.
 - [ ] Import into the recorded source library is rejected before creating the database.
 - [ ] Re-importing analysis records updates the scan tier and both available SHA-256 projections.
+- [ ] An incomplete split album is rejected without changing the existing database.
 
 ## Known limitations
 - Only schema-v2 catalog JSON is accepted; legacy JSON must be regenerated with `scan`.

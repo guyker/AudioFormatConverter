@@ -77,10 +77,13 @@ public:
 
 	// load albums from a Json file
 	std::shared_ptr<DirectoryContentEntryList> LoadAlbumsFromJSON(std::filesystem::path dirPath);
+	bool ReassembleAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr);
 	//Save album list and metadata to JSON file
 	bool SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr,
 		const std::filesystem::path& libraryRoot,
-		const std::function<bool(const std::filesystem::path&, const std::string&, size_t)>& writeAlbum,
+		const std::function<bool(const std::filesystem::path&, const std::optional<std::filesystem::path>&,
+			const std::string&, size_t, bool)>& writeAlbum,
+		std::uint64_t byteLimit, const std::string& fragmentSet,
 		std::vector<ScanDiagnostic>* diagnostics = nullptr);
 
 

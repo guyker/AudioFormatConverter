@@ -18,6 +18,8 @@ is available. Report counts distinguish discovered albums/tracks, successfully s
 batches, and installed batches. Discovery counts can be partial if enumeration fails. Library-level diagnostics omit
 `albumPath`. Filesystem diagnostics carry an `affectedPath` and native error code/category when available; track paths also populate `filePath`. FFmpeg warnings/errors without a thread-local file context are captured
 at scan scope and intentionally remain unattributed to a track.
+FFmpeg format and stream tags are included with separate source scopes; older incremental records are reread to
+populate this inventory.
 
 The reader records findings for missing title/artist/album tags, malformed track/disc numbers, non-ISO dates,
 malformed MusicBrainz UUIDs, ISRCs and EAN/UPC/GTIN check digits, inconsistent album-level tags within a directory,
@@ -35,8 +37,9 @@ before installing staged JSON, leaving the previous generated files unchanged.
 Album objects include the source `"Library Root"` for stable downstream database identity. With `Incremental=true`,
 unchanged records are reused only when the source path, file size, full-precision modification time match and the cached tier is the requested tier or higher;
 `scan --full-rescan` forces metadata rereads.
-Set `JsonBatchTargetBytes` to a positive byte count to split output before the target is exceeded. The default 0
-disables size-based splitting. Albums remain intact; an album larger than the target gets its own batch and a warning.
+Set `JsonBatchTargetBytes` to a positive hard byte limit; the default 0 disables size-based splitting. Albums that
+exceed it are split into indexed track fragments. If one track and its envelope cannot fit, the scan fails and
+preserves prior catalog files. Duplicate detection and database import validate and reassemble fragment sets first.
 
 ## Entry points
 - `FlacConvert scan <library> [--output-dir] [--full-rescan] [--tier catalog|integrity|analysis]` → `FlacConvertMain.cpp#RunWithArguments`
@@ -76,7 +79,8 @@ disables size-based splitting. Albums remain intact; an album larger than the ta
 - [ ] Output directory overlapping the source library is rejected.
 - [ ] On Windows, scan installs valid schema-v2 JSON under an output path longer than `MAX_PATH`.
 - [ ] With the byte target disabled, batch count = ceil(albums / `AlbumsSplitThreshold`).
-- [ ] With a byte target, normal batches fit it and oversized albums remain intact and generate warnings.
+- [ ] With a byte limit, all batches fit, large albums reassemble correctly, and an oversized track fails safely.
+- [ ] Missing, duplicate, inconsistent or mixed album fragments are rejected before database import or duplicate detection.
 - [ ] With async metadata reads enabled, scan succeeds when the configured worker cap is lower than the album's track count.
 - [ ] Same-size source edits within one second invalidate incremental cache records, and album-level findings are recomputed after cache reuse.
 
@@ -85,8 +89,11 @@ disables size-based splitting. Albums remain intact; an album larger than the ta
 - `rawTags` contains decoded tag entries, not byte-exact source metadata. Native metadata inventory is partial for FLAC/MP3 and unsupported for additional formats; the JSON catalog is not a byte-exact archive.
 - Files and paths skipped because their extensions are not configured are not currently emitted in a separate discovery inventory.
 - Scan diagnostics cover surfaced read, probe, decode, serialization, and installation errors; they are not a complete dump of all FFmpeg log levels or an exhaustive inventory of skipped files.
-- Unscoped FFmpeg warnings/errors are recorded at scan scope, not guessed to belong to a track. Errors that prevent preflight path validation or prevent writing `scan-report.json` can only be surfaced through logging.
-- The byte target is not a hard limit for a single oversized album, and each album is buffered in memory while serialized.
+- Unscoped FFmpeg warnings/errors are recorded at scan scope, not guessed to belong to a track. Scan preflight and
+  report-write failures attempt a report in a safe system temporary directory; failures before the scan is
+  initialized, or when that directory is unavailable or overlaps a source library, can only be logged.
+- With the byte limit disabled, each album is buffered in memory while serialized.
+- Without a batch manifest, consumers cannot detect an album when all of its fragments or its entire JSON batch are missing.
 - Compressed ID3 frame handling depends on whether the build includes ZLIB.
 - Analysis includes per-track EBU R128 values when the filter is available, sample statistics and a fixed -60 dBFS leading/trailing silence threshold; it does not calculate album loudness or detect upsampling/lossy-origin cutoffs.
 - True effective resolution, Chromaprint fingerprints, full native block inventory, and some planned quality heuristics remain unavailable.

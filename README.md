@@ -18,6 +18,7 @@
 3. Explicit reader support and analysis status; the default `catalog` tier does not decode audio, while the
    `integrity` and `analysis` tiers perform decode-based checks and signal measurements.
 Generated scan batches use schema v2, documented in `docs/schemas/media-catalog-v2.schema.json`.
+FFmpeg container and stream tags are retained separately in the raw inventory when probing succeeds.
 `CatalogExtensions` defaults to `.flac` and `.mp3`; M4A/MP4, Ogg/Opus, WavPack/APE, WAV and AIFF can be enabled
 explicitly. Native metadata inventory is partial for FLAC/MP3 and unsupported for those additional formats.
 
@@ -52,7 +53,8 @@ No active libraries is an error. `<mediaName>` defaults to the source folder nam
 Selected actions show an operation preview with absolute configured input/output paths, input counts,
 conversion quality/overwrite policies, and existing or duplicate destinations. Options `1`, `2`, `3`, `4`
 and `6` require `RUN` after the preview (Enter/EOF cancels).
-No output files/directories are written during preview. All active conversion libraries are planned
+No catalog or conversion output files/directories are written during preview. A scan preflight or discovery
+failure attempts a diagnostic report in a safe system temporary directory. All active conversion libraries are planned
 before execution, so a conflict in a later library prevents earlier libraries from being converted.
 The prepared audio/companion lists, scan album batches and JSON input lists are reused for execution.
 Scan previews discover albums without collecting track metadata until confirmed. Source quality/channel
@@ -155,8 +157,8 @@ specified. `scan` replaces the generated JSON output for that library only after
 scans reuse metadata when file path, size, and modification time are unchanged; pass
 `--full-rescan` to force rereads. `--tier` accepts `catalog` (default), `integrity`, or `analysis`; configure the
 menu/default tier with `ScanTier`. `CatalogExtensions` selects accepted scan formats; only FLAC and MP3 are enabled
-by default. Set `JsonBatchTargetBytes` to a positive byte count for size-aware JSON batching (default `0` disables it;
-oversized albums remain intact). `DecodeWorkers` caps the independent full-decode stage. `duplicates` reports matches without opening folders; pass `--open` to open matched
+by default. Set `JsonBatchTargetBytes` to a positive hard byte limit for JSON batching (default `0` disables it);
+oversized albums split into track fragments, and a scan fails if a track cannot fit. `DecodeWorkers` caps the independent full-decode stage. `duplicates` reports matches without opening folders; pass `--open` to open matched
 folders in Explorer. `db import` creates or updates a library-named `catalog-v2.sqlite` database and leaves legacy
 `.db` files untouched.
 

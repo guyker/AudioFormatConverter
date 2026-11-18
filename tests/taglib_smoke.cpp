@@ -59,6 +59,11 @@ int main(int argc, char** argv) {
                 "Catalog reader did not normalize the title tag");
             require(!result.record->rawTags.empty(),
                 "Catalog reader did not retain the source tag representation");
+            require(std::ranges::any_of(result.record->rawTags, [](const RawMetadataTag& tag) {
+                return tag.scope == "ffmpeg.format" &&
+                    (tag.key == "title" || tag.key == "TITLE") &&
+                    tag.value == "TagLib smoke";
+            }), "Catalog reader did not retain FFmpeg's container title metadata");
             if (index == 1) {
                 require(result.record->tags.contains("artists") &&
                     result.record->tags.at("artists").size() == 2,

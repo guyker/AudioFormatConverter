@@ -1022,9 +1022,11 @@ bool CatalogDatabase::Import(const DirectoryContentEntryList& albums,
     }
     try {
         std::optional<std::filesystem::path> recordLibraryRoot;
-        for (const auto& [directory, tracks] : albums) {
-            (void)directory;
-            for (const auto& track : tracks) {
+        for (const auto& album : albums) {
+            if (album.fragmentIndex || album.fragmentCount || album.fragmentSet) {
+                throw std::runtime_error("Database import requires complete reassembled albums.");
+            }
+            for (const auto& track : album.trackList) {
                 if (!track.catalogRecord || !track.libraryRoot) {
                     throw std::runtime_error(
                         "Database import requires schema-v2 catalog JSON with Library Root; rescan the library first.");
@@ -1091,8 +1093,8 @@ bool CatalogDatabase::Import(const DirectoryContentEntryList& albums,
             const auto scannedUtc = utcNow();
             const auto libraryId = getLibraryId(database.handle, libraryRootUtf8);
             std::vector<std::int64_t> seenAlbums;
-            for (const auto& [directory, tracks] : albums) {
-                const auto albumPath = directory.path().lexically_normal();
+            for (const auto& album : albums) {
+                const auto albumPath = album.path.path().lexically_normal();
                 const auto albumRelative = albumPath.lexically_relative(libraryRoot);
                 if (!isSafeRelative(albumRelative)) {
                     throw std::runtime_error("An album is outside the configured library root.");
@@ -1104,7 +1106,7 @@ bool CatalogDatabase::Import(const DirectoryContentEntryList& albums,
                     albumPathUtf8, folderUtf8, scanId);
                 seenAlbums.push_back(albumId);
 
-                for (const auto& track : tracks) {
+                for (const auto& track : album.trackList) {
                     const auto& record = *track.catalogRecord;
                     auto fileRelative = albumRelative / CommonUtils::path_from_utf8(record.relativePath);
                     fileRelative = fileRelative.lexically_normal();

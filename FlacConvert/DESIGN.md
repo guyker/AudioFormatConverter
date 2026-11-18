@@ -92,7 +92,7 @@ All commands accept `--config <file>`. Exit code is 0 on success, non-zero on an
    planning anywhere, including inside skipped subtrees, rather than disappearing from output. MP3 mode retains its
    non-audio companion policy, skips non-FLAC audio and does nothing without convertible FLAC. Nothing is written.
 2. **Preview** (menu only) – `ConvertConfiguredLibraries` plans *all* active libraries, checks cross-library overlap,
-   prints `ShowConversionPreview`, and requires `RUN` (`ConfirmPreview`). Any conflict blocks the whole run (K-027).
+   prints `ShowConversionPreview`, and requires `RUN` (`ConfirmPreview`). Any conflict blocks the whole run (K-049).
 3. **Execute** – `FolderConvert::ExecuteConversion` creates the library folder (ownership = created by this run),
    creates the `.conversion-in-progress` marker directory, then processes audio files sequentially:
    `MediaConvertionTask::Run` (convert + verify + audit) then `MediaConvertionTask::PostRun` (install). Retained FLAC
@@ -147,6 +147,9 @@ sort by normalized album artist, write schema-v2 records to a staging sibling di
 from source-scoped raw tag entries and include technical properties, picture descriptors, and explicit
 support/analysis statuses; chapter boundaries and chapter tags come from libavformat. FLAC and MP3 native inventories
 are partial; other configured formats expose TagLib properties while `support.nativeInventory` remains `unsupported`.
+FFmpeg format and stream tags are retained with `ffmpeg.format` and `ffmpeg.stream.<index>` scopes; they are not
+added to normalized tags a second time. Old incremental records without the current metadata-inventory version
+are reread.
 Tag validation records missing title/artist/album tags, malformed track/disc numbers, non-ISO dates, malformed
 MusicBrainz UUIDs, ISRCs and EAN/UPC/GTIN check digits, and album-level inconsistencies for album, album artist,
 release date, and label. Album validation also flags duplicate/gapped per-disc track numbers and inconsistent or
@@ -155,7 +158,8 @@ Unavailable properties are omitted, including unknown FLAC STREAMINFO sample cou
 An inaccessible discovered directory, an output write/close error, or an accepted audio track with a read/JSON error or
 without usable sample-rate/channel data fails the scan before installation, preserving the prior generated JSON
 (K-035). TagLib reads use a read-only stream. The menu preview discovers albums without reading track metadata and
-reuses the discovered batches. `ScanTier` selects `catalog` (default), `integrity`, or `analysis`; CLI `scan --tier`
+reuses the discovered batches. A scan preview preflight or discovery failure may write a diagnostic report in a safe
+system temporary directory before confirmation, but never installs a catalog (K-049). `ScanTier` selects `catalog` (default), `integrity`, or `analysis`; CLI `scan --tier`
 overrides the config. Integrity and analysis tiers decode the audio once, report decode/sample/hash results, and
 analysis adds per-channel signal statistics and zero-padded-hi-res findings. Decode failures are retained in the
 record without discarding successfully read tags. Each scan writes `scan-report.json` beside the generated batches with run status, duration, structured diagnostics,
@@ -169,9 +173,14 @@ catalog JSON. The report contract is
 `docs/schemas/scan-report-v2.schema.json`. Version 2 omits `albumPath` for library-level diagnostics;
 the version 1 schema remains available for older reports. `ExtraAudioQualityMetrics` is deprecated and ignored.
 `AlbumsSplitThreshold` limits metadata batches. `JsonBatchTargetBytes` defaults to 0 (disabled); when positive,
-serialized albums are streamed to staged JSON files, splitting before an album would exceed the target. An oversized
-album remains intact in its own file and produces a warning. A single album is still buffered in memory. Failures before safe output
-path validation, or failures that prevent writing the report itself, are visible only through the application log.
+staged JSON files never exceed the limit, including array and fragment wrappers. Albums that do not fit are serialized
+as indexed, scan-set-identified, single-track fragments. If a track and its required envelope cannot fit, the scan
+fails without installing staged JSON. Duplicate detection, database import and incremental cache loading reassemble
+and validate complete fragment sets; incomplete, duplicate, inconsistent or mixed sets are rejected before use.
+With the limit enabled, the writer buffers at most one fitting album or one track fragment at a time; with it
+disabled, an entire album is buffered. Preflight
+and report-write failures attempt a separate report under the system temporary directory, outside all source
+libraries, with its path logged. If the temporary location is unsafe or unavailable, the error remains log-only.
 
 ### Duplicates (menu 3, `duplicates`)
 
@@ -264,7 +273,7 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | `MinMatchingTracksForDuplicate`, `SizeMatchPercentageThreshold` | 1, 3 | Duplicate search |
 | `RecursionDirectorySearchDepth` | 10 | Discovery |
 | `AlbumsSplitThreshold` | 2000 (>0) | JSON batch size |
-| `JsonBatchTargetBytes` | 0 (disabled) | Optional output JSON byte target; albums remain intact |
+| `JsonBatchTargetBytes` | 0 (disabled) | Hard output JSON byte limit; oversized albums split into track fragments |
 | `FLACSettings.ffmpeg_exe_name` | `ffmpeg` | Conversion executable; the other `FLACSettings` strings are not used at runtime |
 | `MetadataSidecars.Format` | `binary` (`binary`\|`json`) | Sidecar encoding for conversions |
 | `MetadataSidecars.ConvertToFlac`, `MetadataSidecars.ConvertToMp3` | `disabled` (`disabled`\|`optional`\|`required`) | Per-target sidecar policy; invalid values fail loading |
@@ -389,5 +398,5 @@ prompt, and `ShowConversionPreview`.
 
 ## Knowledge links
 
-Conversion safety: K-041, K-048, K-014, K-029, K-030, K-032, K-038. Formats: K-016, K-017, K-031. Manual menu: K-024, K-025, K-026, K-027. Catalog/DB: K-005, K-042, K-040. Platform/build: K-006, K-007, K-043, K-044, K-033.
+Conversion safety: K-041, K-048, K-014, K-029, K-030, K-032, K-038. Formats: K-016, K-017, K-031. Manual menu: K-024, K-025, K-026, K-049. Catalog/DB: K-005, K-042, K-040, K-050. Platform/build: K-006, K-007, K-043, K-044, K-033.
 Only live entries are listed; superseded history is in `docs/knowledge/index.md` under "Closed".

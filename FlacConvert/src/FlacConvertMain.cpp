@@ -342,6 +342,46 @@ bool installScanReport(const fs::path& targetDirectory, const fs::path& libraryR
     return installed;
 }
 
+bool writeFallbackScanReport(const ScanReport& report,
+    const std::vector<MediaDirectoryElement>& libraries)
+{
+    try {
+        std::error_code ec;
+        const auto temporaryRoot = fs::weakly_canonical(fs::temp_directory_path(), ec);
+        if (ec) throw fs::filesystem_error("Cannot validate temporary directory", ec);
+        for (const auto& library : libraries) {
+            const auto source = fs::weakly_canonical(pathFromUtf8(library.mediaPath), ec);
+            if (ec || isSameOrChildPath(temporaryRoot, source)) {
+                spdlog::error("Cannot safely write a fallback report outside all source libraries.");
+                return false;
+            }
+        }
+        const auto source = pathFromUtf8(report.sourceRoot);
+        const auto directory = makeScanStagingDirectory(source);
+        const auto canonicalDirectory = fs::weakly_canonical(directory, ec);
+        bool safe = !ec;
+        for (const auto& library : libraries) {
+            const auto libraryRoot = fs::weakly_canonical(pathFromUtf8(library.mediaPath), ec);
+            if (ec || isSameOrChildPath(canonicalDirectory, libraryRoot) ||
+                isSameOrChildPath(libraryRoot, canonicalDirectory)) {
+                safe = false;
+                break;
+            }
+        }
+        if (!safe || !installScanReport(directory, source, report)) {
+            fs::remove(directory, ec);
+            spdlog::error("Cannot save the fallback scan report.");
+            return false;
+        }
+        spdlog::error("Fallback scan report saved to '{}'.", pathToUtf8(directory / "scan-report.json"));
+        return true;
+    }
+    catch (const std::exception& error) {
+        spdlog::error("Cannot save the fallback scan report: {}", error.what());
+        return false;
+    }
+}
+
 bool installGeneratedFiles(const fs::path& stagedDirectory, const fs::path& targetDirectory)
 {
     std::error_code ec;
@@ -522,6 +562,7 @@ std::map<std::string, MediaRecord> loadCatalogCache(
 
     const auto normalizedRoot = fs::absolute(libraryRoot).lexically_normal();
     AlbumCollection collection;
+    auto allAlbums = std::make_shared<DirectoryContentEntryList>();
     for (const auto& file : files) {
         const auto albums = collection.LoadAlbumsFromJSON(file);
         if (!albums) {
@@ -529,19 +570,24 @@ std::map<std::string, MediaRecord> loadCatalogCache(
                 pathToUtf8(file));
             return {};
         }
-        for (const auto& album : *albums) {
-            for (const auto& track : album.trackList) {
-                if (!track.catalogRecord || !track.libraryRoot ||
-                    fs::absolute(*track.libraryRoot).lexically_normal() != normalizedRoot) {
-                    spdlog::warn("Ignoring the incremental metadata cache because its library identity does not match.");
-                    return {};
-                }
-                const auto sourcePath = fs::absolute(
-                    album.path.path() / track.trackPath).lexically_normal();
-                if (!cache.emplace(pathToUtf8(sourcePath), *track.catalogRecord).second) {
-                    spdlog::warn("Ignoring the incremental metadata cache because it contains duplicate file identities.");
-                    return {};
-                }
+        allAlbums->insert(allAlbums->end(), albums->begin(), albums->end());
+    }
+    if (!collection.ReassembleAlbums(allAlbums)) {
+        spdlog::warn("Ignoring the incremental metadata cache because its albums are incomplete.");
+        return {};
+    }
+    for (const auto& album : *allAlbums) {
+        for (const auto& track : album.trackList) {
+            if (!track.catalogRecord || !track.libraryRoot ||
+                fs::absolute(*track.libraryRoot).lexically_normal() != normalizedRoot) {
+                spdlog::warn("Ignoring the incremental metadata cache because its library identity does not match.");
+                return {};
+            }
+            const auto sourcePath = fs::absolute(
+                album.path.path() / track.trackPath).lexically_normal();
+            if (!cache.emplace(pathToUtf8(sourcePath), *track.catalogRecord).second) {
+                spdlog::warn("Ignoring the incremental metadata cache because it contains duplicate file identities.");
+                return {};
             }
         }
     }
@@ -932,6 +978,24 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
     if (summary) {
         summary->unit = "album JSON files";
     }
+    const auto reportPreflight = [&](const fs::path& source, const fs::path& target,
+        const std::string& message, const fs::path& affected, const std::error_code& error = {}) {
+        ScanReport report;
+        report.runId = std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+        report.status = "failed";
+        report.scanTier = AppSettingsJson::AppSetting()->ScanTier;
+        report.sourceRoot = pathToUtf8(source.empty() ? fs::path(".") : source);
+        report.outputDirectory = pathToUtf8(target.empty() ? fs::path(".") : target);
+        report.diagnostics.push_back({
+            std::nullopt, std::nullopt,
+            { "preflight", "filesystem", DiagnosticCode::ScanPreflightFailed,
+                DiagnosticSeverity::Error, message },
+            affected.empty() ? std::nullopt : std::optional<std::string>(pathToUtf8(affected)),
+            error ? std::optional<int>(error.value()) : std::nullopt,
+            error ? std::optional<std::string>(error.category().name()) : std::nullopt
+        });
+        writeFallbackScanReport(report, mediaDirectoryList);
+    };
     std::vector<std::vector<MediaAlbumListPtr>> preparedAlbums;
     if (preview) {
         if (mediaDirectoryList.empty()) {
@@ -947,6 +1011,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             const auto name = pathFromUtf8(*library.mediaName);
             if (name.empty() || name == "." || name == ".." || name.has_root_path() || name.has_parent_path()) {
                 spdlog::error("Library name must be a single directory name: '{}'.", *library.mediaName);
+                reportPreflight(source, outputRoot, "Library name must be a single directory name.", name);
                 return 1;
             }
             const auto target = absoluteDisplayPath(outputRoot / name);
@@ -957,12 +1022,14 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             const auto key = fs::weakly_canonical(target, ec);
             if (ec) {
                 spdlog::error("Cannot resolve scan destination: {}", ec.message());
+                reportPreflight(source, target, "Cannot resolve scan destination: " + ec.message(), target, ec);
                 return 1;
             }
             for (const auto& other : mediaDirectoryList) {
                 const auto sourceKey = fs::weakly_canonical(pathFromUtf8(other.mediaPath), ec);
                 if (ec || isSameOrChildPath(key, sourceKey) || isSameOrChildPath(sourceKey, key)) {
                     spdlog::error("Scan destination overlaps an active source library: '{}'.", pathToUtf8(target));
+                    reportPreflight(source, target, "Scan destination overlaps an active source library.", target, ec);
                     return 1;
                 }
             }
@@ -970,6 +1037,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                     return isSameOrChildPath(key, other) || isSameOrChildPath(other, key);
                 })) {
                 spdlog::error("Scan library output collision: '{}'.", pathToUtf8(target));
+                reportPreflight(source, target, "Scan library output collision.", target);
                 return 1;
             }
             targets.push_back(key);
@@ -977,30 +1045,40 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             const bool targetExists = fs::exists(target, ec);
             if (ec || (targetExists && !fs::is_directory(target, ec)) || ec) {
                 spdlog::error("Cannot inspect scan destination: '{}'.", pathToUtf8(target));
+                reportPreflight(source, target, "Cannot inspect scan destination.", target, ec);
                 return 1;
             }
             if (targetExists) {
-                for (const auto& file : fs::directory_iterator(target)) {
-                    if (isGeneratedJsonOutput(file, ec)) {
+                for (fs::directory_iterator it(target, ec), end; !ec && it != end; it.increment(ec)) {
+                    if (isGeneratedJsonOutput(*it, ec)) {
                         ++previous;
                     }
-                    if (ec) {
-                        spdlog::error("Cannot inspect existing JSON: {}", ec.message());
-                        return 1;
-                    }
+                }
+                if (ec) {
+                    spdlog::error("Cannot inspect existing JSON: {}", ec.message());
+                    reportPreflight(source, target, "Cannot inspect existing JSON: " + ec.message(),
+                        target, ec);
+                    return 1;
                 }
             }
             std::vector<MediaAlbumListPtr> batches;
             std::size_t albumCount = 0;
             std::size_t tracks = 0;
             AlbumCollection collection;
-            for (auto albums : collection.LoadAlbumsCo(
-                source, false, AppSettingsJson::AppSetting()->AlbumsSplitThreshold)) {
-                albumCount += albums->size();
-                for (const auto& album : *albums) {
-                    tracks += album.trackList.size();
+            try {
+                for (auto albums : collection.LoadAlbumsCo(
+                    source, false, AppSettingsJson::AppSetting()->AlbumsSplitThreshold)) {
+                    albumCount += albums->size();
+                    for (const auto& album : *albums) {
+                        tracks += album.trackList.size();
+                    }
+                    batches.push_back(albums);
                 }
-                batches.push_back(albums);
+            }
+            catch (const fs::filesystem_error& error) {
+                spdlog::error("Scan preview discovery failed: {}", error.what());
+                reportPreflight(source, target, error.what(), error.path1(), error.code());
+                return 1;
             }
             std::cout << "\nOperation preview: scan to JSON\n"
                 << "  Input: " << pathToUtf8(source) << '\n'
@@ -1013,6 +1091,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                 << "  Overwrite: generated JSON only; databases and sources unchanged.\n";
             if (batches.empty()) {
                 spdlog::error("No albums found; no output will be replaced.");
+                reportPreflight(source, target, "No albums found; no output will be replaced.", source);
                 return 1;
             }
             preparedAlbums.push_back(std::move(batches));
@@ -1034,35 +1113,45 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             mediaEntry.mediaName = directoryNameUtf8(libraryPath);
         }
         const fs::path libraryName = pathFromUtf8(mediaEntry.mediaName.value());
+        const auto preflightFailure = [&](const std::string& message, const fs::path& affected,
+            const std::error_code& error = {}) {
+            reportPreflight(libraryPath, outputRoot / libraryName, message, affected, error);
+        };
         if (libraryName.empty() || libraryName == "." || libraryName == ".." ||
             libraryName.has_root_path() || libraryName.has_parent_path()) {
             spdlog::error("Library name must be a single directory name: '{}'.", mediaEntry.mediaName.value());
+            preflightFailure("Library name must be a single directory name.", libraryName);
             return 1;
         }
         std::error_code ec;
         const fs::path targetDirectory = fs::absolute(outputRoot / libraryName, ec);
         if (ec) {
             spdlog::error("Cannot resolve scan output directory: {}", ec.message());
+            preflightFailure("Cannot resolve scan output directory: " + ec.message(), outputRoot, ec);
             return 1;
         }
         const fs::path libraryIoPath = fs::absolute(libraryPath, ec);
         if (ec) {
             spdlog::error("Cannot resolve library path: {}", ec.message());
+            preflightFailure("Cannot resolve library path: " + ec.message(), libraryPath, ec);
             return 1;
         }
         const fs::path canonicalLibrary = fs::weakly_canonical(libraryIoPath, ec);
         if (ec || !fs::is_directory(canonicalLibrary, ec) || ec) {
             spdlog::error("Library path is not a readable directory: {}", pathToUtf8(libraryPath));
+            preflightFailure("Library path is not a readable directory.", libraryPath, ec);
             return 1;
         }
         const fs::path canonicalTarget = fs::weakly_canonical(targetDirectory, ec);
         if (ec) {
             spdlog::error("Cannot resolve scan output '{}': {}", pathToUtf8(targetDirectory), ec.message());
+            preflightFailure("Cannot resolve scan output: " + ec.message(), targetDirectory, ec);
             return 1;
         }
         if (isSameOrChildPath(canonicalTarget, canonicalLibrary) ||
             isSameOrChildPath(canonicalLibrary, canonicalTarget)) {
             spdlog::error("Scan output directory must not overlap the source library: '{}'.", pathToUtf8(targetDirectory));
+            preflightFailure("Scan output directory overlaps the source library.", targetDirectory);
             return 1;
         }
         ScanReport scanReport;
@@ -1093,6 +1182,13 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                     targetDirectory, libraryIoPath, scanReport, outputAnchor)) {
                 spdlog::error("Scan diagnostics could not be saved to '{}'.",
                     pathToUtf8(targetDirectory / "scan-report.json"));
+                scanReport.diagnostics.push_back({
+                    std::nullopt, std::nullopt,
+                    { "report", "filesystem", DiagnosticCode::ScanReportWriteFailed,
+                        DiagnosticSeverity::Error, "Could not install the scan report at its normal location." },
+                    pathToUtf8(targetDirectory / "scan-report.json")
+                });
+                writeFallbackScanReport(scanReport, mediaDirectoryList);
             }
         };
         const auto settings = AppSettingsJson::AppSetting();
@@ -1192,12 +1288,22 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                     outputBytes = 0;
                     return true;
                 };
-                const auto writeAlbum = [&](const fs::path& albumPath, const std::string& json,
-                    std::size_t trackCount) {
-                    ++scanReport.albumsSerialized;
-                    scanReport.tracksSerialized += trackCount;
+                const auto writeAlbum = [&](const fs::path& albumPath,
+                    const std::optional<fs::path>& trackPath, const std::string& json,
+                    std::size_t trackCount, bool lastFragment) {
                     const auto albumBytes = static_cast<std::uint64_t>(json.size());
                     const auto target = settings->JsonBatchTargetBytes;
+                    if (target > 0 && (target < 2 || albumBytes > target - 2)) {
+                        spdlog::error("Track record exceeds the configured JSON byte limit: '{}'.",
+                            pathToUtf8(trackPath.value_or(albumPath)));
+                        scanReport.diagnostics.push_back({
+                            pathToUtf8(albumPath),
+                            trackPath ? std::optional<std::string>(pathToUtf8(*trackPath)) : std::nullopt,
+                            { "serialization", "catalog", DiagnosticCode::TrackExceedsBatchLimit,
+                                DiagnosticSeverity::Error, "Track record cannot fit the JSON batch byte limit." }
+                        });
+                        return false;
+                    }
                     if (outputAlbums > 0 && target > 0 &&
                         (outputBytes >= target || albumBytes >= target - outputBytes ||
                             target - outputBytes - albumBytes < 2)) {
@@ -1214,13 +1320,6 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                         output.put('[');
                         outputBytes = 1;
                     }
-                    if (target > 0 && (target < 2 || albumBytes > target - 2)) {
-                        scanReport.diagnostics.push_back({
-                            pathToUtf8(albumPath), std::nullopt,
-                            { "serialization", "catalog", DiagnosticCode::AlbumExceedsBatchTarget,
-                                DiagnosticSeverity::Warning, "Album exceeds the JSON batch byte target." }
-                        });
-                    }
                     if (outputAlbums > 0) {
                         output.put(',');
                         ++outputBytes;
@@ -1233,9 +1332,12 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                     }
                     outputBytes += albumBytes;
                     ++outputAlbums;
+                    scanReport.tracksSerialized += trackCount;
+                    if (lastFragment) ++scanReport.albumsSerialized;
                     return true;
                 };
                 if (!ac.SaveAlbumsToJSON(albumListPtr, libraryIoPath, writeAlbum,
+                    settings->JsonBatchTargetBytes, pathToUtf8(stagingRoot.filename()),
                     &scanReport.diagnostics) || !finishOutput()) {
                     throw std::runtime_error("Failed to write an album JSON file.");
                 }
@@ -1347,6 +1449,13 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         if (!installScanReport(
                 targetDirectory, libraryIoPath, scanReport, &targetDirectoryAnchor)) {
             spdlog::warn("Scan completed, but its diagnostics report could not be updated.");
+            scanReport.diagnostics.push_back({
+                std::nullopt, std::nullopt,
+                { "report", "filesystem", DiagnosticCode::ScanReportWriteFailed,
+                    DiagnosticSeverity::Error, "Could not install the scan report at its normal location." },
+                pathToUtf8(targetDirectory / "scan-report.json")
+            });
+            writeFallbackScanReport(scanReport, mediaDirectoryList);
         }
         if (!targetDirectoryAnchor.Restore()) {
             spdlog::error("Cannot restore the working directory after scan installation.");
@@ -1504,6 +1613,9 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
     }
     if (jsonFiles.empty()) {
         spdlog::error("No generated album JSON files found.");
+        return 1;
+    }
+    if (!albumCollection.ReassembleAlbums(albumListPtr)) {
         return 1;
     }
 
@@ -1744,6 +1856,9 @@ int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList,
             }
             albums->insert(albums->end(), part->begin(), part->end());
         }
+        if (!albumCollection.ReassembleAlbums(albums)) {
+            return 1;
+        }
         albumCollection.SortAlbums(albums, { { SortBy::AlbumName, true } });
         if (!albumCollection.ExportToDatabase(albums, plan.database, plan.libraryRoot)) {
             return 1;
@@ -1777,6 +1892,9 @@ int ImportJsonDirectoryToDatabase(const fs::path& jsonDirectory, const fs::path&
             return 1;
         }
         albums->insert(albums->end(), part->begin(), part->end());
+    }
+    if (!albumCollection.ReassembleAlbums(albums)) {
+        return 1;
     }
     MediaDirectoryElement library{};
     fs::path nameDirectory = inputDirectory.lexically_normal();
@@ -2137,12 +2255,6 @@ int RunWithArguments(const std::vector<const char*>& arguments)
         case CommandAction::Scan: {
             if (options.scanTierSpecified) {
                 settings->ScanTier = options.scanTier;
-            }
-            std::error_code ec;
-            const fs::path canonicalInput = fs::weakly_canonical(inputPath, ec);
-            if (ec || !fs::is_directory(canonicalInput, ec) || ec) {
-                spdlog::error("Library path is not a directory: {}", pathToUtf8(inputPath));
-                return 1;
             }
             // Scan through the given path, as the menu does; canonicalizing would expand 8.3 names and turn
             // mapped drives into UNC paths in the catalog.

@@ -1,6 +1,7 @@
 """Verify that a scan includes audio files directly under the library root."""
 
 import json
+import re
 import hashlib
 import os
 import shutil
@@ -75,6 +76,37 @@ def main():
         report = json.loads(report_path.read_text(encoding="utf-8"))
         if report["schemaVersion"] != 2 or report["status"] != "completed":
             raise AssertionError("A successful scan did not write a completed scan report")
+        fallback_temp = root / "fallback-temp"
+        fallback_temp.mkdir()
+        fallback_env = dict(os.environ, TEMP=str(fallback_temp), TMP=str(fallback_temp),
+                            TMPDIR=str(fallback_temp))
+        def fallback_report(result):
+            output_text = result.stdout + result.stderr
+            match = re.search(r"Fallback scan report saved to '([^']+)'", output_text)
+            if not match:
+                raise AssertionError(f"Fallback report location was not logged: {output_text}")
+            path = Path(match.group(1))
+            validate_report(path)
+            return json.loads(path.read_text(encoding="utf-8"))
+        preflight = subprocess.run(
+            [converter, "scan", str(library), "--output-dir", str(library)],
+            capture_output=True, text=True, errors="replace", timeout=30, env=fallback_env)
+        if preflight.returncode == 0:
+            raise AssertionError("Overlapping scan output was accepted")
+        if not any(item["code"] == "scan_preflight_failed"
+                   for item in fallback_report(preflight)["diagnostics"]):
+            raise AssertionError("Fallback report omitted the preflight failure")
+        blocked_output = root / "blocked-output"
+        blocked_output.mkdir()
+        (blocked_output / library.name).write_text("not a directory", encoding="utf-8")
+        blocked = subprocess.run(
+            [converter, "scan", str(library), "--output-dir", str(blocked_output)],
+            capture_output=True, text=True, errors="replace", timeout=30, env=fallback_env)
+        if blocked.returncode == 0:
+            raise AssertionError("Blocked scan output was accepted")
+        if not any(item["code"] == "scan_report_write_failed"
+                   for item in fallback_report(blocked)["diagnostics"]):
+            raise AssertionError("Fallback report omitted the report-write failure")
         invalid_report_path = root / "invalid-report.json"
         for invalid_report in (dict(report, schemaVersion=1),
                                dict(report, diagnostics=[{"stage": "invalid"}])):
@@ -171,45 +203,108 @@ def main():
         if len(initial_parts) != 1:
             raise AssertionError("Disabled byte target changed album-count batching")
         initial_albums = json.loads(initial_parts[0].read_text(encoding="utf-8"))
-        album_sizes = [len(json.dumps(album, ensure_ascii=False, separators=(",", ":"))
-                           .encode("utf-8")) for album in initial_albums]
-        byte_target = max(album_sizes) + 2
+        size_config.write_text(json.dumps({
+            "Incremental": False, "JsonBatchTargetBytes": 10000000
+        }), encoding="utf-8")
+        subprocess.run(command, check=True)
+        preliminary = []
+        for album in initial_albums:
+            if len(album["Tracks"]) == 1:
+                preliminary.append(album)
+            else:
+                preliminary.extend({**album, "Tracks": [record],
+                                    "Fragment": {"index": index, "count": len(album["Tracks"]),
+                                                 "set": "x" * 40}}
+                                   for index, record in enumerate(album["Tracks"]))
+        byte_target = max(len(json.dumps(album, ensure_ascii=False, separators=(",", ":"))
+                              .encode("utf-8")) + 18 for album in preliminary)
+        size_config.write_text(json.dumps({
+            "Incremental": False, "JsonBatchTargetBytes": byte_target
+        }), encoding="utf-8")
+        subprocess.run(command, check=True)
+        preliminary = [album for part in sized_dir.glob("media_out_*.json")
+                       for album in json.loads(part.read_text(encoding="utf-8"))]
+        byte_target = max(len(json.dumps(album, ensure_ascii=False, separators=(",", ":"))
+                              .encode("utf-8")) + 2 for album in preliminary)
         size_config.write_text(json.dumps({
             "Incremental": False, "JsonBatchTargetBytes": byte_target
         }), encoding="utf-8")
         subprocess.run(command, check=True)
         sized_parts = list(sized_dir.glob("media_out_*.json"))
-        if len(sized_parts) != 3:
-            raise AssertionError("Byte target did not split three intact albums")
+        if len(sized_parts) < 3:
+            raise AssertionError("Byte limit did not split the catalog")
         for part in sized_parts:
-            if part.stat().st_size > byte_target or len(json.loads(part.read_text(encoding="utf-8"))) != 1:
-                raise AssertionError("A normal batch exceeded the byte target or split an album")
+            if part.stat().st_size > byte_target:
+                raise AssertionError("A batch exceeded the byte limit")
         sized_albums = [album for part in sized_parts
                         for album in json.loads(part.read_text(encoding="utf-8"))]
-        if sorted((album["Album Path"], len(album["Tracks"])) for album in sized_albums) != \
-                sorted((album["Album Path"], len(album["Tracks"])) for album in initial_albums):
-            raise AssertionError("Size-aware batching lost or duplicated albums or tracks")
-        exact_target = sum(part.stat().st_size for part in sorted(sized_parts)[:2]) - 1
-        size_config.write_text(json.dumps({
-            "Incremental": False, "JsonBatchTargetBytes": exact_target
-        }), encoding="utf-8")
-        subprocess.run(command, check=True)
-        exact_parts = list(sized_dir.glob("media_out_*.json"))
-        if len(exact_parts) != 2 or not any(part.stat().st_size == exact_target for part in exact_parts):
-            raise AssertionError("Albums that exactly fit the byte target were unnecessarily split")
+        identities = lambda albums: sorted((album["Album Path"], record["file"]["relativePath"])
+                                            for album in albums for record in album["Tracks"])
+        if identities(sized_albums) != identities(initial_albums):
+            raise AssertionError("Size-aware batching lost or duplicated tracks")
+        split_album = [album for album in sized_albums if "Fragment" in album]
+        if len(split_album) != 2 or {album["Fragment"]["index"] for album in split_album} != {0, 1}:
+            raise AssertionError("A two-track album was not represented by complete fragments")
+        if not any(part.stat().st_size == byte_target for part in sized_parts):
+            raise AssertionError("A record that exactly fits the byte limit was not accepted")
+
+        database_output = root / "sized-database"
+        import_command = [converter, "db", "import", str(sized_dir),
+                          "--output-dir", str(database_output)]
+        subprocess.run(import_command, check=True)
+        database = database_output / sized_library.name / "catalog-v2.sqlite"
+        def db_paths():
+            with closing(sqlite3.connect(database)) as connection:
+                return connection.execute("SELECT relative_path FROM files ORDER BY relative_path").fetchall()
+        expected_db_paths = db_paths()
+        if len(expected_db_paths) != 4:
+            raise AssertionError("Database import did not reassemble the split album")
+        fragment_file = next(part for part in sized_parts
+                             if any("Fragment" in album for album in
+                                    json.loads(part.read_text(encoding="utf-8"))))
+        saved = fragment_file.read_bytes()
+        fragment_file.unlink()
+        for check_command in (import_command, [converter, "duplicates", str(sized_dir)]):
+            if subprocess.run(check_command, capture_output=True, timeout=30).returncode == 0:
+                raise AssertionError("A missing album fragment was accepted")
+        if db_paths() != expected_db_paths:
+            raise AssertionError("Missing fragments changed the existing database")
+        fragment_file.write_bytes(saved)
+        duplicate = sized_dir / "media_out_duplicate.json"
+        duplicate.write_bytes(saved)
+        if subprocess.run(import_command, capture_output=True, timeout=30).returncode == 0:
+            raise AssertionError("A duplicated album fragment was accepted")
+        duplicate.unlink()
+        if db_paths() != expected_db_paths:
+            raise AssertionError("Duplicate fragments changed the existing database")
+        altered = json.loads(saved)
+        next(album for album in altered if "Fragment" in album)["Fragment"]["set"] += "-other"
+        fragment_file.write_text(json.dumps(altered), encoding="utf-8")
+        if subprocess.run(import_command, capture_output=True, timeout=30).returncode == 0:
+            raise AssertionError("Fragments from different scans were accepted")
+        if db_paths() != expected_db_paths:
+            raise AssertionError("Mixed scan fragments changed the existing database")
+        fragment_file.write_bytes(saved)
+
+        previous_parts = {part.name: part.read_bytes()
+                          for part in sized_dir.glob("media_out_*.json")}
         size_config.write_text(json.dumps({
             "Incremental": False, "JsonBatchTargetBytes": 1
         }), encoding="utf-8")
-        subprocess.run(command, check=True)
+        if subprocess.run(command, capture_output=True, timeout=30).returncode == 0:
+            raise AssertionError("An oversized track was accepted")
         oversized_report_path = sized_dir / "scan-report.json"
         validate_report(oversized_report_path)
         oversized_report = json.loads(oversized_report_path.read_text(encoding="utf-8"))
         oversized = [item for item in oversized_report["diagnostics"]
-                     if item["code"] == "album_exceeds_batch_target"]
-        if len(oversized) != 3 or any("albumPath" not in item for item in oversized):
-            raise AssertionError("Oversized albums were not individually identified")
-        previous_parts = {part.name: part.read_bytes()
-                          for part in sized_dir.glob("media_out_*.json")}
+                     if item["code"] == "track_exceeds_batch_limit"]
+        if not oversized or any("albumPath" not in item or "filePath" not in item for item in oversized):
+            raise AssertionError("Oversized tracks were not identified")
+        if {part.name: part.read_bytes() for part in sized_dir.glob("media_out_*.json")} != previous_parts:
+            raise AssertionError("Oversized track replaced the prior catalog")
+        size_config.write_text(json.dumps({
+            "Incremental": False, "JsonBatchTargetBytes": byte_target
+        }), encoding="utf-8")
         (sized_library / "album-2" / "track.flac").write_bytes(b"not an audio stream")
         failed_sized_scan = subprocess.run(command, capture_output=True, timeout=30)
         if failed_sized_scan.returncode == 0:
@@ -292,6 +387,20 @@ def main():
         incremental_json = next(
             (incremental_output / incremental_library.name).glob("media_out_*.json"))
         first_records = json.loads(incremental_json.read_text(encoding="utf-8"))[0]["Tracks"]
+        old_catalog = json.loads(incremental_json.read_text(encoding="utf-8"))
+        for record in old_catalog[0]["Tracks"]:
+            record.pop("metadataInventoryVersion")
+            record["rawTags"] = [tag for tag in record["rawTags"]
+                                 if not tag["scope"].startswith("ffmpeg.")]
+        incremental_json.write_text(json.dumps(old_catalog), encoding="utf-8")
+        subprocess.run(
+            [converter, "scan", str(incremental_library), "--config",
+             str(incremental_config), "--output-dir", str(incremental_output)], check=True)
+        refreshed_records = json.loads(incremental_json.read_text(encoding="utf-8"))[0]["Tracks"]
+        if any(record.get("metadataInventoryVersion") != 1 or
+               not any(tag["scope"] == "ffmpeg.format" for tag in record["rawTags"])
+               for record in refreshed_records):
+            raise AssertionError("Older incremental records were not rescanned for FFmpeg metadata")
         second_record_before = next(
             record for record in first_records
             if record["tags"].get("title") == ["track-two.flac"])
@@ -406,6 +515,9 @@ def main():
                 raise AssertionError(f"TagLib did not extract title from {filename}")
             if records_by_path[filename]["support"]["nativeInventory"] != "unsupported":
                 raise AssertionError(f"{filename} incorrectly claims native inventory support")
+        if not any(tag["scope"] == "ffmpeg.format" and tag["value"] == "MP4 catalog track"
+                   for tag in records_by_path["root-track.m4a"]["rawTags"]):
+            raise AssertionError("FFmpeg metadata was not captured for the MP4 fixture")
         wavpack_record = records_by_path["root-track.wv"]
         if not {"4006381333931", "04252614"}.issubset(
             set(wavpack_record["tags"].get("barcode", []))

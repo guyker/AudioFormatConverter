@@ -621,8 +621,10 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
 	}
     size_t albumCount = 0;
        
-    for (auto& [albumPath, trackList] : *albumListPtr)
+    for (auto& album : *albumListPtr)
     {
+        auto& albumPath = album.path;
+        auto& trackList = album.trackList;
         std::string name = "N/A";
         if (albumPath.is_directory() && albumPath.path().has_filename())
         {
@@ -660,6 +662,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
                     ? std::map<std::string, MediaRecord>::const_iterator{}
                     : cachedRecords->find(cacheKey);
                 if (cachedRecords != nullptr && cached != cachedRecords->end() &&
+                    cached->second.metadataInventoryVersion >= 1 &&
                     cached->second.relativePath == CommonUtils::path_to_utf8(track.trackPath) &&
                     scanTierRank(cached->second.scanTier) >=
                         scanTierRank(AppSettingsJson::AppSetting()->ScanTier) &&
@@ -782,7 +785,9 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
 
 bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr,
     const std::filesystem::path& libraryRoot,
-    const std::function<bool(const std::filesystem::path&, const std::string&, size_t)>& writeAlbum,
+    const std::function<bool(const std::filesystem::path&, const std::optional<std::filesystem::path>&,
+        const std::string&, size_t, bool)>& writeAlbum,
+    std::uint64_t byteLimit, const std::string& fragmentSet,
     std::vector<ScanDiagnostic>* diagnostics)
 {
     bool batchHasErrors = false;
@@ -802,8 +807,10 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
         }
     };
 
-    for (auto& [albumPath, trackList] : *albumListPtr)
+    for (auto& album : *albumListPtr)
     {
+        auto& albumPath = album.path;
+        auto& trackList = album.trackList;
         rapidjson::Document mediaDoc;
         auto& allocator = mediaDoc.GetAllocator();
         bool albumHasErrors = false;
@@ -829,6 +836,8 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
 
         //Album tracks list holder 
         rapidjson::Value trackMediaArray(rapidjson::kArrayType);
+        std::size_t serializableTracks = 0;
+        std::uint64_t serializedTrackBytes = 0;
 
         for (auto& item : trackList)
         {
@@ -905,24 +914,128 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                     for (const auto& diagnostic : item.catalogRecord->diagnostics) {
                         reportDiagnostic(albumPath.path(), trackPath, diagnostic);
                     }
-					//Add media information to the track list
-                    Value childValue;
-                    childValue.CopyFrom(trackDoc, mediaDoc.GetAllocator()); // Copy childDoc into childValue using the parent allocator
-                    trackMediaArray.PushBack(childValue, mediaDoc.GetAllocator());
+                    ++serializableTracks;
+                    if (jsonString.size() > (std::numeric_limits<std::uint64_t>::max)() - serializedTrackBytes) {
+                        spdlog::error("Album metadata size overflow.");
+                        batchHasErrors = true;
+                        albumHasErrors = true;
+                        continue;
+                    }
+                    serializedTrackBytes += static_cast<std::uint64_t>(jsonString.size());
+                    if (byteLimit == 0) {
+                        Value childValue;
+                        childValue.CopyFrom(trackDoc, allocator);
+                        trackMediaArray.PushBack(childValue, allocator);
+                    }
                 }
             }
         }
 
-        if (trackMediaArray.Size() > 0)
+        if (serializableTracks > 0)
         {
+            if (albumHasErrors) {
+                continue;
+            }
+            bool fragmentTracks = false;
+            if (byteLimit > 0) {
+                Value emptyAlbum;
+                emptyAlbum.CopyFrom(albumObj, allocator);
+                Value emptyTracks(kArrayType);
+                emptyAlbum.AddMember("Tracks", emptyTracks, allocator);
+                StringBuffer emptyBuffer;
+                Writer<StringBuffer> emptyWriter(emptyBuffer);
+                if (!emptyAlbum.Accept(emptyWriter)) {
+                    spdlog::error("Cannot serialize album envelope '{}'.", albumPathString);
+                    batchHasErrors = true;
+                    continue;
+                }
+                const auto overhead = static_cast<std::uint64_t>(emptyBuffer.GetSize()) + 2;
+                const auto commas = static_cast<std::uint64_t>(serializableTracks - 1);
+                fragmentTracks = overhead > byteLimit || commas > byteLimit - overhead ||
+                    serializedTrackBytes > byteLimit - overhead - commas;
+                if (!fragmentTracks) {
+                    for (const auto& track : trackList) {
+                        if (!MediaTrack::IsFileAcceptedAudioFile(albumPath.path() / track.trackPath)) continue;
+                        rapidjson::Document trackDoc;
+                        const auto json = SerializeMediaRecord(*track.catalogRecord);
+                        trackDoc.Parse(json.data(), json.size());
+                        if (trackDoc.HasParseError()) {
+                            spdlog::error("Cannot serialize track '{}'.",
+                                CommonUtils::path_to_utf8(albumPath.path() / track.trackPath));
+                            batchHasErrors = true;
+                            albumHasErrors = true;
+                            break;
+                        }
+                        Value value;
+                        value.CopyFrom(trackDoc, allocator);
+                        trackMediaArray.PushBack(value, allocator);
+                    }
+                    if (albumHasErrors) continue;
+                }
+            }
+            if (fragmentTracks) {
+                std::size_t index = 0;
+                for (const auto& track : trackList) {
+                    const auto trackPath = albumPath.path() / track.trackPath;
+                    if (!MediaTrack::IsFileAcceptedAudioFile(trackPath)) continue;
+                    rapidjson::Document fragment;
+                    auto& fragmentAllocator = fragment.GetAllocator();
+                    Value fragmentObject(kObjectType);
+                    Value albumPathValue;
+                    albumPathValue.SetString(albumPathString.c_str(),
+                        static_cast<SizeType>(albumPathString.size()), fragmentAllocator);
+                    fragmentObject.AddMember("Album Path", albumPathValue, fragmentAllocator);
+                    Value rootValue;
+                    rootValue.SetString(libraryRootString.c_str(),
+                        static_cast<SizeType>(libraryRootString.size()), fragmentAllocator);
+                    fragmentObject.AddMember("Library Root", rootValue, fragmentAllocator);
+                    Value folderValue;
+                    folderValue.SetString(albumFolderString.c_str(),
+                        static_cast<SizeType>(albumFolderString.size()), fragmentAllocator);
+                    fragmentObject.AddMember("Folder", folderValue, fragmentAllocator);
+                    if (serializableTracks > 1) {
+                        Value fragmentInfo(kObjectType);
+                        fragmentInfo.AddMember("index", static_cast<std::uint64_t>(index), fragmentAllocator);
+                        fragmentInfo.AddMember("count", static_cast<std::uint64_t>(serializableTracks), fragmentAllocator);
+                        Value setValue;
+                        setValue.SetString(fragmentSet.c_str(), static_cast<SizeType>(fragmentSet.size()), fragmentAllocator);
+                        fragmentInfo.AddMember("set", setValue, fragmentAllocator);
+                        fragmentObject.AddMember("Fragment", fragmentInfo, fragmentAllocator);
+                    }
+                    rapidjson::Document trackDoc;
+                    const auto trackJson = SerializeMediaRecord(*track.catalogRecord);
+                    trackDoc.Parse(trackJson.data(), trackJson.size());
+                    if (trackDoc.HasParseError()) {
+                        spdlog::error("Cannot serialize track '{}'.", CommonUtils::path_to_utf8(trackPath));
+                        batchHasErrors = true;
+                        break;
+                    }
+                    Value tracks(kArrayType);
+                    Value trackValue;
+                    trackValue.CopyFrom(trackDoc, fragmentAllocator);
+                    tracks.PushBack(trackValue, fragmentAllocator);
+                    fragmentObject.AddMember("Tracks", tracks, fragmentAllocator);
+                    StringBuffer buffer;
+                    Writer<StringBuffer> writer(buffer);
+                    ++index;
+                    if (!fragmentObject.Accept(writer) ||
+                        !writeAlbum(albumPath.path(), trackPath,
+                            std::string(buffer.GetString(), buffer.GetSize()), 1,
+                            index == serializableTracks)) {
+                        batchHasErrors = true;
+                        break;
+                    }
+                }
+                continue;
+            }
             // Add Tracks to album
             albumObj.AddMember("Tracks", trackMediaArray, allocator);
 
             StringBuffer buffer;
             Writer<StringBuffer> writer(buffer);
-            if (!albumHasErrors && (!albumObj.Accept(writer) ||
-                !writeAlbum(albumPath.path(),
-                    std::string(buffer.GetString(), buffer.GetSize()), trackList.size()))) {
+            if (!albumObj.Accept(writer) ||
+                !writeAlbum(albumPath.path(), std::nullopt,
+                    std::string(buffer.GetString(), buffer.GetSize()), serializableTracks, true)) {
                 batchHasErrors = true;
             }
         }
@@ -1020,6 +1133,27 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
             spdlog::error("Album entry {} has no tracks", iAlbumCount);
             return nullptr;
         }
+        std::optional<std::size_t> fragmentIndex;
+        std::optional<std::size_t> fragmentCount;
+        std::optional<std::string> fragmentSet;
+        if (albumVal.HasMember("Fragment")) {
+            const auto& fragment = albumVal["Fragment"];
+            if (!fragment.IsObject() || !fragment.HasMember("index") ||
+                !fragment["index"].IsUint64() || !fragment.HasMember("count") ||
+                !fragment["count"].IsUint64() || fragment["count"].GetUint64() < 2 ||
+                !fragment.HasMember("set") || !fragment["set"].IsString() ||
+                fragment["set"].GetStringLength() == 0 ||
+                fragment["count"].GetUint64() > (std::numeric_limits<std::size_t>::max)() ||
+                fragment["index"].GetUint64() >= fragment["count"].GetUint64() ||
+                albumVal["Tracks"].Size() != 1 ||
+                !albumVal.HasMember("Library Root") || !albumVal["Library Root"].IsString()) {
+                spdlog::error("Album entry {} has invalid fragment metadata.", iAlbumCount);
+                return nullptr;
+            }
+            fragmentIndex = static_cast<std::size_t>(fragment["index"].GetUint64());
+            fragmentCount = static_cast<std::size_t>(fragment["count"].GetUint64());
+            fragmentSet = std::string(fragment["set"].GetString(), fragment["set"].GetStringLength());
+        }
 
         std::string albumPathStr = albumVal["Album Path"].GetString();
         fs::path albumpath = CommonUtils::path_from_utf8(albumPathStr);
@@ -1097,7 +1231,7 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
 
         if (trackList.size() > 0) {
             std::filesystem::directory_entry entry{ albumpath };
-            albumListPtr->push_back({ entry, trackList });
+            albumListPtr->push_back({ entry, std::move(trackList), fragmentIndex, fragmentCount, fragmentSet });
         }
 
     }
@@ -1105,9 +1239,68 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
     return albumListPtr;
 }
 
-
-
-
+bool AlbumCollection::ReassembleAlbums(std::shared_ptr<DirectoryContentEntryList> albums)
+{
+    struct Group {
+        std::optional<std::size_t> count;
+        std::optional<std::string> set;
+        std::map<std::size_t, MediaAlbum> fragments;
+        std::vector<MediaAlbum> whole;
+    };
+    std::map<std::pair<fs::path, fs::path>, Group> groups;
+    for (auto& album : *albums) {
+        const auto root = album.trackList.front().libraryRoot.value_or(fs::path{}).lexically_normal();
+        const auto key = std::make_pair(root, album.path.path().lexically_normal());
+        auto& group = groups[key];
+        if (!album.fragmentIndex) {
+            if (group.count) {
+                spdlog::error("Duplicate or mixed album fragments for '{}'.", CommonUtils::path_to_utf8(key.second));
+                return false;
+            }
+            group.whole.push_back(std::move(album));
+            continue;
+        }
+        if (!group.whole.empty() || !album.fragmentCount || !album.fragmentSet ||
+            (group.count && *group.count != *album.fragmentCount) ||
+            (group.set && *group.set != *album.fragmentSet)) {
+            spdlog::error("Inconsistent album fragments for '{}'.", CommonUtils::path_to_utf8(key.second));
+            return false;
+        }
+        group.count = album.fragmentCount;
+        group.set = album.fragmentSet;
+        if (!group.fragments.emplace(*album.fragmentIndex, std::move(album)).second) {
+            spdlog::error("Duplicate album fragment for '{}'.", CommonUtils::path_to_utf8(key.second));
+            return false;
+        }
+    }
+    DirectoryContentEntryList result;
+    for (auto& [key, group] : groups) {
+        if (!group.whole.empty()) {
+            for (auto& album : group.whole) result.push_back(std::move(album));
+            continue;
+        }
+        if (!group.count || group.fragments.size() != *group.count) {
+            spdlog::error("Missing album fragments for '{}'.", CommonUtils::path_to_utf8(key.second));
+            return false;
+        }
+        MediaAlbum complete{ group.fragments.begin()->second.path, {} };
+        std::set<fs::path> trackPaths;
+        for (auto& [index, fragment] : group.fragments) {
+            for (auto& track : fragment.trackList) {
+                if (!track.catalogRecord || !track.libraryRoot ||
+                    !trackPaths.insert(track.trackPath.lexically_normal()).second) {
+                    spdlog::error("Invalid or duplicate track in album fragments for '{}'.",
+                        CommonUtils::path_to_utf8(key.second));
+                    return false;
+                }
+                complete.trackList.push_back(std::move(track));
+            }
+        }
+        result.push_back(std::move(complete));
+    }
+    *albums = std::move(result);
+    return true;
+}
 
 int compareLex(const char* a, const char* b) {
     // Walk both strings until we hit a difference or the end of one
@@ -1298,7 +1491,8 @@ SimilarAlbumIndexPairs AlbumCollection::FindDuplicationInGroup(std::shared_ptr<D
             spdlog::warn("Invalid iterator in group");
             continue;
         }
-        const auto& [dirEntry, trackList] = *it;
+        const auto& dirEntry = it->path;
+        const auto& trackList = it->trackList;
         if (trackList.empty()) {
             spdlog::warn("Empty track list for album at iterator index {}", std::distance(albumListPtr->cbegin(), it));
             continue;

@@ -27,12 +27,14 @@ namespace DiagnosticCode
     inline constexpr const char* ScanStagingFailed = "scan_staging_failed";
     inline constexpr const char* StagingDirectoryFailed = "staging_directory_failed";
     inline constexpr const char* StagedJsonWriteFailed = "staged_json_write_failed";
+    inline constexpr const char* ScanPreflightFailed = "scan_preflight_failed";
+    inline constexpr const char* ScanReportWriteFailed = "scan_report_write_failed";
     inline constexpr const char* ScanFilesystemFailed = "scan_filesystem_failed";
     inline constexpr const char* ScanFailed = "scan_failed";
     inline constexpr const char* NoAlbumsFound = "no_albums_found";
     inline constexpr const char* OutputDirectoryUnavailable = "output_directory_unavailable";
     inline constexpr const char* GeneratedJsonInstallFailed = "generated_json_install_failed";
-    inline constexpr const char* AlbumExceedsBatchTarget = "album_exceeds_batch_target";
+    inline constexpr const char* TrackExceedsBatchLimit = "track_exceeds_batch_limit";
 }
 
 enum class DiagnosticSeverity { Error, Warning, Info };
@@ -144,6 +146,7 @@ struct ScanDiagnostic
 struct MediaRecord
 {
     int schemaVersion{ 2 };
+    int metadataInventoryVersion{ 0 };
     std::string relativePath;
     std::uint64_t sizeBytes{ 0 };
     std::optional<std::string> modifiedUtc;
