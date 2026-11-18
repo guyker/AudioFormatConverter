@@ -7,7 +7,10 @@ Running with no arguments shows a numbered menu over the configured active libra
 an operation preview (inputs, outputs, counts, overwrite effects) and runs only after the user types exactly `RUN`;
 `BACK` returns to the menu; `EXIT`, Enter, any other text or EOF cancels without writing and ends the program.
 Conflicts block the run before installing output. After a started or failed operation a summary reports Completed, Partially
-completed or Failed with confirmed counts, and the program exits. `0` or EOF at the menu exits; `?` shows help.
+completed or Failed with confirmed counts, and the program exits. Duplicate review also reports `Stopped by user`
+when ended early. `0` or EOF at the menu exits; `?` shows help.
+After the initial `RUN`, option 3 pauses per duplicate pair; an optional whole-folder move to `deleted` requires
+its own path preview and exact `MOVE` confirmation (F-005). Enter continues the review rather than canceling it.
 An exception is a scan preview preflight or discovery failure: it attempts to write a diagnostic report to a safe
 system temporary directory and logs its location; it does not install a catalog.
 

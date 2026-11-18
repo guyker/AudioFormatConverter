@@ -32,6 +32,7 @@ It runs either as explicit CLI commands or, with no arguments, as a legacy inter
 | Track/album model | `src/MediaTrack.cpp`, `include/MediaTrack.h`, `include/MediaInformation.h`, `include/MediaAlbum.h` | `MediaTrack` (legacy probe parsing/comparison), `FFprobeOutput`, `MediaAlbum` |
 | Catalog database | `src/CatalogDatabase.cpp`, `include/CatalogDatabase.h` | Schema-v2 SQLite writer, stable library-relative identity, incremental upsert and stale-file cleanup |
 | Album collection | `src/AlbumCollection.cpp`, `include/AlbumCollection.h` | Discovery (`AlbumCollection::LoadAlbumsCo`), metadata import/cache reuse, JSON save/load, duplicate search, `AlbumCollection::ExportToDatabase` |
+| Duplicate review | `src/DuplicateReview.cpp`, `include/DuplicateReview.h` | Per-pair menu choices; explicitly confirmed, verified whole-folder moves to `OutDirectory/deleted` |
 | Platform adapters | `src/PlatformUtils.cpp`, `include/PlatformUtils.h` | UTF-16/UTF-8, `PlatformUtils::WindowsLongPath`, `PlatformUtils::OpenDirectory` |
 | Utilities | `src/CommonUtils.cpp`, `include/CommonUtils.h`, `include/BoundedTaskRunner.h`, `src/JsonUtils.cpp`, `include/JsonUtils.h` | UTF-8 path helpers, coroutine `Generator`, bounded task runner, JSON helpers |
 | Legacy (unused) | `FolderConvert::ConverAudioFolder`, `FolderConvert::ConverAudioFolder2`, `MediaConvertionAsyncTask` | In-place conversion paths with no caller outside themselves; not part of any current flow |
@@ -192,7 +193,9 @@ libraries, with its path logged. If the temporary location is unsafe or unavaila
 
 ### Duplicates (menu 3, `duplicates`)
 
-`ScanFolderProcessJSONAndFindDuplicates`: load all batches, sort by track count, `AlbumCollection::FindDuplicateAlbums`
+`ScanFolderProcessJSONAndFindDuplicates`: load batches grouped by their input directory and validate each group's
+manifest against only its own batches and albums, then combine all libraries for cross-library matching, reassemble
+fragments, sort by track count, `AlbumCollection::FindDuplicateAlbums`
 (track count, album identity, then sorted durations within the legacy `SizeMatchPercentageThreshold` percentage).
 Album artist tags form the artist identity when present; otherwise the set of track artists is used. It pairs
 cataloged tracks in scanned duration/title order and re-probes those paths in parallel before printing a
@@ -200,7 +203,27 @@ stream-property and tag comparison (`MediaTrack::GenerateComparisonReport`). Mis
 new immediate files are reported but not substituted. For v2 records, changed size or available modification time
 is reported, but these attributes cannot prove file identity; legacy records lack this check and candidate selection
 still reflects the scan. Probe errors fail the operation.
-The operation is read-only; folders are opened only when requested.
+The CLI operation remains noninteractive and read-only; folders are opened only with `--open`.
+Menu option 3 opens only the current pair's folders and calls `DuplicateReview::ReviewPair` before advancing:
+Enter/`CONTINUE` advances, `STOP` or EOF ends review, and `1`/`2` selects the corresponding whole album folder for
+relocation. The move preview shows exact paths and requires `MOVE`; any other confirmation cancels the move.
+After a move, the same prompt waits for Enter/STOP, and later pairs involving that folder or its descendants are skipped.
+The summary distinguishes user-stopped review and counts completed comparisons, moved albums, and skipped pairs.
+
+Moves use a unique `OutDirectory/deleted/album-<time>-<sequence>/<original-folder-name>` destination, with a sibling
+`move.json` receipt. They copy regular files and directory structure (including artwork and empty/nested folders),
+verify the complete inventory and each file byte-for-byte (`PreservationAudit::VerifyCopy`), recheck source identity
+and inventory, then remove only enumerated originals after a further per-file verification. The same copy/verify/remove
+flow supports same-volume and cross-volume moves. No destination is overwritten. A failure before source cleanup
+leaves originals intact; a failure during cleanup stops review and retains the complete verified copy, possibly
+alongside partial originals. Receipts progress through `copying`, `verified` (cleanup may be incomplete), and `completed`.
+Interrupted/failed copies are retained for inspection rather than silently retried or erased.
+Library roots/ancestors, albums outside configured active libraries, identical/aliased/nested pair folders, links and
+reparse points inside an album, and output roots overlapping any configured source library are refused.
+Configured paths are used for I/O and canonical paths only for safety comparisons; output publication uses a
+`ScopedCurrentDirectory` anchor. Moves are not transactional filesystem snapshots: do not modify either folder
+concurrently. Scan JSON, manifests, archives, and SQLite are not rewritten; run option 2 after review to refresh the
+catalog. Option 4 reimports current albums but does not purge database albums absent from the import (see Database import).
 
 ### Database import (menu 4, `db import`)
 
@@ -301,6 +324,7 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | Album JSON | `OutDirectory/<name>/media_out_<name>[_<n>].json` (schema v2; see `docs/schemas/media-catalog-v2.schema.json`) | `AlbumCollection::SaveAlbumsToJSON` |
 | Scan manifest | `OutDirectory/<name>/scan-manifest.json` (schema v1; batch inventory, SHA-256 integrity and archive references) | `writeScanManifest` |
 | FLAC metadata archive | `OutDirectory/<name>/scan_metadata_<source-path-sha256>.flac-metadata` (native metadata blocks only; referenced by manifest) | `FlacMetadata::Save` / `FlacMetadata::Verify` |
+| Quarantined duplicate album | `OutDirectory/deleted/album-<time>-<sequence>/<original-folder-name>/` plus sibling `move.json` | `DuplicateReview::ReviewPair` after explicit `MOVE` confirmation |
 | JSON diagnostic reports | `<album json>_ffmpeg_error.json` when captured (excluded from inputs); legacy `_error.json` reports are also excluded | `AlbumCollection` |
 | SQLite catalog | `OutDirectory/<name>/catalog-v2.sqlite` (`user_version=2`) | `CatalogDatabase::Import` |
 

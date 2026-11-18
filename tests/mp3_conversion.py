@@ -1287,6 +1287,52 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(second_json.read_bytes(), before)
         self.assertTrue((self.output / "First" / "media_out_First_1.json").exists())
 
+    def test_manual_duplicates_validates_each_library_manifest(self):
+        first_album = self.source / "album"
+        first_album.mkdir()
+        for index in range(2):
+            (first_album / f"{index}.flac").write_bytes(self.fixture.read_bytes())
+        second = self.work / "second"
+        for count in (3, 4):
+            album = second / f"album-{count}"
+            album.mkdir(parents=True)
+            for index in range(count):
+                (album / f"{index}.flac").write_bytes(self.fixture.read_bytes())
+        libraries = [
+            {"isActive": True, "mediaPath": str(self.source), "mediaName": "First"},
+            {"isActive": True, "mediaPath": str(second), "mediaName": "Second"}]
+        settings = {"AlbumsSplitThreshold": 1}
+        if os.name == "nt":
+            settings["OutDirectory"] = "\\\\?\\" + str(self.output)
+        scanned = self.legacy(libraries, "2\nRUN\n", **settings)
+        self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
+        original_outputs = {path: path.read_bytes()
+                            for path in self.output.rglob("*") if path.is_file()}
+
+        result = self.legacy(libraries, "3\nRUN\n", **settings)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Found 0 duplicated albums", result.stdout)
+        self.assertEqual({path: path.read_bytes()
+                          for path in self.output.rglob("*") if path.is_file()},
+                         original_outputs)
+
+        for name in ("First", "Second"):
+            directory = self.output / name
+            batch = sorted(directory.glob("media_out_*.json"))[-1]
+            original = batch.read_bytes()
+            for change in ("missing", "modified"):
+                with self.subTest(library=name, change=change):
+                    if change == "missing":
+                        batch.unlink()
+                    else:
+                        batch.write_bytes(original + b"\n")
+                    try:
+                        result = self.legacy(libraries, "3\nRUN\n", **settings)
+                        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                        self.assertNotIn("Finding duplicated albums...", result.stdout)
+                    finally:
+                        batch.write_bytes(original)
+
     def test_database_import_uses_default_name_for_unnamed_libraries(self):
         album = self.source / "album"
         album.mkdir()

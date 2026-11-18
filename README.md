@@ -34,7 +34,14 @@ explicitly. Native metadata inventory is partial for FLAC/MP3 and unsupported fo
 <h3>Duplicate Album Detection and Comparison:</h3>
 1. A key feature is finding "duplicate" albums within the scanned collection. This is done by comparing track counts, and then more thoroughly by comparing sorted track durations.
 2. Candidate pairs are re-probed and a report compares their format and tag properties; no signal-quality analysis is performed (`ExtraAudioQualityMetrics` is deprecated and ignored).
-3. The legacy menu opens matching album folders; the `duplicates` command only does so when passed `--open`.
+3. Menu option 3 opens one matching pair at a time and waits: Enter continues; `STOP` finishes. Choose `1` or `2`,
+   then confirm the displayed paths with `MOVE`, to move that entire album folder (including artwork and subfolders)
+   under `OutDirectory/deleted`. All files are copied and verified before originals are removed, also across drives.
+   A unique destination and `move.json` receipt are retained; cleanup failure can leave partial originals beside a
+   complete verified copy. Later pairs involving a moved folder are skipped. Rerun option 2 afterward to refresh the
+   scan; option 4 reimports current albums but does not purge absent albums from an existing database.
+   Library roots, linked/nested pairs and unsafe output overlap cannot be moved.
+   The `duplicates` command stays noninteractive/read-only and opens folders only with `--open`.
 
 <h3>Legacy interactive menu (no arguments):</h3>
 The compact menu shows numbered actions; selecting one displays its input, output and file changes. Enter one number and
@@ -61,9 +68,9 @@ Scan previews discover albums without collecting track metadata until confirmed.
 checks remain part of conversion; counts and destination checks reflect preview-time file state.
 Enter `?` at the selection prompt to see all action descriptions without scanning or writing.
 At the preview confirmation, `BACK` returns to the menu and `EXIT` quits without starting the action.
-Running uses the same single `RUN` confirmation for every available action.
+Starting an action uses the same single `RUN` confirmation. Optional album moves during option 3 require a separate `MOVE`.
 Enter, unrecognized confirmation text or EOF still cancels and exits. Option numbers are unchanged.
-Finished manual actions report `Completed`, `Partially completed` or `Failed`, elapsed execution time,
+Finished manual actions report `Completed`, `Partially completed` or `Failed` (`Stopped by user` for an early duplicate-review stop), elapsed execution time,
 output locations, completed work and copied files. Counts reflect successfully installed audio,
 installed album JSON files (not optional error reports), committed JSON database batches, or fully
 processed duplicate pairs; they are not preview estimates. A failure stops at the first error and

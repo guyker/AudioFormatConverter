@@ -45,6 +45,7 @@ extern "C" {
 #include "CommandLine.h"
 #include "FolderConvert.h"
 #include "FlacMetadata.h"
+#include "DuplicateReview.h"
 
 #include "MediaInformation.h"
 
@@ -1114,6 +1115,9 @@ struct ManualOperationSummary {
     std::vector<fs::path> outputs;
     const char* outputDescription{ nullptr };
     bool started{ false };
+    bool reviewStopped{ false };
+    std::size_t movedAlbums{ 0 };
+    std::size_t skippedDuplicatePairs{ 0 };
     std::chrono::steady_clock::time_point startTime;
 
     void Start()
@@ -1125,7 +1129,7 @@ struct ManualOperationSummary {
     void Print(int result) const
     {
         const auto totalCompleted = completed + conversion.converted;
-        const char* status = result == 0 ? "Completed" :
+        const char* status = result == 0 ? (reviewStopped ? "Stopped by user" : "Completed") :
             totalCompleted != 0 || conversion.copied != 0 ? "Partially completed" : "Failed";
         const auto elapsed = started ? std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - startTime).count() : 0;
@@ -1140,6 +1144,10 @@ struct ManualOperationSummary {
         }
         if (outputDescription) {
             std::cout << "  Output: " << outputDescription << '\n';
+        }
+        if (movedAlbums || skippedDuplicatePairs) {
+            std::cout << "  Albums moved to deleted: " << movedAlbums
+                << "; pairs skipped after moves: " << skippedDuplicatePairs << '\n';
         }
         if (!started) {
             std::cout << "  No action was started.\n";
@@ -2135,11 +2143,21 @@ std::string compareAndPrintTagsTable(const JsonUtils::Tags& tags1, const JsonUti
 }
 
 int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFiles, bool openDuplicateFolders,
-    ManualOperationSummary* summary = nullptr)
+    ManualOperationSummary* summary = nullptr, const DuplicateReview::Options* review = nullptr)
 {
 	AlbumCollection albumCollection;
 	std::shared_ptr<DirectoryContentEntryList> albumListPtr = std::make_shared<DirectoryContentEntryList>();
 
+    if (jsonFiles.empty()) {
+        spdlog::error("No generated album JSON files found.");
+        return 1;
+    }
+    struct LibraryInput
+    {
+        std::vector<fs::path> files;
+        DirectoryContentEntryList albums;
+    };
+    std::map<fs::path, LibraryInput> libraries;
     for (const auto& jsonFile : jsonFiles) {
         spdlog::info("Processing: {}", pathToUtf8(jsonFile));
         auto albumListChunk = albumCollection.LoadAlbumsFromJSON(jsonFile);
@@ -2157,14 +2175,15 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
                 }
             }
         }
-        albumListPtr->insert(albumListPtr->end(), albumListChunk->begin(), albumListChunk->end());
+        auto& library = libraries[jsonFile.parent_path()];
+        library.files.push_back(jsonFile);
+        library.albums.insert(library.albums.end(), albumListChunk->begin(), albumListChunk->end());
     }
-    if (jsonFiles.empty()) {
-        spdlog::error("No generated album JSON files found.");
-        return 1;
-    }
-    if (!validateScanManifest(jsonFiles.front().parent_path(), jsonFiles, albumListPtr.get())) {
-        return 1;
+    for (const auto& [directory, library] : libraries) {
+        if (!validateScanManifest(directory, library.files, &library.albums)) {
+            return 1;
+        }
+        albumListPtr->insert(albumListPtr->end(), library.albums.begin(), library.albums.end());
     }
     if (!albumCollection.ReassembleAlbums(albumListPtr)) {
         return 1;
@@ -2178,11 +2197,31 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
 
 
     spdlog::info("Found {} duplicated albums", dupList.size());
+    std::vector<fs::path> albumKeys;
+    if (review) {
+        for (const auto& album : *albumListPtr) {
+            std::error_code ec;
+            auto key = fs::weakly_canonical(album.path.path(), ec);
+            if (ec) {
+                spdlog::error("Cannot resolve duplicate album '{}': {}",
+                    pathToUtf8(album.path.path()), ec.message());
+                return 1;
+            }
+            albumKeys.push_back(std::move(key));
+        }
+    }
+    std::vector<bool> movedAlbums(albumListPtr->size(), false);
     int iCurrent = 0;
     for (const auto& entry : dupList)
     {
         iCurrent++;
         const auto [albumIndex1, albumIndex2] = entry;
+        if (movedAlbums[albumIndex1] || movedAlbums[albumIndex2]) {
+            spdlog::info("Skipping duplicate pair {}/{} because an album was moved to deleted.",
+                iCurrent, dupList.size());
+            if (summary) ++summary->skippedDuplicatePairs;
+            continue;
+        }
         const auto* album1 = &albumListPtr->at(albumIndex1);
         const auto* album2 = &albumListPtr->at(albumIndex2);
         const auto& dir1 = album1->path.path();
@@ -2303,13 +2342,34 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
             spdlog::info("Potentially duplicated albums [{}/{}]:\n\tAlbum1: \"{}\"\n\tAlbum2: \"{}\"",
                 iCurrent, dupList.size(), pathToUtf8(dir1), pathToUtf8(dir2));
 
-            if (openDuplicateFolders) {
+            if (openDuplicateFolders && !review) {
                 PlatformUtils::OpenDirectory(dir1);
                 PlatformUtils::OpenDirectory(dir2);
             }
 
             if (summary) {
                 ++summary->completed;
+            }
+            if (review) {
+                const auto decision = DuplicateReview::ReviewPair(dir1, dir2,
+                    review->libraryRoots, review->outputRoot, openDuplicateFolders, std::cin, std::cout);
+                if (decision.movedAlbum != 0) {
+                    const auto& movedKey = albumKeys[
+                        decision.movedAlbum == 1 ? albumIndex1 : albumIndex2];
+                    for (std::size_t i = 0; i < albumKeys.size(); ++i) {
+                        if (DuplicateReview::IsSameOrChildPath(albumKeys[i], movedKey)) movedAlbums[i] = true;
+                    }
+                    if (summary) {
+                        ++summary->movedAlbums;
+                        summary->outputs.push_back(decision.destination);
+                    }
+                }
+                if (decision.action == DuplicateReview::Action::Error) return 1;
+                if (decision.action == DuplicateReview::Action::Stop) {
+                    if (summary) summary->reviewStopped = true;
+                    spdlog::info("Duplicate review stopped by user; remaining pairs were not processed.");
+                    return 0;
+                }
             }
         }
         catch (const fs::filesystem_error& e) {
@@ -2500,7 +2560,8 @@ constexpr std::array<MenuEntry, 6> MenuEntries{ {
         "      Input: generated JSON from option 2; source folders must remain accessible\n"
         "             for track metadata/quality comparisons.\n"
         "      Output: duplicate reports in the console; opens matching album folders.\n"
-        "      Changes: does not delete duplicates or change audio, JSON or databases.\n" },
+        "      Changes: pauses after each pair; an explicitly confirmed choice moves a whole\n"
+        "               album to OutDirectory/deleted. JSON and databases are not updated.\n" },
     { '4', ConvertActionEnum::PopulateJsonToDBEnum, "Import metadata JSON into SQLite",
         "      Input: generated JSON from option 2 for each active library.\n"
         "      Output: OutDirectory/<mediaName>/catalog-v2.sqlite.\n"
@@ -2678,13 +2739,21 @@ int RunLegacyMenu()
         {
             summary.unit = "duplicate pairs processed";
             summary.outputDescription = "console reports and matching album folders (see reports above).";
+            DuplicateReview::Options review{ pathFromUtf8(appSettingPtr->OutDirectory), {} };
+            for (const auto& library : mediaList) {
+                review.libraryRoots.push_back(absoluteDisplayPath(pathFromUtf8(library.mediaPath)));
+            }
             const auto jsonFiles = findConfiguredJsonFiles(mediaList, pathFromUtf8(appSettingPtr->OutDirectory));
             std::cout << "\nOperation preview: find duplicate albums\n  JSON input files: " << jsonFiles.size() << '\n';
             for (const auto& json : jsonFiles) {
                 std::cout << "    Input: " << pathToUtf8(absoluteDisplayPath(json)) << '\n';
             }
             std::cout << "  Output: console reports and opened matching album folders.\n"
-                "  Overwrite: none; no files or database records are changed.\n"
+                "  Pauses after each pair: Enter continues; STOP ends review.\n"
+                "  Optional: choose album 1 or 2, then type MOVE to move its entire folder to:\n"
+                "    " << pathToUtf8(review.outputRoot / "deleted") << "\n"
+                "  Moves copy and verify all files before removing originals; no destination is overwritten.\n"
+                "  JSON/databases remain unchanged; run option 2 after moving albums.\n"
                 "  Track metadata is read from source folders during comparisons.\n";
             if (jsonFiles.empty()) {
                 spdlog::error("No generated JSON input; run option 2 first.");
@@ -2695,7 +2764,7 @@ int RunLegacyMenu()
                 return cancelledMenuResult(confirmation);
             }
             summary.Start();
-            return ScanFolderProcessJSONAndFindDuplicates(jsonFiles, true, &summary);
+            return ScanFolderProcessJSONAndFindDuplicates(jsonFiles, true, &summary, &review);
         }
 
         case ConvertActionEnum::PopulateJsonToDBEnum: //4
