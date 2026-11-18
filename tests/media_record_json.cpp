@@ -43,6 +43,9 @@ int main(int argc, char** argv)
         record.findings.push_back({
             "ZERO_PADDED_HIRES", "warning", "high", "Observed 16 used bits in a 24-bit file."
         });
+        record.diagnostics.push_back({
+            "chapters", "ffmpeg", "ffmpeg_log", "warning", "No chapters were found."
+        });
         record.chapterSupport = "supported";
         record.rawTags.push_back({
             "vorbis", "ARTIST", "First\u0001", 0,
@@ -55,6 +58,14 @@ int main(int argc, char** argv)
         require(!document.HasParseError(), "Serialized media record is not valid JSON");
         require(!document["file"].HasMember("modifiedUtc"),
             "Unavailable modification time should be omitted");
+        auto recordWithoutDiagnostics = record;
+        recordWithoutDiagnostics.diagnostics.clear();
+        rapidjson::Document compactDocument;
+        const auto compactJson = SerializeMediaRecord(recordWithoutDiagnostics);
+        compactDocument.Parse(compactJson.data(), compactJson.size());
+        require(!compactDocument.HasParseError() &&
+            !compactDocument.HasMember("diagnostics"),
+            "Empty diagnostics should be omitted from catalog records");
 
         std::ifstream schemaFile(argv[1], std::ios::binary);
         require(schemaFile.is_open(), "Could not open catalog JSON Schema");
@@ -85,6 +96,11 @@ int main(int argc, char** argv)
         require(parsed->chapters.size() == 1 &&
             parsed->chapters.front().tags.at("title").front() == "Opening",
             "Chapter timing or tags did not round-trip");
+        require(parsed->diagnostics.size() == 1 &&
+            parsed->diagnostics.front().stage == "chapters" &&
+            parsed->diagnostics.front().source == "ffmpeg" &&
+            parsed->diagnostics.front().message == "No chapters were found.",
+            "Media diagnostics did not round-trip");
         require(parsed->scanTier == "analysis" &&
             parsed->integrity.decodedSamples == 96000 &&
             parsed->signal.measurements.at("channel0.rmsDbfs") == -20.0 &&

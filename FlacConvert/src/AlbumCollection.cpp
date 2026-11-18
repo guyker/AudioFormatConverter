@@ -37,7 +37,6 @@
 
 #include "CommonUtils.h"
 #include "DecodeAnalyzer.h"
-#include "ffmpeg.h"
 #include "MediaRecordJson.h"
 #include "TagLibReader.h"
 
@@ -536,7 +535,8 @@ MediaAlbumListPtr AlbumCollection::LoadAlbums(std::filesystem::path albumCollect
 
         auto nAlbums = ImportMetadata(albumListPtr, 0, 0, AppSettingsJson::AppSetting()->UseAsyncMetadataReads);
 
-        spdlog::info("Third pass: Completed, ffmpeg issues: {} [{}]", FFmpeg::get_ffmpeg_logs().size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
+        spdlog::info("Third pass: Completed [{}]",
+            CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
         startTimePoint = std::chrono::steady_clock::now();
     }
     else
@@ -640,7 +640,6 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         {
             std::filesystem::path path;
             MediaTrack* track;
-            std::optional<std::string>* lastError;
         };
         std::vector<MetadataTarget> metadataTargets;
         metadataTargets.reserve(trackList.size());
@@ -648,6 +647,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         size_t reusedRecords = 0;
         for (auto& track : trackList)
         {
+            track.diagnostics.clear();
             std::filesystem::path trackPath = albumPath.path() / track.trackPath;
 
             if (MediaTrack::IsValidMedia(trackPath)) {
@@ -668,8 +668,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
                 }
                 metadataTargets.push_back({
                     trackPath.lexically_normal(),
-                    &track,
-                    &track.LastErroString
+                    &track
                 });
             }
         }
@@ -691,10 +690,22 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
                     auto result = TagLibReader::Read(target.path,
                         CommonUtils::path_to_utf8(target.track->trackPath));
                     target.track->catalogRecord = std::move(result.record);
+                    target.track->LastErroString = std::move(result.error);
+                    target.track->diagnostics = std::move(result.diagnostics);
                     if (target.track->catalogRecord) {
+                        target.track->catalogRecord->diagnostics.insert(
+                            target.track->catalogRecord->diagnostics.end(),
+                            std::make_move_iterator(target.track->diagnostics.begin()),
+                            std::make_move_iterator(target.track->diagnostics.end()));
+                        target.track->diagnostics.clear();
                         target.track->formatInfo = makeLegacyProjection(*target.track->catalogRecord);
                     }
-                    *target.lastError = std::move(result.error);
+                    else if (target.track->LastErroString && target.track->diagnostics.empty()) {
+                        target.track->diagnostics.push_back({
+                            "metadata", "taglib", "metadata_read_failed", "error",
+                            *target.track->LastErroString
+                        });
+                    }
                 });
             }
             else {
@@ -703,8 +714,20 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
                         CommonUtils::path_to_utf8(target.track->trackPath));
                     target.track->catalogRecord = std::move(result.record);
                     target.track->LastErroString = std::move(result.error);
+                    target.track->diagnostics = std::move(result.diagnostics);
                     if (target.track->catalogRecord) {
+                        target.track->catalogRecord->diagnostics.insert(
+                            target.track->catalogRecord->diagnostics.end(),
+                            std::make_move_iterator(target.track->diagnostics.begin()),
+                            std::make_move_iterator(target.track->diagnostics.end()));
+                        target.track->diagnostics.clear();
                         target.track->formatInfo = makeLegacyProjection(*target.track->catalogRecord);
+                    }
+                    else if (target.track->LastErroString && target.track->diagnostics.empty()) {
+                        target.track->diagnostics.push_back({
+                            "metadata", "taglib", "metadata_read_failed", "error",
+                            *target.track->LastErroString
+                        });
                     }
                     CommonUtils::show_progress_bar(progressInfoPtr, CommonUtils::ProgressBarType::SubProgress);
                 }
@@ -723,8 +746,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
                 }
                 decodeTargets.push_back({
                     albumPath.path() / track.trackPath,
-                    &track,
-                    &track.LastErroString
+                    &track
                 });
             }
             if (!decodeTargets.empty()) {
@@ -753,135 +775,29 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
     return albumCount;
 }
 
-void SaveAlbumsToJSON_FFmpegError(std::filesystem::path outPath)
-{
-    std::vector<FFmpeg::FFmpegLogItem>& ffmpegErrorList = FFmpeg::get_ffmpeg_logs();
-
-    if (ffmpegErrorList.empty())
-    {
-        return;
-    }
-
-    // Create a RapidJSON Document and set it as an array.
-    Document document;
-    document.SetArray();
-    Document::AllocatorType& allocator = document.GetAllocator();
-
-    //	spdlog::error("Error parsing JSON metadata track (adding ro error list): ", outPath.c_str());
-
-    for (auto& item: ffmpegErrorList)
-    {
-        rapidjson::Value trackObj(rapidjson::kObjectType);
-
-        // 1. Convert and add the file path (std::filesystem::path -> UTF-8 std::string).
-        trackObj.AddMember("URL", rapidjson::Value(item.url.c_str(), allocator), allocator);
-        trackObj.AddMember("Error", rapidjson::Value(item.level.c_str(), allocator), allocator);
-        trackObj.AddMember("Message", rapidjson::Value(item.message.c_str(), allocator), allocator);
-
-        document.PushBack(trackObj, allocator);
-    }
-
-	ffmpegErrorList.clear();
-
-    // Create a StringBuffer to hold the JSON output.
-    StringBuffer buffer;
-    // Use PrettyWriter for formatted output (you can use Writer for compact output).
-    PrettyWriter<StringBuffer> writer(buffer);
-    document.Accept(writer);
-
-    // Write the JSON string to a file.
-    outPath += "_ffmpeg_error.json";
-    std::ofstream outFile(outPath);
-    if (!outFile) {
-        spdlog::error("Error: could not open file for writing.");
-        return;
-    }
-    outFile << buffer.GetString();
-    outFile.close();
-
- //   std::cout << "JSON file created successfully as tracks.json" << std::endl;
-}
-
-
-void AlbumCollection::SaveAlbumsToJSON_LasrError(std::list<MediaTrack>& mediaTracks, std::filesystem::path outPath)
-{
-    if (ffmpeg_LasrErrorList.empty()) {
-		return;
-    }
-
-    // Create a RapidJSON Document and set it as an array.
-    Document document;
-    document.SetArray();
-    Document::AllocatorType& allocator = document.GetAllocator();
-
-//	spdlog::error("Error parsing JSON metadata track (adding ro error list): ", outPath.c_str());
-
-	for (auto& track : mediaTracks)
-	{
-        rapidjson::Value trackObj(rapidjson::kObjectType);
-
-        // 1. Convert and add the file path (std::filesystem::path -> UTF-8 std::string).
-        std::string fileNameStr = CommonUtils::path_to_utf8(track.trackPath);
-        trackObj.AddMember("Track name", rapidjson::Value(fileNameStr.c_str(), allocator), allocator);
-
-        std::string trackPathStr = track.formatInfo.format.filename.c_str();
-        trackObj.AddMember("Path", rapidjson::Value(trackPathStr.c_str(), allocator), allocator);
-
-        // 2. Add the file size.
-        trackObj.AddMember("File Size", static_cast<std::uint64_t>(track.fs_fileSize), allocator);
-        if (track.formatInfo.format.duration) {
-            trackObj.AddMember("format_duration",
-                static_cast<std::uint64_t>(*track.formatInfo.format.duration), allocator);
-        }
-        if (track.formatInfo.format.format_name) {
-            trackObj.AddMember("format_format_name",
-                rapidjson::Value(track.formatInfo.format.format_name->c_str(), allocator), allocator);
-        }
-        
-        trackObj.AddMember("Error Reason", rapidjson::Value(track.LastErroString.value_or("***NO FOUND***").c_str(), allocator), allocator);
-
-        // 3. Convert and add the FFprobeOutput (media information / tags).
-        //rapidjson::Value formatInfoObj = FFprobeOutputToJson(track.formatInfo, allocator);
-        //trackObj.AddMember("formatInfo", formatInfoObj, allocator);
-
-        //// 4. Convert the wide string (mediaInfoString) to UTF-8 and add it.
-        //std::string mediaInfoUtf8 = WStringToUTF8(track.mediaInfoString);
-        //trackObj.AddMember("mediaInfoString", rapidjson::Value(mediaInfoUtf8.c_str(), allocator), allocator);
-
-        // Add the track object to the JSON array.
-        document.PushBack(trackObj, allocator);
-	}
-
-    ffmpeg_LasrErrorList.clear();
-
-    // Create a StringBuffer to hold the JSON output.
-    StringBuffer buffer;
-    // Use PrettyWriter for formatted output (you can use Writer for compact output).
-    PrettyWriter<StringBuffer> writer(buffer);
-    document.Accept(writer);
-
-    // Write the JSON string to a file.
-    outPath += "_error.json";
-    std::ofstream outFile(outPath);
-    if (!outFile) {
-        spdlog::error("Error: could not open file for writing.");
-        return;
-    }
-    outFile << buffer.GetString();
-    outFile.close();
-
- //   std::cout << "JSON file created successfully as tracks.json" << std::endl;
-}
-
-
 
 bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr,
-    std::filesystem::path path, const std::filesystem::path& libraryRoot)
+    std::filesystem::path path, const std::filesystem::path& libraryRoot,
+    std::vector<ScanDiagnostic>* diagnostics)
 {
     rapidjson::Document mediaDoc;
     mediaDoc.SetArray(); // Top-level array for albums
     rapidjson::Document::AllocatorType& allocator = mediaDoc.GetAllocator();
     bool batchHasErrors = false;
+
+    const auto reportDiagnostic = [diagnostics](const std::filesystem::path& albumPath,
+        const std::optional<std::filesystem::path>& trackPath,
+        const MediaDiagnostic& diagnostic) {
+        if (diagnostics != nullptr) {
+            diagnostics->push_back({
+                CommonUtils::path_to_utf8(albumPath),
+                trackPath
+                    ? std::optional<std::string>(CommonUtils::path_to_utf8(*trackPath))
+                    : std::nullopt,
+                diagnostic
+            });
+        }
+    };
 
     for (auto& [albumPath, trackList] : *albumListPtr)
     {
@@ -918,6 +834,14 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                 if (lastError) {
                     spdlog::error("Metadata extraction failed for '{}': {}",
                         CommonUtils::path_to_utf8(trackPath), *lastError);
+                    if (item.diagnostics.empty()) {
+                        item.diagnostics.push_back({
+                            "metadata", "taglib", "metadata_read_failed", "error", *lastError
+                        });
+                    }
+                    for (const auto& diagnostic : item.diagnostics) {
+                        reportDiagnostic(albumPath.path(), trackPath, diagnostic);
+                    }
                     batchHasErrors = true;
                     continue;
                 }
@@ -926,6 +850,20 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                     *item.catalogRecord->channels <= 0) {
                     spdlog::error("Metadata extraction produced no usable audio stream for '{}'.",
                         CommonUtils::path_to_utf8(trackPath));
+                    for (const auto& diagnostic : item.diagnostics) {
+                        reportDiagnostic(albumPath.path(), trackPath, diagnostic);
+                    }
+                    if (item.catalogRecord) {
+                        for (const auto& diagnostic : item.catalogRecord->diagnostics) {
+                            reportDiagnostic(albumPath.path(), trackPath, diagnostic);
+                        }
+                    }
+                    const MediaDiagnostic diagnostic{
+                        "metadata", "catalog", "audio_properties_missing", "error",
+                        "Metadata extraction produced no usable sample-rate/channel data."
+                    };
+                    item.diagnostics.push_back(diagnostic);
+                    reportDiagnostic(albumPath.path(), trackPath, diagnostic);
                     batchHasErrors = true;
                     continue;
                 }
@@ -939,7 +877,15 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                     const char* errorMsg = rapidjson::GetParseError_En(errorCode);
                     size_t errorOffset = trackDoc.GetErrorOffset();
                     item.LastErroString = errorMsg;
-                    ffmpeg_LasrErrorList.push_back(item);
+                    const MediaDiagnostic diagnostic{
+                        "serialization", "rapidjson", "record_json_invalid", "error",
+                        std::string(errorMsg) + " at offset " + std::to_string(errorOffset)
+                    };
+                        for (const auto& recordDiagnostic : item.catalogRecord->diagnostics) {
+                            reportDiagnostic(albumPath.path(), trackPath, recordDiagnostic);
+                        }
+                    item.catalogRecord->diagnostics.push_back(diagnostic);
+                    reportDiagnostic(albumPath.path(), trackPath, diagnostic);
                     spdlog::error("Error parsing metadata JSON for '{}': {} at offset {}",
                         CommonUtils::path_to_utf8(trackPath), errorMsg, errorOffset);
                     batchHasErrors = true;
@@ -947,6 +893,9 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
                 }
                 else
                 {
+                    for (const auto& diagnostic : item.catalogRecord->diagnostics) {
+                        reportDiagnostic(albumPath.path(), trackPath, diagnostic);
+                    }
 					//Add media information to the track list
                     Value childValue;
                     childValue.CopyFrom(trackDoc, mediaDoc.GetAllocator()); // Copy childDoc into childValue using the parent allocator
@@ -964,8 +913,13 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
             mediaDoc.PushBack(albumObj, allocator);
         }
         else {
-            spdlog::error("Album '{}' has no serializable tracks from the configured catalog extensions.",
-                CommonUtils::path_to_utf8(albumPath.path()));
+            const auto message =
+                "Album has no serializable tracks from the configured catalog extensions.";
+            spdlog::error("{} '{}'.", message, CommonUtils::path_to_utf8(albumPath.path()));
+            const MediaDiagnostic diagnostic{
+                "serialization", "catalog", "album_has_no_serializable_tracks", "error", message
+            };
+            reportDiagnostic(albumPath.path(), std::nullopt, diagnostic);
             batchHasErrors = true;
         }
     }
@@ -1010,9 +964,6 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
         return false;
     }
 
-
-    SaveAlbumsToJSON_LasrError(ffmpeg_LasrErrorList, path);
-    SaveAlbumsToJSON_FFmpegError(path);    
 
     return true;
 }

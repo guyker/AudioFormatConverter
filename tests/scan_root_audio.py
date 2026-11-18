@@ -13,10 +13,21 @@ from pathlib import Path
 
 
 def main():
-    if len(sys.argv) != 3:
-        raise SystemExit("usage: scan_root_audio.py CONVERTER FFMPEG")
+    if len(sys.argv) != 5:
+        raise SystemExit(
+            "usage: scan_root_audio.py CONVERTER FFMPEG REPORT_VALIDATOR REPORT_SCHEMA")
 
-    converter, ffmpeg = sys.argv[1:]
+    converter, ffmpeg, report_validator, report_schema = sys.argv[1:]
+
+    def validate_report(report_path):
+        report_path_arg = str(report_path.resolve())
+        if os.name == "nt" and len(report_path_arg) >= 240:
+            report_path_arg = "\\\\?\\" + report_path_arg
+        subprocess.run(
+            [report_validator, report_schema, report_path_arg],
+            check=True,
+        )
+
     with tempfile.TemporaryDirectory(prefix="afc-root-scan-") as temporary:
         root = Path(temporary)
         library = root / "library"
@@ -59,6 +70,56 @@ def main():
         if not expected_findings.issubset(finding_codes):
             raise AssertionError(
                 f"Tag validation findings were incomplete: {sorted(finding_codes)}")
+        report_path = output / library.name / "scan-report.json"
+        validate_report(report_path)
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        if report["schemaVersion"] != 1 or report["status"] != "completed":
+            raise AssertionError("A successful scan did not write a completed scan report")
+        counts = report["counts"]
+        if (counts["albumsDiscovered"] != 1 or counts["tracksDiscovered"] != 1 or
+                counts["albumsSerialized"] != 1 or counts["tracksSerialized"] != 1 or
+                counts["batchesStaged"] != 1 or counts["batchesInstalled"] != 1):
+            raise AssertionError("The successful scan report contains incorrect lifecycle counts")
+
+        failed_library = root / "failed-scan-library"
+        failed_library.mkdir()
+        (failed_library / "valid.flac").write_bytes(track.read_bytes())
+        failed_track = failed_library / "broken.flac"
+        failed_track.write_bytes(b"not an audio stream")
+        failed_output = root / "failed-scan-output" / failed_library.name
+        failed_output.mkdir(parents=True)
+        previous_json = failed_output / "media_out_previous.json"
+        previous_bytes = b'[{"previous":"catalog"}]\n'
+        previous_json.write_bytes(previous_bytes)
+        failed_scan = subprocess.run(
+            [converter, "scan", str(failed_library), "--output-dir",
+             str(failed_output.parent)],
+            capture_output=True, timeout=30,
+        )
+        if failed_scan.returncode == 0:
+            raise AssertionError("A scan with an unreadable accepted track succeeded")
+        if previous_json.read_bytes() != previous_bytes:
+            raise AssertionError("A failed scan replaced the previously generated catalog JSON")
+        failed_report_path = failed_output / "scan-report.json"
+        validate_report(failed_report_path)
+        failed_report = json.loads(failed_report_path.read_text(encoding="utf-8"))
+        matching_diagnostics = [
+            item for item in failed_report["diagnostics"]
+            if item.get("filePath") == str(failed_track.resolve())
+        ]
+        if failed_report["status"] != "failed" or not matching_diagnostics:
+            raise AssertionError("The failed scan report did not identify the unreadable track")
+        if not any(item["severity"] == "error" and item["message"]
+                   for item in matching_diagnostics):
+            raise AssertionError("The failed track diagnostic omitted its underlying error")
+        failed_counts = failed_report["counts"]
+        if (failed_counts["albumsDiscovered"] != 1 or
+                failed_counts["tracksDiscovered"] != 2 or
+                failed_counts["albumsSerialized"] != 0 or
+                failed_counts["tracksSerialized"] != 0 or
+                failed_counts["batchesStaged"] != 0 or
+                failed_counts["batchesInstalled"] != 0):
+            raise AssertionError("The failed scan report misrepresented staged or installed output")
 
         if os.name == "nt":
             long_output = root / "long-output" / ("a" * 90) / ("b" * 90)
@@ -67,6 +128,7 @@ def main():
                     [converter, "scan", str(library), "--output-dir", str(long_output)],
                     check=True,
                 )
+                validate_report(long_output / library.name / "scan-report.json")
                 long_json = Path("\\\\?\\" + str(
                     long_output / library.name / "media_out_library_1.json"))
                 if not long_json.is_file():

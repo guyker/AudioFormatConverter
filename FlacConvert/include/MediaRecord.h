@@ -71,6 +71,23 @@ struct CatalogFinding
     std::string evidence;
 };
 
+struct MediaDiagnostic
+{
+    std::string stage;
+    std::string source;
+    std::string code;
+    std::string severity;
+    std::string message;
+};
+
+struct ScanDiagnostic
+{
+    std::string albumPath;
+    std::optional<std::string> filePath;
+    MediaDiagnostic diagnostic;
+    std::optional<std::string> affectedPath;
+};
+
 struct MediaRecord
 {
     int schemaVersion{ 2 };
@@ -99,5 +116,6 @@ struct MediaRecord
     IntegrityResult integrity;
     AudioSignalResult signal;
     std::vector<CatalogFinding> findings;
+    std::vector<MediaDiagnostic> diagnostics;
     std::optional<std::string> error;
 };

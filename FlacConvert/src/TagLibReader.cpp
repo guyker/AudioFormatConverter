@@ -35,6 +35,20 @@
 
 namespace {
 
+TagLibReadResult failedRead(std::string stage, std::string source, std::string code,
+    std::string message)
+{
+    auto diagnosticMessage = message;
+    return {
+        std::nullopt,
+        std::move(message),
+        { MediaDiagnostic{
+            std::move(stage), std::move(source), std::move(code), "error",
+            std::move(diagnosticMessage)
+        } }
+    };
+}
+
 std::string toUtf8(const TagLib::String& value)
 {
     return value.to8Bit(true);
@@ -561,7 +575,8 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
     std::error_code ec;
     const auto fileSize = std::filesystem::file_size(filePath, ec);
     if (ec) {
-        return { std::nullopt, "Cannot read file size: " + ec.message() };
+        return failedRead("metadata", "filesystem", "file_size_failed",
+            "Cannot read file size: " + ec.message());
     }
     record.sizeBytes = fileSize;
     record.modifiedUtc = CommonUtils::fileModificationTimeUtc(filePath);
@@ -575,11 +590,13 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
     {
         TagLib::FileStream stream(name, true);
         if (!stream.isOpen()) {
-            return { std::nullopt, "TagLib could not open the audio file read-only." };
+            return failedRead("tags", "taglib", "taglib_open_failed",
+                "TagLib could not open the audio file read-only.");
         }
         TagLib::FileRef file(&stream, true, TagLib::AudioProperties::Fast);
         if (file.isNull()) {
-            return { std::nullopt, "TagLib could not identify or read the audio file." };
+            return failedRead("tags", "taglib", "taglib_read_failed",
+                "TagLib could not identify or read the audio file.");
         }
         readProperties(record, file.properties(), tagScope(extension),
             extension != ".flac" && extension != ".mp3");
@@ -599,9 +616,25 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
     }
     if (extension == ".flac" || extension == ".mp3") {
         std::string probeError;
-        const auto probe = FFmpeg::GetFFprobeMetadataAPI(filePath, false, &probeError);
+        FFprobeOutput probe;
+        std::vector<FFmpeg::FFmpegLogItem> ffmpegLogs;
+        {
+            FFmpeg::ScopedLogCapture logCapture(filePath, "chapters");
+            probe = FFmpeg::GetFFprobeMetadataAPI(filePath, false, &probeError);
+            ffmpegLogs = logCapture.TakeLogs();
+        }
+        for (const auto& log : ffmpegLogs) {
+            record.diagnostics.push_back({
+                log.stage, "ffmpeg", "ffmpeg_log", log.level,
+                log.component + ": " + log.message
+            });
+        }
         if (!probeError.empty()) {
-            return { std::nullopt, "FFmpeg container metadata read failed: " + probeError };
+            const auto message = "FFmpeg container metadata read failed: " + probeError;
+            record.diagnostics.push_back({
+                "chapters", "ffmpeg", "ffmpeg_probe_failed", "error", message
+            });
+            return { std::nullopt, message, std::move(record.diagnostics) };
         }
         if (probe.format.format_name && !probe.format.format_name->empty()) {
             record.format = *probe.format.format_name;
@@ -621,12 +654,20 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
             chapter.endSeconds = parseSeconds(source.end_time);
             if ((source.start_time && !chapter.startSeconds) ||
                 (source.end_time && !chapter.endSeconds)) {
-                return { std::nullopt, "FFmpeg returned an invalid chapter time." };
+                const std::string message = "FFmpeg returned an invalid chapter time.";
+                record.diagnostics.push_back({
+                    "chapters", "ffmpeg", "invalid_chapter_time", "error", message
+                });
+                return { std::nullopt, message, std::move(record.diagnostics) };
             }
             if ((chapter.start && chapter.end && *chapter.start > *chapter.end) ||
                 (chapter.startSeconds && chapter.endSeconds &&
                     *chapter.startSeconds > *chapter.endSeconds)) {
-                return { std::nullopt, "FFmpeg returned a chapter with an inverted time range." };
+                const std::string message = "FFmpeg returned a chapter with an inverted time range.";
+                record.diagnostics.push_back({
+                    "chapters", "ffmpeg", "inverted_chapter_time", "error", message
+                });
+                return { std::nullopt, message, std::move(record.diagnostics) };
             }
             if (source.tags) {
                 for (const auto& [key, value] : *source.tags) {
@@ -640,5 +681,5 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
         record.durationSeconds = static_cast<double>(*record.totalSamples) / *record.sampleRateHz;
     }
     validateTagValues(record);
-    return { std::move(record), std::nullopt };
+    return { std::move(record), std::nullopt, {} };
 }

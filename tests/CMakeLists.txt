@@ -18,8 +18,10 @@ target_include_directories(bounded_task_runner_test PRIVATE
 target_compile_features(bounded_task_runner_test PRIVATE cxx_std_20)
 add_executable(scoped_current_directory_test scoped_current_directory.cpp)
 target_link_libraries(scoped_current_directory_test PRIVATE FlacConvertCore)
+add_executable(scan_report_schema_test scan_report_schema.cpp)
+target_link_libraries(scan_report_schema_test PRIVATE FlacConvertCore)
 
-foreach(_target IN ITEMS preservation_audit_test warning_regressions_test media_metadata_json_test media_record_json_test taglib_smoke_test decode_analyzer_test bounded_task_runner_test scoped_current_directory_test)
+foreach(_target IN ITEMS preservation_audit_test warning_regressions_test media_metadata_json_test media_record_json_test taglib_smoke_test decode_analyzer_test bounded_task_runner_test scoped_current_directory_test scan_report_schema_test)
     target_compile_options(${_target} PRIVATE
         "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/W3;/utf-8;/permissive->"
         "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>>:-Wall;-Wextra;-Wpedantic>")
@@ -46,7 +48,9 @@ add_test(NAME media-record-json
 add_test(NAME scan-root-level-audio
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scan_root_audio.py"
         "$<TARGET_FILE:FlacConvert>"
-        "${FFMPEG_EXECUTABLE}")
+        "${FFMPEG_EXECUTABLE}"
+        "$<TARGET_FILE:scan_report_schema_test>"
+        "${PROJECT_SOURCE_DIR}/docs/schemas/scan-report-v1.schema.json")
 add_test(NAME taglib-reader-smoke
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/run_native_regression.py"
         taglib

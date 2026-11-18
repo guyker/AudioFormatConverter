@@ -25,6 +25,11 @@
           "type": "string",
           "description": "Directory leaf name; descriptive only and not a stable identifier."
         },
+        "diagnostics": {
+          "type": "array",
+          "description": "Album-level scan diagnostics. File-level diagnostics belong to the matching track record.",
+          "items": { "$ref": "#/$defs/diagnostic" }
+        },
         "Tracks": {
           "type": "array",
           "minItems": 1,
@@ -238,6 +243,11 @@
             "x-ai-hint": "Treat each finding as evidence-backed and heuristic where applicable; confidence is not certainty."
           }
         },
+        "diagnostics": {
+          "type": "array",
+          "description": "Extraction, probing, decode, and serialization diagnostics linked to this file record.",
+          "items": { "$ref": "#/$defs/diagnostic" }
+        },
         "support": {
           "type": "object",
           "required": ["tags", "nativeInventory", "decode", "chapters"],
@@ -303,6 +313,18 @@
           "type": "string",
           "description": "Reader diagnostic when the record is retained despite incomplete extraction."
         }
+      },
+      "additionalProperties": false
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["stage", "source", "code", "severity", "message"],
+      "properties": {
+        "stage": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "code": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["error", "warning", "info"] },
+        "message": { "type": "string" }
       },
       "additionalProperties": false
     }

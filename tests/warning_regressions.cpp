@@ -2,10 +2,14 @@
 #include "MediaTrack.h"
 #include "ffmpeg.h"
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <string>
+#include <thread>
+#include <vector>
 
 // Link with the Debug application objects except FlacConvertMain.obj and the FFmpeg libraries.
 // Arguments are generated 48 kHz stereo WAV fixtures: a 997 Hz FFmpeg sine and silence.
@@ -43,11 +47,53 @@ static void check_log_callback_context() {
     } context{ &testClass };
 
     FFmpeg::initialize_ffmpeg_logging();
-    FFmpeg::clear_ffmpeg_logs();
-    av_log(&context, AV_LOG_WARNING, "opaque context regression\n");
-    const auto& logs = FFmpeg::get_ffmpeg_logs();
-    require(!logs.empty(), "Opaque FFmpeg context was not logged");
-    require(logs.back().url == "WarningRegressionContext", "Opaque FFmpeg context was misidentified");
+    std::array<std::vector<FFmpeg::FFmpegLogItem>, 2> capturedLogs;
+    std::array<std::thread, 2> workers;
+    for (std::size_t index = 0; index < workers.size(); ++index) {
+        workers[index] = std::thread([&, index] {
+            const auto filePath = "opaque-context-" + std::to_string(index);
+            FFmpeg::ScopedLogCapture capture(filePath, "test");
+            av_log(&context, AV_LOG_WARNING, "opaque context regression %zu\n", index);
+            capturedLogs[index] = capture.TakeLogs();
+        });
+    }
+    for (auto& worker : workers) {
+        worker.join();
+    }
+    for (std::size_t index = 0; index < capturedLogs.size(); ++index) {
+        require(capturedLogs[index].size() == 1,
+            "Concurrent FFmpeg diagnostic was not captured exactly once");
+        const auto& log = capturedLogs[index].front();
+        require(log.filePath == "opaque-context-" + std::to_string(index) &&
+            log.stage == "test" &&
+            log.component == "WarningRegressionContext" &&
+            log.message == "opaque context regression " + std::to_string(index),
+            "Concurrent FFmpeg diagnostic context was misattributed");
+    }
+}
+
+static void check_unscoped_log_callback_context() {
+    static const AVClass testClass = [] {
+        AVClass value{};
+        value.class_name = "UnscopedWarningRegressionContext";
+        return value;
+    }();
+    struct Context {
+        const AVClass* av_class;
+    } context{ &testClass };
+
+    FFmpeg::ScopedRunLogCapture capture("scan");
+    std::thread worker([&] {
+        av_log(&context, AV_LOG_WARNING, "unscoped callback regression\n");
+    });
+    worker.join();
+
+    const auto logs = capture.TakeLogs();
+    require(logs.size() == 1, "Unscoped FFmpeg callback log was not captured exactly once");
+    require(logs.front().filePath.empty() && logs.front().stage == "scan" &&
+        logs.front().component == "UnscopedWarningRegressionContext" &&
+        logs.front().message == "unscoped callback regression",
+        "Unscoped FFmpeg callback log was assigned incorrect file context");
 }
 
 static void check_audio_comparison_without_analysis() {
@@ -126,6 +172,7 @@ int main(int argc, char** argv) {
         require(render_progress(10, 5, 20, subProgress).find("Current Batch:      [                    ] 0%")
             != std::string::npos, "Empty sub-progress failed");
         check_log_callback_context();
+        check_unscoped_log_callback_context();
         check_audio_comparison_without_analysis();
         check_recording(argv[1], false);
         check_recording(argv[2], true);

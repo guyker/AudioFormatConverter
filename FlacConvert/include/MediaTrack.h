@@ -61,6 +61,7 @@ struct MediaTrack
 	std::optional<std::string> LastErroString;
 	std::optional<MediaRecord> catalogRecord;
 	std::optional<std::filesystem::path> libraryRoot;
+	std::vector<MediaDiagnostic> diagnostics;
 
 
 	static bool IsFileConvertable(std::filesystem::path filePath)

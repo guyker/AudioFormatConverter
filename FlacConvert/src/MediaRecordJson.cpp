@@ -242,6 +242,21 @@ std::string SerializeMediaRecord(const MediaRecord& record)
     }
     writer.EndArray();
 
+    if (!record.diagnostics.empty()) {
+        writer.Key("diagnostics");
+        writer.StartArray();
+        for (const auto& diagnostic : record.diagnostics) {
+            writer.StartObject();
+            writeString(writer, "stage", diagnostic.stage);
+            writeString(writer, "source", diagnostic.source);
+            writeString(writer, "code", diagnostic.code);
+            writeString(writer, "severity", diagnostic.severity);
+            writeString(writer, "message", diagnostic.message);
+            writer.EndObject();
+        }
+        writer.EndArray();
+    }
+
     writer.Key("support");
     writer.StartObject();
     writeString(writer, "tags", record.tagSupport);
@@ -308,6 +323,7 @@ std::optional<MediaRecord> ParseMediaRecord(const rapidjson::Value& value, std::
     const auto chapters = value.FindMember("chapters");
     const auto integrity = value.FindMember("integrity");
     const auto findings = value.FindMember("findings");
+    const auto diagnostics = value.FindMember("diagnostics");
     const auto support = value.FindMember("support");
     const auto analysis = value.FindMember("audioAnalysis");
     if (file == value.MemberEnd() || !file->value.IsObject() ||
@@ -327,6 +343,10 @@ std::optional<MediaRecord> ParseMediaRecord(const rapidjson::Value& value, std::
     }
     if (findings != value.MemberEnd() && !findings->value.IsArray()) {
         fail(error, "Media record findings must be an array.");
+        return std::nullopt;
+    }
+    if (diagnostics != value.MemberEnd() && !diagnostics->value.IsArray()) {
+        fail(error, "Media record diagnostics must be an array.");
         return std::nullopt;
     }
     if (!readRequiredString(file->value, "relativePath", record.relativePath) ||
@@ -494,6 +514,30 @@ std::optional<MediaRecord> ParseMediaRecord(const rapidjson::Value& value, std::
                 return std::nullopt;
             }
             record.findings.push_back(std::move(finding));
+        }
+    }
+    if (diagnostics != value.MemberEnd()) {
+        for (const auto& item : diagnostics->value.GetArray()) {
+            if (!item.IsObject()) {
+                fail(error, "Each diagnostic must be an object.");
+                return std::nullopt;
+            }
+            MediaDiagnostic diagnostic;
+            if (!readRequiredString(item, "stage", diagnostic.stage) ||
+                !readRequiredString(item, "source", diagnostic.source) ||
+                !readRequiredString(item, "code", diagnostic.code) ||
+                !readRequiredString(item, "severity", diagnostic.severity) ||
+                !readRequiredString(item, "message", diagnostic.message)) {
+                fail(error, "Diagnostic is missing stage, source, code, severity, or message.");
+                return std::nullopt;
+            }
+            if (diagnostic.stage.empty() || diagnostic.source.empty() || diagnostic.code.empty() ||
+                (diagnostic.severity != "error" && diagnostic.severity != "warning" &&
+                    diagnostic.severity != "info")) {
+                fail(error, "Diagnostic stage, source, code, or severity is invalid.");
+                return std::nullopt;
+            }
+            record.diagnostics.push_back(std::move(diagnostic));
         }
     }
 

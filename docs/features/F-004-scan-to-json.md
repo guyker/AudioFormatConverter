@@ -10,6 +10,14 @@ technical properties, normalized tag arrays, raw scoped tag entries, and explici
 and MP3 also expose picture descriptors; chapter boundaries and tags are read through the linked FFmpeg libraries. The contract is
 `docs/schemas/media-catalog-v2.schema.json`; it does not contain picture payloads or claim byte-complete native
 metadata inventory.
+This is a TagLib/linked-FFmpeg catalog, not a raw FFmpeg JSON dump. Per-record non-fatal diagnostics are included
+with their records; `scan-report.json` records run status, counts, timing, and path-linked diagnostics for both
+successful and failed scans using `docs/schemas/scan-report-v1.schema.json`. A failed scan does not install staged
+catalog JSON, preserving the previous generated JSON set; the report is written separately when the output directory
+is available. Report counts distinguish discovered albums/tracks, successfully serialized albums/tracks, staged
+batches, and installed batches. Filesystem diagnostics carry an `affectedPath` when the standard exception provides
+one; track paths also populate `filePath`. FFmpeg warnings/errors without a thread-local file context are captured
+at scan scope and intentionally remain unattributed to a track.
 
 The reader records findings for missing title/artist/album tags, malformed track/disc numbers, non-ISO dates,
 malformed MusicBrainz UUIDs, ISRCs and EAN/UPC/GTIN check digits, inconsistent album-level tags within a directory,
@@ -38,11 +46,15 @@ unchanged records are reused only when the source path, file size, full-precisio
 ## Design and knowledge
 - DESIGN: `FlacConvert/DESIGN.md` → Scan to JSON; Files and schemas (album JSON)
 - Schema: `docs/schemas/media-catalog-v2.schema.json`
+- Scan report schema: `docs/schemas/scan-report-v1.schema.json`
 - K-005 staged JSON replacement; K-035 fail scans before installing incomplete metadata
 
 ## Acceptance checks
 - [ ] Output JSON validates against the v2 schema and contains one object per album with non-empty `Tracks`.
 - [ ] A failed scan leaves the previous `media_out_*.json` files unchanged.
+- [ ] Successful scans write a completed `scan-report.json` with discovered, serialized, staged, installed, and diagnostic counts.
+- [ ] Failed scans preserve prior generated JSON and identify the failing album/track plus the underlying diagnostic in `scan-report.json`.
+- [ ] Successful and failed integration reports validate against the scan-report JSON Schema.
 - [ ] An unreadable album directory or failed JSON write fails the scan without replacing previous batches.
 - [ ] Supported extensions are matched case-insensitively.
 - [ ] Repeated tag values remain separate array values; raw tag scope and ID3 frame identities are retained where available.
@@ -69,6 +81,9 @@ unchanged records are reused only when the source path, file size, full-precisio
 - `CatalogExtensions` defaults to `.flac` and `.mp3`; other formats require explicit opt-in.
 - `rawTags` contains decoded tag entries, not byte-exact source metadata. Native metadata inventory is partial for FLAC/MP3 and unsupported for additional formats; the JSON catalog is not a byte-exact archive.
 - Files and paths skipped because their extensions are not configured are not currently emitted in a separate discovery inventory.
+- Scan diagnostics cover surfaced read, probe, decode, serialization, and installation errors; they are not a complete dump of all FFmpeg log levels or an exhaustive inventory of skipped files.
+- Unscoped FFmpeg warnings/errors are recorded at scan scope, not guessed to belong to a track. Errors that prevent preflight path validation or prevent writing `scan-report.json` can only be surfaced through logging.
+- Batch splitting remains based on album count (`AlbumsSplitThreshold`), not serialized byte size; no size threshold is currently configured.
 - Compressed ID3 frame handling depends on whether the build includes ZLIB.
 - Analysis includes per-track EBU R128 values when the filter is available, sample statistics and a fixed -60 dBFS leading/trailing silence threshold; it does not calculate album loudness or detect upsampling/lossy-origin cutoffs.
 - True effective resolution, Chromaprint fingerprints, full native block inventory, and some planned quality heuristics remain unavailable.

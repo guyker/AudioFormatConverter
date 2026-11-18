@@ -158,7 +158,15 @@ without usable sample-rate/channel data fails the scan before installation, pres
 reuses the discovered batches. `ScanTier` selects `catalog` (default), `integrity`, or `analysis`; CLI `scan --tier`
 overrides the config. Integrity and analysis tiers decode the audio once, report decode/sample/hash results, and
 analysis adds per-channel signal statistics and zero-padded-hi-res findings. Decode failures are retained in the
-record without discarding successfully read tags. `ExtraAudioQualityMetrics` is deprecated and ignored.
+record without discarding successfully read tags. Each scan writes `scan-report.json` beside the generated batches with run status, duration, structured diagnostics,
+and distinct discovered, serialized, staged, and installed counts. Filesystem exceptions include their affected path
+when supplied; accepted audio paths are also linked as track paths. FFmpeg warnings/errors without a thread-local
+file capture are recorded at scan scope, never guessed to belong to a track. Record-level non-fatal diagnostics
+remain in the corresponding catalog record; a failed scan writes the report separately without installing staged
+catalog JSON. The report contract is
+`docs/schemas/scan-report-v1.schema.json`. `ExtraAudioQualityMetrics` is deprecated and ignored.
+Batching remains album-count based (`AlbumsSplitThreshold`), not serialized-size based. Failures before safe output
+path validation, or failures that prevent writing the report itself, are visible only through the application log.
 
 ### Duplicates (menu 3, `duplicates`)
 

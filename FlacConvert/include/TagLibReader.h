@@ -10,6 +10,7 @@ struct TagLibReadResult
 {
     std::optional<MediaRecord> record;
     std::optional<std::string> error;
+    std::vector<MediaDiagnostic> diagnostics;
 };
 
 class TagLibReader

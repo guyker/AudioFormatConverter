@@ -22,6 +22,7 @@ extern "C" {
 #include "CommonUtils.h"
 #include "FFmpegWrapper.h"
 #include "PlatformUtils.h"
+#include "ffmpeg.h"
 
 namespace {
 
@@ -452,7 +453,7 @@ void fail(IntegrityResult& integrity, MediaRecord& record,
 
 }
 
-void DecodeAnalyzer::Analyze(const std::filesystem::path& filePath,
+static void analyzeAudio(const std::filesystem::path& filePath,
     MediaRecord& record, bool includeSignalAnalysis)
 {
     auto& integrity = record.integrity;
@@ -766,6 +767,29 @@ void DecodeAnalyzer::Analyze(const std::filesystem::path& filePath,
             "Leading silence: " + std::to_string(leadingSilence) +
                 " s; trailing silence: " + std::to_string(trailingSilence) +
                 " s at a -60 dBFS threshold."
+        });
+    }
+}
+
+void DecodeAnalyzer::Analyze(const std::filesystem::path& filePath,
+    MediaRecord& record, bool includeSignalAnalysis)
+{
+    FFmpeg::ScopedLogCapture logCapture(filePath, "decode");
+    analyzeAudio(filePath, record, includeSignalAnalysis);
+    for (const auto& log : logCapture.TakeLogs()) {
+        record.diagnostics.push_back({
+            log.stage, "ffmpeg", "ffmpeg_log", log.level,
+            log.component + ": " + log.message
+        });
+    }
+    if (record.integrity.status == "failed" && record.integrity.error) {
+        record.diagnostics.push_back({
+            "decode", "ffmpeg", "decode_failed", "error", *record.integrity.error
+        });
+    }
+    else if (record.integrity.status == "unsupported" && record.integrity.error) {
+        record.diagnostics.push_back({
+            "decode", "ffmpeg", "decode_unsupported", "warning", *record.integrity.error
         });
     }
 }

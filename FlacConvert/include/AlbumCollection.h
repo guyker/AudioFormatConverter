@@ -73,7 +73,8 @@ public:
 	std::shared_ptr<DirectoryContentEntryList> LoadAlbumsFromJSON(std::filesystem::path dirPath);
 	//Save album list and metadata to JSON file
 	bool SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList> albumListPtr,
-		std::filesystem::path path, const std::filesystem::path& libraryRoot);
+		std::filesystem::path path, const std::filesystem::path& libraryRoot,
+		std::vector<ScanDiagnostic>* diagnostics = nullptr);
 
 
 
@@ -84,9 +85,6 @@ public:
 
 	
 private:
-		
-	std::list<MediaTrack> ffmpeg_LasrErrorList;
-	void SaveAlbumsToJSON_LasrError(std::list<MediaTrack>& mediaTracks, std::filesystem::path outPath);
 
 	//sort and find duplications
 	SimilarAlbumIndexPairs FindDuplicationInGroup(std::shared_ptr<DirectoryContentEntryList> albumListPtr, const std::vector<DirectoryContentEntryList::const_iterator>& group);

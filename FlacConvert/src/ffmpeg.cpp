@@ -4,137 +4,156 @@
 #include <cstdio>
 #include <string>
 #include <vector>
-#include <mutex>
+#include <utility>
 #include <spdlog/spdlog.h>
 #include "PlatformUtils.h"
-#include "MediaTrack.h"
 #include <cmath>
 
 namespace FFmpeg {
 
-    // Global log storage (thread-safe)
-    static std::vector<FFmpegLogItem> ffmpeg_logs;
-    static std::mutex ffmpeg_log_mutex;
+    struct RunLogSink
+    {
+        explicit RunLogSink(std::string stage) : _stage(std::move(stage)) {}
 
-    void initialize_ffmpeg_logging() {
-        // Clear any existing logs
+        void Add(std::string level, std::string component, std::string message)
         {
-            std::lock_guard<std::mutex> lock(ffmpeg_log_mutex);
-            ffmpeg_logs.clear();
+            std::lock_guard lock(_mutex);
+            _logs.push_back({ {}, _stage, std::move(level),
+                std::move(component), std::move(message) });
         }
 
-        // Set custom callback
-        av_log_set_callback(ffmpeg_log_callback);
+        std::vector<FFmpegLogItem> TakeLogs()
+        {
+            std::lock_guard lock(_mutex);
+            auto logs = std::move(_logs);
+            _logs.clear();
+            return logs;
+        }
 
-        // Set log level: AV_LOG_QUIET to suppress all, or AV_LOG_ERROR for errors only
-        //av_log_set_level(AV_LOG_QUIET); // No console output
-        //Alternatively: av_log_set_level(AV_LOG_ERROR); // Capture errors only
-        //Alternatively: av_log_set_level(AV_LOG_WARNING); // Capture errors only
+    private:
+        std::string _stage;
+        std::vector<FFmpegLogItem> _logs;
+        std::mutex _mutex;
+    };
+
+    namespace {
+    thread_local ScopedLogCapture* activeLogCapture = nullptr;
+    std::mutex runLogCaptureMutex;
+    std::shared_ptr<RunLogSink> activeRunLogCapture;
+    }
+
+    ScopedLogCapture::ScopedLogCapture(const std::filesystem::path& filePath, std::string stage)
+        : _filePath(CommonUtils::path_to_utf8(filePath)),
+          _stage(std::move(stage)),
+          _previous(activeLogCapture)
+    {
+        activeLogCapture = this;
+    }
+
+    ScopedLogCapture::~ScopedLogCapture()
+    {
+        if (activeLogCapture == this) {
+            activeLogCapture = _previous;
+        }
+    }
+
+    void ScopedLogCapture::Add(FFmpegLogItem item)
+    {
+        std::lock_guard lock(_mutex);
+        _logs.push_back(std::move(item));
+    }
+
+    std::vector<FFmpegLogItem> ScopedLogCapture::TakeLogs()
+    {
+        std::lock_guard lock(_mutex);
+        auto logs = std::move(_logs);
+        _logs.clear();
+        return logs;
+    }
+
+    ScopedRunLogCapture::ScopedRunLogCapture(std::string stage)
+        : _sink(std::make_shared<RunLogSink>(std::move(stage)))
+    {
+        std::lock_guard lock(runLogCaptureMutex);
+        _previous = activeRunLogCapture;
+        activeRunLogCapture = _sink;
+    }
+
+    ScopedRunLogCapture::~ScopedRunLogCapture()
+    {
+        std::lock_guard lock(runLogCaptureMutex);
+        if (activeRunLogCapture == _sink) {
+            activeRunLogCapture = _previous;
+        }
+    }
+
+    std::vector<FFmpegLogItem> ScopedRunLogCapture::TakeLogs()
+    {
+        return _sink->TakeLogs();
+    }
+
+    void initialize_ffmpeg_logging() {
+        av_log_set_callback(scoped_ffmpeg_log_callback);
     }
 
 
 
-    void ffmpeg_log_callback(void* avcl, int level, const char* fmt, va_list vl) {
-
-        //   return; // Disable logging for now
-
-           // Check if the log level is above the set level
-        if (level > av_log_get_level()) {
-            return; // Skip logs above set level
-        }
-
-        if (!fmt)
-        {
-            spdlog::error("ffmpeg_log_callback: fmt is null");
+    void scoped_ffmpeg_log_callback(void* avcl, int level, const char* fmt, va_list vl) {
+        if (level > AV_LOG_WARNING || level > av_log_get_level()) {
             return;
         }
-        // Format the log message
-        char buffer[1024];
-        if (vsnprintf(buffer, sizeof(buffer), fmt, vl) < 0) {
-            spdlog::error("ffmpeg_log_callback: vsnprintf failed");
+        if (fmt == nullptr) {
+            spdlog::error("FFmpeg log callback received a null format string.");
             return;
         }
 
-        // Remove trailing newline for cleaner logging
-        std::string message = buffer;
+        va_list sizeArgs;
+        va_copy(sizeArgs, vl);
+        const int length = std::vsnprintf(nullptr, 0, fmt, sizeArgs);
+        va_end(sizeArgs);
+        if (length < 0) {
+            spdlog::error("Could not format an FFmpeg diagnostic.");
+            return;
+        }
+        std::vector<char> buffer(static_cast<std::size_t>(length) + 1);
+        va_list formatArgs;
+        va_copy(formatArgs, vl);
+        std::vsnprintf(buffer.data(), buffer.size(), fmt, formatArgs);
+        va_end(formatArgs);
+        std::string message(buffer.data(), static_cast<std::size_t>(length));
         if (!message.empty() && message.back() == '\n') {
             message.pop_back();
         }
-
-
-
-        // Map level to string for readability
-        std::string level_str = "UNKNOWN";
-        switch (level) {
-        case AV_LOG_PANIC:   level_str = "PANIC"; break;
-        case AV_LOG_FATAL:   level_str = "FATAL"; break;
-        case AV_LOG_ERROR:   level_str = "ERROR"; break;
-        case AV_LOG_WARNING: level_str = "WARNING"; break;
-        case AV_LOG_INFO:    level_str = "INFO"; break;
-        case AV_LOG_VERBOSE: level_str = "VERBOSE"; break;
-        case AV_LOG_DEBUG:   level_str = "DEBUG"; break;
-        case AV_LOG_TRACE:   level_str = "TRACE"; break;
+        const char* itemName = avcl == nullptr ? nullptr : av_default_item_name(avcl);
+        const std::string component = itemName == nullptr ? "unknown" : itemName;
+        const std::string severity =
+            level <= AV_LOG_ERROR ? "error" : "warning";
+        if (activeLogCapture != nullptr) {
+            activeLogCapture->Add({
+                activeLogCapture->_filePath,
+                activeLogCapture->_stage,
+                severity,
+                component,
+                std::move(message)
+            });
+            return;
         }
 
-
-        // Get context (e.g., filename)
-        std::string context = "N/A";
-        if (avcl) {
-            if (const char* itemName = av_default_item_name(avcl)) {
-                context = itemName;
-            }
-        }
-
-        // Store in vector (thread-safe)
+        std::shared_ptr<RunLogSink> runLogCapture;
         {
-            std::lock_guard<std::mutex> lock(ffmpeg_log_mutex);
-            ffmpeg_logs.push_back(FFmpegLogItem{ context,  level_str, message });
+            std::lock_guard lock(runLogCaptureMutex);
+            runLogCapture = activeRunLogCapture;
         }
-
-        if (false)
-        {
-            // Optionally forward to spdlog
-            auto logger = spdlog::get("console");
-            if (logger) {
-                switch (level) {
-                case AV_LOG_PANIC:
-                case AV_LOG_FATAL:
-                    logger->critical("FFmpeg: {}", message);
-                    break;
-                case AV_LOG_ERROR:
-                    logger->error("FFmpeg: {}", message);
-                    break;
-                case AV_LOG_WARNING:
-                    logger->warn("FFmpeg: {}", message);
-                    break;
-                case AV_LOG_INFO:
-                    logger->info("FFmpeg: {}", message);
-                    break;
-                case AV_LOG_VERBOSE:
-                case AV_LOG_DEBUG:
-                    logger->debug("FFmpeg: {}", message);
-                    break;
-                default:
-                    break;
-                }
-            }
-        }    
+        if (runLogCapture) {
+            runLogCapture->Add(severity, component, std::move(message));
+        }
+        else if (severity == "error") {
+            spdlog::error("FFmpeg [{}]: {}", component, message);
+        }
+        else {
+            spdlog::warn("FFmpeg [{}]: {}", component, message);
+        }
     }
-
-    std::vector<FFmpegLogItem>& get_ffmpeg_logs() {
-        std::lock_guard<std::mutex> lock(ffmpeg_log_mutex);
-        return ffmpeg_logs;
-    }
-
-    void clear_ffmpeg_logs() {
-        std::lock_guard<std::mutex> lock(ffmpeg_log_mutex);
-        ffmpeg_logs.clear();
-    }
-
-    std::vector<MediaTrack> ffmpeg_LasrErrorList;
-
-
-
 
     FFprobeOutput GetFFprobeMetadataAPI(
         const std::filesystem::path filePath, [[maybe_unused]] const bool bIncludeAudioQualityMetrics,
