@@ -90,7 +90,10 @@ int main() {
         require(settings->toJsonString().find("UseFFmpegLibraryAPI") == std::string::npos,
             "Deprecated UseFFmpegLibraryAPI setting was serialized");
         auto configured = AppSettingsJson::GetDefaultSettings();
+        require(!configured.ScanFlacMetadataArchives,
+            "FLAC scan metadata archives should be disabled by default");
         configured.JsonBatchTargetBytes = 123456;
+        configured.ScanFlacMetadataArchives = true;
         const auto settingsFile = std::filesystem::temp_directory_path() /
             ("afc-settings-roundtrip-" +
                 std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".json");
@@ -100,6 +103,8 @@ int main() {
         std::filesystem::remove(settingsFile);
         require(loaded && restored.JsonBatchTargetBytes == configured.JsonBatchTargetBytes,
             "JSON batch byte target did not survive configuration save/load");
+        require(loaded && restored.ScanFlacMetadataArchives,
+            "FLAC scan metadata archive setting did not survive configuration save/load");
         const auto missingFile = std::filesystem::temp_directory_path() /
             ("afc-metadata-error-" +
                 std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".flac");

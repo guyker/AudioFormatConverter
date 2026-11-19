@@ -23,6 +23,7 @@ const std::string kConfigurationHelp =
     "  LogLevel (integer 0-6, default 1): subcommand logging level (trace, debug, info, warn, err, critical, off).\n"
     "  UseAsyncMetadataReads (bool, default true): parallel TagLib metadata reads while scanning; legacy UseAsyncFFmpegCalls is also accepted.\n"
     "  Incremental (bool, default true): reuse metadata records when path, size and modification time are unchanged.\n"
+    "  ScanFlacMetadataArchives (bool, default false): write byte-exact native FLAC metadata archives during scans; scan flags can override it.\n"
     "  CatalogExtensions (array, default [.flac,.mp3]): accepted scan extensions; TagLib supports additional formats when explicitly enabled.\n"
     "  MetadataScanMaxThreads (integer >=0, default 0): per-album metadata worker cap; 0 uses hardware concurrency (fallback 4).\n"
     "  UseFFmpegLibraryAPI (deprecated): ignored; metadata re-probes always use FFmpeg libraries.\n"
@@ -122,13 +123,18 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
         ->each([&options](const std::string&) { options.outputDirectorySpecified = true; });
     scan->add_flag("--full-rescan", options.fullRescan,
         "Ignore cached JSON metadata and reread every audio file.");
+    auto* archiveMetadata = scan->add_flag("--archive-flac-metadata", options.archiveFlacMetadata,
+        "Write verified byte-exact native FLAC metadata archives for this scan.");
+    auto* noArchiveMetadata = scan->add_flag("--no-archive-flac-metadata", options.noArchiveFlacMetadata,
+        "Do not write FLAC metadata archives for this scan.");
+    archiveMetadata->excludes(noArchiveMetadata);
     scan->add_option("--tier", options.scanTier,
         "Override configured scan tier: catalog, integrity, or analysis.")
         ->check(CLI::IsMember({ "catalog", "integrity", "analysis" }))
         ->each([&options](const std::string&) { options.scanTierSpecified = true; });
     add_config_option(scan, options);
     scan->footer(command_footer(
-        "Inputs: one audio library directory. Output: <output-dir>/<library-name>/media_out_<library-name>_<part>.json. Unchanged files reuse prior metadata when Incremental is enabled; --full-rescan forces rereads. --tier selects catalog, integrity, or analysis processing. A completed scan replaces the previous generated JSON set only after the new set is ready.",
+        "Inputs: one audio library directory. Output: <output-dir>/<library-name>/media_out_<library-name>_<part>.json and scan-manifest.json. Unchanged files reuse prior metadata when Incremental is enabled; --full-rescan forces rereads. --tier selects catalog, integrity, or analysis processing. Native FLAC metadata archives are optional and disabled by default; the archive flags override ScanFlacMetadataArchives. A completed scan replaces generated JSON and retires previous manifest-owned archives only after the new set is ready.",
         "  FlacConvert scan \"D:\\Music\"\n"
         "  FlacConvert scan \"D:\\Music\" --output-dir \"E:\\Catalog\""));
     scan->callback([&options] { options.action = CommandAction::Scan; });

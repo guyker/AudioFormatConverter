@@ -25,7 +25,7 @@ It runs either as explicit CLI commands or, with no arguments, as a legacy inter
 | Conversion options | `include/ConversionOptions.h` | `AudioTarget` (Flac/Mp3), MP3 quality, downmix flag |
 | Folder conversion | `src/FolderConvert.cpp`, `include/FolderConvert.h` | `FolderConvert::PrepareConversion` (plan) and `FolderConvert::ExecuteConversion` (run, audit report, markers) |
 | File conversion | `src/MediaConvertionTask.cpp`, `include/MediaConvertionTask.h` | `MediaConvertionTask`: quality gate, FFmpeg child process, output verification, sidecar, audit, installation |
-| Metadata archive | `src/FlacMetadata.cpp`, `include/FlacMetadata.h` | `FlacMetadata::Save` / `FlacMetadata::Verify` byte-exact archive as binary `.flac-metadata` or `.flac-metadata.json` (readable scan-schema metadata + Base64 archive; only the archive is verified); scan uses binary metadata-only archives for native FLAC |
+| Metadata archive | `src/FlacMetadata.cpp`, `include/FlacMetadata.h` | `FlacMetadata::Save` / `FlacMetadata::Verify` byte-exact archive as binary `.flac-metadata` or `.flac-metadata.json` (readable scan-schema metadata + Base64 archive; only the archive is verified); scan optionally writes binary metadata-only archives for native FLAC |
 | Preservation audit | `src/PreservationAudit.cpp`, `include/PreservationAudit.h` | `PreservationAudit::Compare` (tags, pictures, chapters, opaque blocks), `PreservationAudit::VerifyCopy` |
 | FFmpeg library access | `src/ffmpeg.cpp`, `include/ffmpeg.h`, `include/FFmpegWrapper.h` | `FFmpeg::GetFFprobeMetadataAPI` (conversion/duplicate re-probes) and the process-wide log callback |
 | Catalog metadata | `src/TagLibReader.cpp`, `include/TagLibReader.h`, `include/MediaRecord.h`, `src/MediaRecordJson.cpp` | Read-only TagLib extraction, normalized multi-value tags, source-scoped raw tags, picture descriptors, and schema-v2 JSON |
@@ -60,7 +60,7 @@ flowchart LR
     TAGLIB --> RECORD[MediaRecord]
     RECORD -->|schema v2| JSON
     SCAN --> JSON[(OutDirectory/name/media_out_*.json)]
-    SCAN --> MANIFEST[(scan-manifest.json + native FLAC metadata archives)]
+    SCAN --> MANIFEST[(scan-manifest.json + optional native FLAC metadata archives)]
     JSON --> DUP[ScanFolderProcessJSONAndFindDuplicates]
     DUP --> REP[Console report / open folders]
     JSON --> DB[ExportJSONToDB / ImportJsonDirectoryToDatabase]
@@ -72,7 +72,7 @@ flowchart LR
 | Mode | Entry | Notes |
 |---|---|---|
 | `convert <input> [--to flac\|mp3] [--mp3-quality 0-9] [--downmix-to-stereo] [--overwrite] [--no-metadata-sidecar] [--output-dir]` | `RunWithArguments` → `FolderConvert::ConvertAudioFolderToOutput` | Output `<root>/<FLAC\|MP3>/<input folder name>` (K-031); `--no-metadata-sidecar` is valid only for an `optional` sidecar policy (K-038) |
-| `scan <library> [--output-dir] [--full-rescan] [--tier catalog\|integrity\|analysis]` | `ScanFolderAndCreateJSON` | One library; name = folder name |
+| `scan <library> [--output-dir] [--full-rescan] [--tier catalog\|integrity\|analysis] [--archive-flac-metadata\|--no-archive-flac-metadata]` | `ScanFolderAndCreateJSON` | One library; name = folder name; archive flags override configuration |
 | `duplicates <json dir> [--open]` | `ScanFolderProcessJSONAndFindDuplicates` | Opens folders only with `--open` |
 | `db import <json dir> [--output-dir]` | `ImportJsonDirectoryToDatabase` | `<output root>/<JSON folder name>/catalog-v2.sqlite`; output root is `--output-dir`, else `OutDirectory` |
 | No arguments | `RunLegacyMenu` | Options 1 FLAC, 2 scan, 3 duplicates, 4 DB import, 5 not implemented, 6 MP3; all use active `MediaDirectoryList` entries |
@@ -144,17 +144,20 @@ read remaining accepted formats from `CatalogExtensions` with `TagLibReader`, th
 the linked FFmpeg libraries
 (`AlbumCollection::ImportMetadata`, optionally using bounded workers controlled by `UseAsyncMetadataReads`),
 sort by normalized album artist, write schema-v2 records to a staging sibling directory
-(`AlbumCollection::SaveAlbumsToJSON`), archive and verify native FLAC metadata without copying audio, then write a
-`scan-manifest.json` containing the complete batch set, byte sizes, SHA-256 digests, archive references and unsupported
-format counts. `installGeneratedFiles` backs up and replaces generated `media_out_*.json`, the manifest and only
-the archives owned by the previous manifest, with rollback; databases and unrelated files remain untouched.
+(`AlbumCollection::SaveAlbumsToJSON`), optionally archive and verify native FLAC metadata without copying audio, then
+write a `scan-manifest.json` containing the complete batch set, byte sizes, SHA-256 digests, archive policy and references.
+Archive export defaults to off (`ScanFlacMetadataArchives=false`); the menu asks per run and CLI archive flags override
+the configured default. Catalog records are the same in either mode. `installGeneratedFiles` backs up and replaces
+generated `media_out_*.json`, the manifest and only the archives owned by the previous manifest, with rollback;
+on a successful scan with export disabled, those previous archives are retired. Databases and unrelated files remain untouched.
 Batch albums carry the manifest's scan ID. Duplicate detection, database import and incremental cache reuse validate
 the manifest's exact batch set and hashes before using records; legacy batches without a scan ID and manifest remain
 readable. A missing manifest for a marked batch fails closed (K-051). Records keep normalized multi-value tags separate
 from source-scoped raw tag entries and include technical properties, picture descriptors, and explicit
 support/analysis statuses; chapter boundaries and chapter tags come from libavformat. Native FLAC archives contain the
-original marker, metadata blocks, and recognized leading/trailing tags but no audio frames. Other formats remain
-decoded catalog inventories only and are counted as unsupported in the manifest and scan diagnostics.
+original marker, metadata blocks, and recognized leading/trailing tags but no audio frames. When archiving is enabled,
+other formats remain decoded catalog inventories only and are counted as unsupported in the manifest and scan
+diagnostics; when disabled, no archive is attempted and the manifest's `archivePolicy` says so.
 FFmpeg format and stream tags are retained with `ffmpeg.format` and `ffmpeg.stream.<index>` scopes; they are not
 added to normalized tags a second time. Old incremental records without the current metadata-inventory version
 are reread.
@@ -244,10 +247,12 @@ directory aliases; a trailing separator does not change the name.
 
 `PlatformUtils::ScopedCurrentDirectory` validates that an output root does not overlap its source before creating or
 installing files. For Windows targets shorter than `MAX_PATH - 64`, it enters the output directory so renames cannot
-redirect the active operation. Near-limit and longer Windows paths use a short ancestor, open each directory
-from that anchor with delete-sharing disabled, validates the opened directory's resolved path, and exposes absolute
-extended paths through `ResolvePath`; filesystem paths receive the `\\?\` prefix at the Windows directory path
-limit (`MAX_PATH - 12`). Conversion, scan installation, and catalog publication use these resolved
+redirect the active operation. Near-limit and longer Windows paths use an ancestor shorter than `MAX_PATH - 64` and
+open each directory from that anchor with delete-sharing disabled. They validate the opened directories' resolved
+paths and expose absolute extended paths through `ResolvePath`; filesystem paths receive the `\\?\` prefix at the
+Windows directory path limit (`MAX_PATH - 12`). Scan preview and incremental-cache I/O also use extended prefixes on
+shorter output directories because generated archive filenames can push their full paths beyond `MAX_PATH`.
+Conversion, scan installation, and catalog publication use these resolved
 paths and check `IsAnchored` before finalizing. Windows working-directory changes and restoration use ordinary
 drive/UNC paths, not the extended prefix: legacy FFmpeg launchers such as Chocolatey's .NET shim reject an inherited
 `\\?\` working directory. File I/O retains extended-path support. `Restore` releases the directory locks before an
@@ -295,6 +300,7 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | `LogLevel` | 1 (0–6, spdlog levels) | Logger |
 | `UseAsyncMetadataReads` | true | Parallel TagLib scan reads; legacy `UseAsyncFFmpegCalls` is accepted as an alias |
 | `Incremental` | true | Reuse scan records when library-relative file path, size and modification time match and the cached tier is the requested tier or higher (`AlbumCollection::ImportMetadata`) |
+| `ScanFlacMetadataArchives` | false | Default for optional byte-exact native FLAC scan archives; menu and CLI can override per run |
 | `ScanTier` | `catalog` (`catalog`\|`integrity`\|`analysis`) | Default scan tier; CLI `scan --tier` overrides it |
 | `MetadataScanMaxThreads` | 0 (automatic) | Maximum per-album metadata workers; 0 uses hardware concurrency, falling back to 4 |
 | `DecodeWorkers` | 0 (automatic) | Independent full-decode worker cap; 0 uses at most 4 workers and half the available hardware concurrency |
@@ -323,7 +329,7 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | In-progress marker | `<library output>/.conversion-in-progress/` (directory) | `FolderConvert::ExecuteConversion` |
 | Album JSON | `OutDirectory/<name>/media_out_<name>[_<n>].json` (schema v2; see `docs/schemas/media-catalog-v2.schema.json`) | `AlbumCollection::SaveAlbumsToJSON` |
 | Scan manifest | `OutDirectory/<name>/scan-manifest.json` (schema v1; batch inventory, SHA-256 integrity and archive references) | `writeScanManifest` |
-| FLAC metadata archive | `OutDirectory/<name>/scan_metadata_<source-path-sha256>.flac-metadata` (native metadata blocks only; referenced by manifest) | `FlacMetadata::Save` / `FlacMetadata::Verify` |
+| FLAC metadata archive | Optional `OutDirectory/<name>/scan_metadata_<source-path-sha256>.flac-metadata` (native metadata blocks only; referenced by manifest) | `FlacMetadata::Save` / `FlacMetadata::Verify` |
 | Quarantined duplicate album | `OutDirectory/deleted/album-<time>-<sequence>/<original-folder-name>/` plus sibling `move.json` | `DuplicateReview::ReviewPair` after explicit `MOVE` confirmation |
 | JSON diagnostic reports | `<album json>_ffmpeg_error.json` when captured (excluded from inputs); legacy `_error.json` reports are also excluded | `AlbumCollection` |
 | SQLite catalog | `OutDirectory/<name>/catalog-v2.sqlite` (`user_version=2`) | `CatalogDatabase::Import` |

@@ -270,6 +270,7 @@ std::string AppSettingsJson::toJsonString() const {
     doc.AddMember("LogLevel", LogLevel, allocator);
     doc.AddMember("UseAsyncMetadataReads", UseAsyncMetadataReads, allocator);
     doc.AddMember("Incremental", Incremental, allocator);
+    doc.AddMember("ScanFlacMetadataArchives", ScanFlacMetadataArchives, allocator);
     doc.AddMember("ScanTier", rapidjson::Value(ScanTier.c_str(), allocator), allocator);
     doc.AddMember("MetadataScanMaxThreads", MetadataScanMaxThreads, allocator);
     doc.AddMember("DecodeWorkers", DecodeWorkers, allocator);
@@ -513,6 +514,13 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
             return false;
         }
         Incremental = doc["Incremental"].GetBool();
+    }
+    if (doc.HasMember("ScanFlacMetadataArchives")) {
+        if (!doc["ScanFlacMetadataArchives"].IsBool()) {
+            spdlog::error("ScanFlacMetadataArchives must be a boolean.");
+            return false;
+        }
+        ScanFlacMetadataArchives = doc["ScanFlacMetadataArchives"].GetBool();
     }
     if (doc.HasMember("ScanTier")) {
         ScanTier = doc["ScanTier"].GetString();

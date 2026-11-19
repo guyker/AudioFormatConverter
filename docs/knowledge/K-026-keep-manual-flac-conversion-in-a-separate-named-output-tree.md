@@ -6,7 +6,7 @@ area: [FlacConvert]
 status: active
 supersedes: [K-021]
 created: 2026-10-11
-reviewed: 2026-11-16
+reviewed: 2026-11-19
 cites:
   - path: FlacConvert/src/FlacConvertMain.cpp
     symbol: ConvertFLACToFLAC

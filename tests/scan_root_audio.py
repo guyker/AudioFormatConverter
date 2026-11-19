@@ -43,6 +43,8 @@ def main():
         root = Path(temporary)
         library = root / "library"
         output = root / "output"
+        default_config = root / "default-config.json"
+        default_config.write_text("{}", encoding="utf-8")
         library.mkdir()
         track = library / "root-track.flac"
         subprocess.run(
@@ -56,7 +58,8 @@ def main():
         )
         original_track_hash = hashlib.sha256(track.read_bytes()).hexdigest()
         subprocess.run(
-            [converter, "scan", str(library), "--output-dir", str(output)],
+            [converter, "scan", str(library), "--output-dir", str(output),
+             "--config", str(default_config)],
             check=True,
         )
         files = list((output / library.name).glob("media_out_*.json"))
@@ -72,6 +75,27 @@ def main():
         if (batch_entry["file"] != files[0].name or
                 batch_entry["sha256"] != hashlib.sha256(files[0].read_bytes()).hexdigest()):
             raise AssertionError("The scan manifest does not integrity-protect its JSON batch")
+        if (manifest["archives"] or manifest["unsupportedFormats"] or
+                not manifest["archivePolicy"].startswith("Disabled") or
+                list((output / library.name).glob("scan_metadata_*.flac-metadata"))):
+            raise AssertionError("Default scans must not create metadata archives")
+        default_record = json.loads(files[0].read_text(encoding="utf-8"))[0]["Tracks"][0]
+        subprocess.run(
+            [converter, "scan", str(library), "--output-dir", str(output),
+             "--config", str(default_config), "--archive-flac-metadata"],
+            check=True,
+        )
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        subprocess.run(
+            [report_validator, manifest_schema, str(manifest_path.resolve())],
+            check=True,
+        )
+        archived_record = json.loads(files[0].read_text(encoding="utf-8"))[0]["Tracks"][0]
+        for field in ("tags", "rawTags", "technical", "pictures", "chapters"):
+            if archived_record[field] != default_record[field]:
+                raise AssertionError(f"Enabling archives changed the JSON {field}")
+        if not manifest["archivePolicy"].startswith("Enabled"):
+            raise AssertionError("The manifest did not report enabled metadata archiving")
         if len(manifest["archives"]) != 1:
             raise AssertionError("Native FLAC metadata was not archived")
         archive_entry = manifest["archives"][0]
@@ -106,7 +130,8 @@ def main():
         (archive_target / "unrelated.txt").write_bytes(unrelated_bytes)
         (archive_target / "catalog-v2.sqlite").write_bytes(database_bytes)
         archive_command = [
-            converter, "scan", str(archive_library), "--output-dir", str(archive_output)]
+            converter, "scan", str(archive_library), "--output-dir", str(archive_output),
+            "--config", str(default_config), "--archive-flac-metadata"]
         subprocess.run(archive_command, check=True)
         archive_manifest_path = archive_target / "scan-manifest.json"
         archive_manifest = json.loads(archive_manifest_path.read_text(encoding="utf-8"))
@@ -119,6 +144,17 @@ def main():
         previous_archive_bytes = previous_archive.read_bytes()
         previous_batch_files = list(archive_target.glob("media_out_*.json"))
         previous_batch_bytes = {item.name: item.read_bytes() for item in previous_batch_files}
+        metadata_fields = ("tags", "rawTags", "technical", "pictures", "chapters")
+
+        def catalog_metadata(batch_files):
+            return {
+                record["file"]["relativePath"]: {key: record[key] for key in metadata_fields}
+                for batch in batch_files
+                for album in json.loads(batch.read_text(encoding="utf-8"))
+                for record in album["Tracks"]
+            }
+
+        previous_metadata = catalog_metadata(previous_batch_files)
         new_flac = archive_album / "new.flac"
         shutil.copyfile(archived_flac, new_flac)
         collision_name = "scan_metadata_" + hashlib.sha256(
@@ -138,7 +174,44 @@ def main():
         if hashlib.sha256(archived_flac.read_bytes()).hexdigest() != archive_flac_hash:
             raise AssertionError("A failed scan modified its FLAC source")
         new_flac.unlink()
+
+        corrupt_track = archive_album / "corrupt.flac"
+        corrupt_track.write_bytes(b"not a FLAC")
+        disabled_command = [
+            converter, "scan", str(archive_library), "--output-dir", str(archive_output),
+            "--config", str(default_config)]
+        failed_disabled = subprocess.run(disabled_command, capture_output=True, timeout=30)
+        if (failed_disabled.returncode == 0 or
+                archive_manifest_path.read_bytes() != previous_manifest_bytes or
+                previous_archive.read_bytes() != previous_archive_bytes or
+                {item.name: item.read_bytes() for item in archive_target.glob("media_out_*.json")} !=
+                previous_batch_bytes):
+            raise AssertionError("A failed scan with archives disabled did not preserve the previous set")
+        corrupt_track.unlink()
+        subprocess.run(disabled_command, check=True)
+        disabled_manifest = json.loads(archive_manifest_path.read_text(encoding="utf-8"))
+        if (disabled_manifest["archives"] or disabled_manifest["unsupportedFormats"] or
+                not disabled_manifest["archivePolicy"].startswith("Disabled") or
+                previous_archive.exists() or collision_path.read_bytes() != collision_bytes):
+            raise AssertionError("Disabling archives did not retire only prior manifest-owned archives")
+        if catalog_metadata(archive_target.glob("media_out_*.json")) != previous_metadata:
+            raise AssertionError("Disabling archives changed FLAC or MP3 catalog metadata")
+        disabled_report = json.loads((archive_target / "scan-report.json").read_text(encoding="utf-8"))
+        if any(item["code"] == "metadata_archive_unsupported"
+               for item in disabled_report["diagnostics"]):
+            raise AssertionError("A disabled archive export reported unsupported formats")
+        if (hashlib.sha256(archived_flac.read_bytes()).hexdigest() != archive_flac_hash or
+                hashlib.sha256(archived_mp3.read_bytes()).hexdigest() != archive_mp3_hash):
+            raise AssertionError("Disabling metadata archives modified source audio")
+        subprocess.run(
+            [report_validator, manifest_schema, str(archive_manifest_path.resolve())],
+            check=True,
+        )
         collision_path.unlink()
+        subprocess.run(archive_command, check=True)
+        restored_manifest = json.loads(archive_manifest_path.read_text(encoding="utf-8"))
+        if len(restored_manifest["archives"]) != 1 or not previous_archive.is_file():
+            raise AssertionError("Re-enabling archives did not create a new verified archive")
         archived_flac.unlink()
         subprocess.run(archive_command, check=True)
         latest_manifest = json.loads(archive_manifest_path.read_text(encoding="utf-8"))
@@ -447,24 +520,71 @@ def main():
                 raise AssertionError("Invalid JSON byte target was accepted")
 
         if os.name == "nt":
-            long_output = root / "long-output" / ("a" * 90) / ("b" * 90)
+            long_output = root / "long-output" / ("a" * 90) / ("b" * 90) / ("c" * 40)
             try:
-                subprocess.run(
-                    [converter, "scan", str(library), "--output-dir", str(long_output)],
-                    check=True,
-                )
-                validate_report(long_output / library.name / "scan-report.json")
-                long_json = Path("\\\\?\\" + str(
-                    long_output / library.name / "media_out_library_1.json"))
-                if not long_json.is_file():
-                    raise AssertionError("Scan did not install JSON under a long Windows output path")
-                long_albums = json.loads(long_json.read_text(encoding="utf-8"))
-                if len(long_albums) != 1 or len(long_albums[0].get("Tracks", [])) != 1:
-                    raise AssertionError("Long-path scan output did not preserve the root-level track")
+                previous_archive = None
+                for scan_index, archive_enabled in enumerate((False, True, False)):
+                    long_command = [
+                        converter, "scan", str(library), "--output-dir", str(long_output),
+                        "--config", str(default_config)]
+                    if archive_enabled:
+                        long_command.append("--archive-flac-metadata")
+                    result = subprocess.run(long_command, capture_output=True,
+                                            text=True, encoding="utf-8", errors="replace")
+                    if result.returncode:
+                        raise AssertionError(f"Long-path scan failed: {result.stdout}\n{result.stderr}")
+                    if scan_index and "Incremental scan cache contains 1 catalog record(s)." not in result.stdout:
+                        raise AssertionError(f"Long-path scan did not reuse its catalog: {result.stdout}")
+                    validate_report(long_output / library.name / "scan-report.json")
+                    long_target = Path("\\\\?\\" + str(long_output / library.name))
+                    long_json = long_target / "media_out_library_1.json"
+                    if not long_json.is_file():
+                        raise AssertionError("Scan did not install JSON under a long Windows output path")
+                    long_albums = json.loads(long_json.read_text(encoding="utf-8"))
+                    if len(long_albums) != 1 or len(long_albums[0].get("Tracks", [])) != 1:
+                        raise AssertionError("Long-path scan output did not preserve the root-level track")
+                    long_manifest = json.loads((long_target / "scan-manifest.json").read_text(
+                        encoding="utf-8"))
+                    if archive_enabled:
+                        archive = long_manifest["archives"][0]
+                        previous_archive = long_target / archive["file"]
+                        archive_bytes = previous_archive.read_bytes()
+                        if hashlib.sha256(archive_bytes).hexdigest() != archive["sha256"]:
+                            raise AssertionError("Long-path metadata archive did not match its manifest")
+                    elif long_manifest["archives"] or (previous_archive and previous_archive.exists()):
+                        raise AssertionError("Long-path scan did not retire its metadata archive")
             finally:
                 extended_output = "\\\\?\\" + str(long_output)
                 if os.path.exists(extended_output):
                     shutil.rmtree(extended_output)
+
+            # The directory itself can be below the prefix threshold while archive paths exceed MAX_PATH.
+            component_length = max(1, 210 - len(str(root)) - len(library.name) - 2)
+            medium_output = root / ("m" * component_length)
+            if len(str(medium_output / library.name)) < 248:
+                try:
+                    medium_target = Path("\\\\?\\" + str(medium_output / library.name))
+                    medium_command = [
+                        converter, "scan", str(library), "--output-dir", str(medium_output),
+                        "--config", str(default_config)]
+                    subprocess.run(medium_command + ["--archive-flac-metadata"], check=True)
+                    medium_manifest = json.loads((medium_target / "scan-manifest.json").read_text(
+                        encoding="utf-8"))
+                    medium_archive = medium_target / medium_manifest["archives"][0]["file"]
+                    if len(str(medium_output / library.name / medium_archive.name)) < 260:
+                        raise AssertionError("Archive fixture did not exceed the Windows path limit")
+                    result = subprocess.run(medium_command, capture_output=True,
+                                            text=True, encoding="utf-8", errors="replace")
+                    if result.returncode:
+                        raise AssertionError(f"Long archive scan failed: {result.stdout}\n{result.stderr}")
+                    if "Incremental scan cache contains 1 catalog record(s)." not in result.stdout:
+                        raise AssertionError(f"Long archive path invalidated the cache: {result.stdout}")
+                    if medium_archive.exists():
+                        raise AssertionError("Long archive path was not retired")
+                finally:
+                    extended_output = "\\\\?\\" + str(medium_output)
+                    if os.path.exists(extended_output):
+                        shutil.rmtree(extended_output)
 
         incremental_library = root / "incremental-library"
         incremental_album = incremental_library / "same-album"

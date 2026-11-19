@@ -28,7 +28,8 @@
       "type": "string"
     },
     "archivePolicy": {
-      "type": "string"
+      "type": "string",
+      "description": "States whether native FLAC metadata archives were enabled or disabled for the scan."
     },
     "batches": {
       "type": "array",

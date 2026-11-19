@@ -256,12 +256,14 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
     constexpr std::size_t longPathFallbackMargin = 64;
     if (normalizedWindowsPath(absoluteTarget).native().size() >= MAX_PATH - longPathFallbackMargin) {
         fs::path shortAnchor = anchor;
-        while (!shortAnchor.empty() && normalizedWindowsPath(shortAnchor).native().size() >= MAX_PATH) {
+        while (!shortAnchor.empty() &&
+            normalizedWindowsPath(shortAnchor).native().size() >= MAX_PATH - longPathFallbackMargin) {
             const auto parent = shortAnchor.parent_path();
             if (parent == shortAnchor) break;
             shortAnchor = parent;
         }
-        if (shortAnchor.empty() || normalizedWindowsPath(shortAnchor).native().size() >= MAX_PATH) {
+        if (shortAnchor.empty() ||
+            normalizedWindowsPath(shortAnchor).native().size() >= MAX_PATH - longPathFallbackMargin) {
             spdlog::error("Cannot find a short working-directory anchor for '{}'.",
                 CommonUtils::path_to_utf8(target));
             return false;
@@ -573,7 +575,10 @@ bool ScopedCurrentDirectory::Restore()
 }
 
 #ifdef _WIN32
-    std::wstring WindowsLongPath(const std::filesystem::path& path) {
+    std::wstring WindowsLongPath(const std::filesystem::path& path, bool forceExtended) {
+        if (forceExtended) {
+            return extendedWindowsPath(path);
+        }
         const std::wstring normalized = path.lexically_normal().native();
         if (normalized.rfind(L"\\\\?\\", 0) == 0) {
             return normalized;

@@ -70,6 +70,9 @@ Enter `?` at the selection prompt to see all action descriptions without scannin
 At the preview confirmation, `BACK` returns to the menu and `EXIT` quits without starting the action.
 Starting an action uses the same single `RUN` confirmation. Optional album moves during option 3 require a separate `MOVE`.
 Enter, unrecognized confirmation text or EOF still cancels and exits. Option numbers are unchanged.
+Option `2` asks whether to export separate byte-exact native FLAC metadata archives; the configured default is
+`ScanFlacMetadataArchives` (normally `false`). Enter keeps that default; `YES` or `NO` applies only to the current
+operation. The preview states that previous manifest-owned archives are retired after a successful scan.
 Finished manual actions report `Completed`, `Partially completed` or `Failed` (`Stopped by user` for an early duplicate-review stop), elapsed execution time,
 output locations, completed work and copied files. Counts reflect successfully installed audio,
 installed album JSON files (not optional error reports), committed JSON database batches, or fully
@@ -151,6 +154,7 @@ FlacConvert convert "D:\Music" --to mp3 --output-dir "E:\MP3"
 FlacConvert convert "D:\Music" --to mp3 --mp3-quality 2 --output-dir "E:\MP3"
 FlacConvert scan "D:\Music" --output-dir "E:\Catalog"
 FlacConvert scan "D:\Music" --full-rescan --tier integrity
+FlacConvert scan "D:\Music" --archive-flac-metadata
 FlacConvert duplicates "E:\Catalog\Music"
 FlacConvert db import "E:\Catalog\Music" --output-dir "E:\Databases"
 ```
@@ -167,9 +171,14 @@ menu/default tier with `ScanTier`. `CatalogExtensions` selects accepted scan for
 by default. Set `JsonBatchTargetBytes` to a positive hard byte limit for JSON batching (default `0` disables it);
 oversized albums split into track fragments, and a scan fails if a track cannot fit. Unlimited batches stream one
 track record at a time. Successful scans also write `scan-manifest.json`, which protects the complete JSON batch set
-with SHA-256 and lists metadata-only archives for native FLAC files; other formats are reported as unsupported for
-byte-exact archiving. Duplicate detection, database import, and incremental cache reuse validate the manifest before
-using marked batches. `DecodeWorkers` caps the independent full-decode stage. `duplicates` reports matches without
+with SHA-256. Separate byte-exact native FLAC metadata archives are disabled by default; enable them with
+`ScanFlacMetadataArchives: true` or `scan --archive-flac-metadata`, and override an enabled setting for one run with
+`--no-archive-flac-metadata`. Catalog JSON still contains extracted FLAC and MP3 tags in either mode, but not artwork
+bytes or every original metadata block. When enabled, the manifest lists verified archives and unsupported formats;
+when disabled, it records that no archives were made. A successful rescan retires previous manifest-owned archives
+even when archiving is disabled; a failed scan preserves the previous set. Conversion sidecars are configured
+separately by `MetadataSidecars`. Duplicate detection, database import, and incremental cache reuse validate the
+manifest before using marked batches. `DecodeWorkers` caps the independent full-decode stage. `duplicates` reports matches without
 opening folders; pass `--open` to open matched folders in Explorer. `db import` creates or updates a library-named
 `catalog-v2.sqlite` database and leaves legacy `.db` files untouched.
 

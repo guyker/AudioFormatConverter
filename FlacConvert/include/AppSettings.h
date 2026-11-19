@@ -154,6 +154,7 @@ struct AppSettingsJson
 	int LogLevel { 1 };
 	bool UseAsyncMetadataReads { true };
 	bool Incremental{ true };
+	bool ScanFlacMetadataArchives{ false };
 	std::string ScanTier{ "catalog" };
 	int MetadataScanMaxThreads{ 0 };
 	int DecodeWorkers{ 0 };
@@ -192,6 +193,7 @@ struct AppSettingsJson
 			1,
 			true, //UseAsyncMetadataReads
 			true, //Incremental catalog scans
+			false, //ScanFlacMetadataArchives
 			"catalog", //ScanTier
 			0, //MetadataScanMaxThreads (automatic)
 			0, //DecodeWorkers (automatic)

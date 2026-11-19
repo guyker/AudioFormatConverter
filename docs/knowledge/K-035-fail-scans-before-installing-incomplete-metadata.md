@@ -5,7 +5,7 @@ title: "Fail scans before installing incomplete metadata"
 area: [FlacConvert]
 status: active
 created: 2026-11-10
-reviewed: 2026-11-16
+reviewed: 2026-11-19
 cites:
   - path: FlacConvert/src/AlbumCollection.cpp
     symbol: "AlbumCollection::SaveAlbumsToJSON"

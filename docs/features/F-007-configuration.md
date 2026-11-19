@@ -16,7 +16,8 @@ directory and offer to create a default file.
 `UseAsyncMetadataReads` controls parallel TagLib reads during scan; the previous `UseAsyncFFmpegCalls` key remains
 accepted as an alias when the new key is absent. `CatalogExtensions` defaults to `.flac` and `.mp3`; additional supported TagLib formats can be
 enabled explicitly. `UseFFmpegLibraryAPI` is deprecated, ignored with a warning, and omitted when configuration is
-saved.
+saved. `ScanFlacMetadataArchives` is a boolean, default `false`, setting the default for optional native FLAC scan
+archives independently of conversion `MetadataSidecars`; menu and CLI choices can override it for one scan.
 `JsonBatchTargetBytes` is a non-negative integer, default `0` (disabled); a positive value sets a hard JSON batch
 size limit. Large albums split into track fragments; a track that cannot fit fails the scan.
 
@@ -36,6 +37,7 @@ size limit. Large albums split into track fragments; a track that cannot fit fai
 - [ ] `MediaDirectoryList` must contain objects, and a closed input stream exits the configuration prompt.
 - [ ] `MetadataScanMaxThreads: -1` is rejected; `0` selects automatic concurrency.
 - [ ] `CatalogExtensions` accepts only supported extensions and matching is case-insensitive.
+- [ ] `ScanFlacMetadataArchives` defaults to `false`, round-trips through config, and rejects non-boolean values.
 - [ ] A legacy `UseFFmpegLibraryAPI` setting is ignored and not written back.
 - [ ] `MetadataSidecars` config comments load; omitting its target policies defaults both to `disabled`.
 - [ ] `MetadataSidecars.Format: "xml"` is rejected; `--no-metadata-sidecar` fails when the target policy is

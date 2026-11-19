@@ -15,6 +15,7 @@ import tempfile
 import unittest
 
 DEFAULT_MP3_SETTINGS = "\n\n\n"
+DEFAULT_SCAN_SETTINGS = "\n"
 
 
 def run(*args, cwd=None, env=None):
@@ -774,7 +775,7 @@ class ConversionTests(unittest.TestCase):
         album.mkdir()
         (album / "one.flac").write_bytes(self.fixture.read_bytes())
         libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
-        result = self.legacy(libraries, "2\nRUN\n")
+        result = self.legacy(libraries, "2\n\nRUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
         def snapshot():
@@ -784,7 +785,8 @@ class ConversionTests(unittest.TestCase):
         before = snapshot()
         for option in (1, 2, 3, 4, 6):
             for response in (" \tBACK \t\n0\n", "EXIT\n", "BACK\n"):
-                settings = DEFAULT_MP3_SETTINGS if option == 6 else ""
+                settings = (DEFAULT_MP3_SETTINGS if option == 6 else
+                            DEFAULT_SCAN_SETTINGS if option == 2 else "")
                 result = self.legacy(libraries, f"{option}\n{settings}{response}")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(snapshot(), before)
@@ -1017,19 +1019,19 @@ class ConversionTests(unittest.TestCase):
         album.mkdir()
         (album / "one.flac").write_bytes(self.fixture.read_bytes())
         libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
-        result = self.legacy(libraries, "2\n\n")
+        result = self.legacy(libraries, "2\n\n\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Albums: 1; tracks: 1; metadata batches: 1", result.stdout)
         self.assertIn("JSON output count is determined during serialization.", result.stdout)
         self.assertFalse(self.output.exists())
-        result = self.legacy(libraries, "2\nRUN\n")
+        result = self.legacy(libraries, "2\n\nRUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assert_summary(result, "Completed", 1, "album JSON files")
         self.assertEqual(result.stdout.count("===Loading album collection from storage==="), 1)
         json_path = self.output / "Library" / "media_out_Library_1.json"
         self.assertTrue(json_path.exists())
         before = json_path.read_bytes()
-        result = self.legacy(libraries, "2\n\n")
+        result = self.legacy(libraries, "2\n\n\n")
         self.assertEqual(result.returncode, 0)
         self.assertIn("Existing generated JSON files to replace: 1", result.stdout)
         self.assertEqual(json_path.read_bytes(), before)
@@ -1066,6 +1068,145 @@ class ConversionTests(unittest.TestCase):
         self.assertIn("Database: existing records will be updated", result.stdout)
         self.assertEqual(db.read_bytes(), before_db)
 
+    def test_manual_scan_flac_archive_choice_and_cancellation(self):
+        second = self.work / "second"
+        second.mkdir()
+        second_track = second / "two.flac"
+        second_track.write_bytes(self.fixture.read_bytes())
+        libraries = [
+            {"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"},
+            {"isActive": True, "mediaPath": str(second), "mediaName": "Second"}]
+        for selection in ("2\nBACK\n0\n", "2\nEXIT\n", "2\n"):
+            result = self.legacy(libraries, selection)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("Operation preview: scan", result.stdout)
+            self.assertFalse(self.output.exists())
+
+        result = self.legacy(libraries, "2\ninvalid\nYES\nRUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Invalid selection. Enter YES or NO.", result.stdout)
+        self.assertIn("Byte-exact FLAC metadata archives: enabled", result.stdout)
+        target = self.output / "Library"
+        manifest_path = target / "scan-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(len(manifest["archives"]), 1)
+        archive = target / manifest["archives"][0]["file"]
+        self.assertEqual(archive.read_bytes(), self.prefix)
+        second_target = self.output / "Second"
+        second_manifest_path = second_target / "scan-manifest.json"
+        second_manifest = json.loads(second_manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(len(second_manifest["archives"]), 1)
+        second_archive = second_target / second_manifest["archives"][0]["file"]
+        self.assertEqual(second_archive.read_bytes(), self.prefix)
+        self.assertNotIn("ScanFlacMetadataArchives",
+                         json.loads((self.work / "config.json").read_text(encoding="utf-8")))
+
+        result = self.legacy(libraries, "2\nNO\nRUN\n", ScanFlacMetadataArchives=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("archives [YES]", result.stdout)
+        self.assertIn("Byte-exact FLAC metadata archives: disabled", result.stdout)
+        self.assertIn("Previous manifest-owned archives will be removed", result.stdout)
+        self.assertFalse(archive.exists())
+        self.assertFalse(second_archive.exists())
+        self.assertEqual(json.loads(manifest_path.read_text(encoding="utf-8"))["archives"], [])
+        self.assertEqual(json.loads(second_manifest_path.read_text(encoding="utf-8"))["archives"], [])
+        self.assertTrue(json.loads((self.work / "config.json").read_text(encoding="utf-8"))
+                        ["ScanFlacMetadataArchives"])
+
+        result = self.legacy(libraries, "2\n\nRUN\n", ScanFlacMetadataArchives=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(archive.read_bytes(), self.prefix)
+        self.assertEqual(second_archive.read_bytes(), self.prefix)
+        self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+        self.assertEqual(hashlib.sha256(second_track.read_bytes()).digest(), self.original_hash)
+
+    def test_scan_archive_config_and_cli_overrides(self):
+        config = json.loads(self.config.read_text(encoding="utf-8"))
+        config["ScanFlacMetadataArchives"] = True
+        config_path = self.work / "scan-archive-config.json"
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        command = [ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                   "--config", config_path]
+        target = self.output / self.source.name
+        manifest_path = target / "scan-manifest.json"
+
+        result = run(*command)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(len(manifest["archives"]), 1)
+        archive = target / manifest["archives"][0]["file"]
+        self.assertEqual(archive.read_bytes(), self.prefix)
+
+        if os.name == "nt":
+            before_manifest = manifest_path.read_bytes()
+            before_batches = {path.name: path.read_bytes()
+                              for path in target.glob("media_out_*.json")}
+            with deny_delete(archive):
+                result = run(*command, "--no-archive-flac-metadata")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(manifest_path.read_bytes(), before_manifest)
+            self.assertEqual(archive.read_bytes(), self.prefix)
+            self.assertEqual({path.name: path.read_bytes()
+                              for path in target.glob("media_out_*.json")}, before_batches)
+
+        result = run(*command, "--no-archive-flac-metadata")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(archive.exists())
+        self.assertEqual(json.loads(manifest_path.read_text(encoding="utf-8"))["archives"], [])
+        self.assertTrue(json.loads(config_path.read_text(encoding="utf-8"))
+                        ["ScanFlacMetadataArchives"])
+        result = run(ARGS.converter, "db", "import", target, "--output-dir", self.work / "db",
+                     "--config", config_path)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        result = run(ARGS.converter, "duplicates", target, "--config", config_path)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        config["ScanFlacMetadataArchives"] = False
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        result = run(*command, "--archive-flac-metadata")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(archive.read_bytes(), self.prefix)
+        before = manifest_path.read_bytes()
+        result = run(*command, "--archive-flac-metadata", "--no-archive-flac-metadata")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(manifest_path.read_bytes(), before)
+        self.assertEqual(archive.read_bytes(), self.prefix)
+
+        config["ScanFlacMetadataArchives"] = "true"
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        result = run(*command)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ScanFlacMetadataArchives", result.stdout + result.stderr)
+        self.assertEqual(manifest_path.read_bytes(), before)
+        self.assertEqual(archive.read_bytes(), self.prefix)
+        self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+
+    @unittest.skipUnless(os.name == "nt", "Windows long-path regression")
+    def test_manual_scan_archive_toggle_with_long_output(self):
+        long_output = self.work / ("a" * 90) / ("b" * 90)
+        target = Path("\\\\?\\" + str(long_output / "Library"))
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
+        try:
+            result = self.legacy(libraries, "2\nYES\nRUN\n", OutDirectory=str(long_output))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            manifest_path = target / "scan-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(len(manifest["archives"]), 1)
+            archive = target / manifest["archives"][0]["file"]
+            self.assertEqual(archive.read_bytes(), self.prefix)
+
+            result = self.legacy(libraries, "2\nNO\nRUN\n", OutDirectory=str(long_output))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Existing generated JSON files to replace: 1", result.stdout)
+            self.assertIn("Incremental scan cache contains 1 catalog record(s).", result.stdout)
+            self.assertEqual(json.loads(manifest_path.read_text(encoding="utf-8"))["archives"], [])
+            self.assertFalse(archive.exists())
+            self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+        finally:
+            extended_output = "\\\\?\\" + str(long_output)
+            if os.path.exists(extended_output):
+                shutil.rmtree(extended_output)
+
     def test_scan_preview_discovery_failure_writes_fallback_report(self):
         missing = self.work / "missing-library"
         fallback_temp = self.work / "fallback-temp"
@@ -1081,7 +1222,7 @@ class ConversionTests(unittest.TestCase):
             "UTF8:" + str(self.work), encoding="utf-8")
         env = dict(os.environ, TEMP=str(fallback_temp), TMP=str(fallback_temp),
                    TMPDIR=str(fallback_temp))
-        result = subprocess.run([str(ARGS.converter)], input="2\n", cwd=self.work,
+        result = subprocess.run([str(ARGS.converter)], input="2\n\n", cwd=self.work,
                                 capture_output=True, text=True, encoding="utf-8",
                                 errors="replace", env=env)
         self.assertNotEqual(result.returncode, 0)
@@ -1112,7 +1253,7 @@ class ConversionTests(unittest.TestCase):
                 (album / name).write_bytes(self.fixture.read_bytes())
         scanned = self.legacy(
             [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
-            "2\nRUN\n")
+            "2\n\nRUN\n")
         self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
         json_directory = self.output / "Library"
         json_file = json_directory / "media_out_Library_1.json"
@@ -1165,7 +1306,7 @@ class ConversionTests(unittest.TestCase):
         album.mkdir()
         (album / "one.flac").write_bytes(self.fixture.read_bytes())
         libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
-        result = self.legacy(libraries, "2\nRUN\n")
+        result = self.legacy(libraries, "2\n\nRUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         (self.output / "Library" / "media_out_Library_2.json").write_bytes(b"{invalid JSON")
         result = self.legacy(libraries, "4\nRUN\n")
@@ -1276,12 +1417,12 @@ class ConversionTests(unittest.TestCase):
         libraries = [
             {"isActive": True, "mediaPath": str(self.source), "mediaName": "First"},
             {"isActive": True, "mediaPath": str(second), "mediaName": "Second"}]
-        result = self.legacy(libraries, "2\nRUN\n")
+        result = self.legacy(libraries, "2\n\nRUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         second_json = self.output / "Second" / "media_out_Second_1.json"
         before = second_json.read_bytes()
         with deny_delete(second_json):
-            result = self.legacy(libraries, "2\nRUN\n")
+            result = self.legacy(libraries, "2\n\nRUN\n")
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assert_summary(result, "Partially completed", 1, "album JSON files", failed=1)
         self.assertEqual(second_json.read_bytes(), before)
@@ -1304,7 +1445,7 @@ class ConversionTests(unittest.TestCase):
         settings = {"AlbumsSplitThreshold": 1}
         if os.name == "nt":
             settings["OutDirectory"] = "\\\\?\\" + str(self.output)
-        scanned = self.legacy(libraries, "2\nRUN\n", **settings)
+        scanned = self.legacy(libraries, "2\n\nRUN\n", **settings)
         self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
         original_outputs = {path: path.read_bytes()
                             for path in self.output.rglob("*") if path.is_file()}
@@ -1338,7 +1479,7 @@ class ConversionTests(unittest.TestCase):
         album.mkdir()
         (album / "one.flac").write_bytes(self.fixture.read_bytes())
         scanned = self.legacy(
-            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}], "2\nRUN\n")
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}], "2\n\nRUN\n")
         self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
         albums = (self.output / "Library" / "media_out_Library_1.json").read_bytes()
         albums_data = json.loads(albums)
@@ -1361,7 +1502,7 @@ class ConversionTests(unittest.TestCase):
     def test_database_import_uses_supplied_directory_alias(self):
         scanned = self.legacy(
             [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
-            "2\nRUN\n")
+            "2\n\nRUN\n")
         self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
         json_directory = self.output / "Library"
         json_file = json_directory / "media_out_Library_1.json"
@@ -1390,7 +1531,7 @@ class ConversionTests(unittest.TestCase):
     def test_database_import_supports_long_output_path(self):
         scanned = self.legacy(
             [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
-            "2\nRUN\n")
+            "2\n\nRUN\n")
         self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
         long_output = self.work / "long-db" / ("a" * 90) / ("b" * 90)
         try:
@@ -1412,7 +1553,7 @@ class ConversionTests(unittest.TestCase):
         (album / "two.flac").write_bytes(self.fixture.read_bytes())
         scanned = self.legacy(
             [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
-            "2\nRUN\n")
+            "2\n\nRUN\n")
         self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
         json_directory = self.output / "Library"
         json_file = json_directory / "media_out_Library_1.json"
@@ -1499,7 +1640,7 @@ class ConversionTests(unittest.TestCase):
         (album / "one.flac").write_bytes(self.fixture.read_bytes())
         scanned = self.legacy(
             [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
-            "2\nRUN\n")
+            "2\n\nRUN\n")
         self.assertEqual(scanned.returncode, 0, scanned.stdout + scanned.stderr)
 
         database_output = self.work / "incompatible-database-output"
@@ -1543,7 +1684,7 @@ class ConversionTests(unittest.TestCase):
             (album / "one.flac").write_bytes(self.fixture.read_bytes())
         libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": self.source.name}]
         for asynchronous in (False, True):
-            result = self.legacy(libraries, "2\nRUN\n", AlbumsSplitThreshold=2,
+            result = self.legacy(libraries, "2\n\nRUN\n", AlbumsSplitThreshold=2,
                                  UseAsyncFFmpegCalls=asynchronous)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(result.stdout.count("===Loading album collection from storage==="), 1)

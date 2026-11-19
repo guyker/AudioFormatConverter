@@ -11,6 +11,9 @@ completed or Failed with confirmed counts, and the program exits. Duplicate revi
 when ended early. `0` or EOF at the menu exits; `?` shows help.
 After the initial `RUN`, option 3 pauses per duplicate pair; an optional whole-folder move to `deleted` requires
 its own path preview and exact `MOVE` confirmation (F-005). Enter continues the review rather than canceling it.
+Before the option 2 preview, a per-run YES/NO prompt selects byte-exact FLAC metadata archives; Enter keeps the
+configured default (normally NO), and BACK/EXIT/EOF cancels before the scan. The preview shows the selected policy
+and warns that prior manifest-owned archives are retired after success (F-004).
 An exception is a scan preview preflight or discovery failure: it attempts to write a diagnostic report to a safe
 system temporary directory and logs its location; it does not install a catalog.
 
@@ -26,6 +29,7 @@ system temporary directory and logs its location; it does not install a catalog.
 ## Acceptance checks
 - [ ] Canceling at the confirmation writes nothing; a scan preview failure may write a temporary diagnostic report.
 - [ ] `BACK` returns to the menu; EOF on stdin exits cleanly.
+- [ ] Option 2 can enable or disable FLAC archives before the preview without changing the saved configuration.
 - [ ] A conflict in one library blocks all libraries.
 - [ ] Summary counts match files actually installed.
 

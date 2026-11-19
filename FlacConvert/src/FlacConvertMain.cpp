@@ -87,6 +87,16 @@ fs::path pathFromUtf8(const std::string& path)
     return CommonUtils::path_from_utf8(path);
 }
 
+fs::path scanOutputIoPath(const fs::path& path)
+{
+#ifdef _WIN32
+    // Archive names can exceed MAX_PATH even when the containing directory does not.
+    return PlatformUtils::WindowsLongPath(path, true);
+#else
+    return path;
+#endif
+}
+
 fs::path uniqueSiblingPath(const fs::path& path, const char* marker)
 {
     static std::atomic_uint64_t sequence{ 0 };
@@ -379,7 +389,8 @@ bool parseScanManifest(const fs::path& path, ScanManifestData& manifest)
     return true;
 }
 
-bool writeScanManifest(const fs::path& stagedDirectory, ScanManifestData& manifest)
+bool writeScanManifest(const fs::path& stagedDirectory, ScanManifestData& manifest,
+    bool archiveFlacMetadata)
 {
     std::error_code ec;
     for (fs::directory_iterator it(stagedDirectory, ec), end; !ec && it != end; it.increment(ec)) {
@@ -412,7 +423,9 @@ bool writeScanManifest(const fs::path& stagedDirectory, ScanManifestData& manife
     writer.Key("batchIntegrity");
     writer.String("SHA-256 of every staged media_out_*.json file; consumers must match the complete set.");
     writer.Key("archivePolicy");
-    writer.String("Exact native FLAC metadata bytes only; non-native formats are listed as unsupported.");
+    writer.String(archiveFlacMetadata
+        ? "Enabled: exact native FLAC metadata bytes only; non-native formats are listed as unsupported."
+        : "Disabled: no byte-exact metadata archives were created.");
     writer.Key("batches"); writer.StartArray();
     for (const auto& batch : manifest.batches) {
         writer.StartObject();
@@ -1044,9 +1057,10 @@ std::map<std::string, MediaRecord> loadCatalogCache(
     const fs::path& directory, const fs::path& libraryRoot)
 {
     std::map<std::string, MediaRecord> cache;
-    const auto files = findJsonFiles(directory);
+    const auto cacheDirectory = scanOutputIoPath(directory);
+    const auto files = findJsonFiles(cacheDirectory);
     if (files.empty()) {
-        validateScanManifest(directory, files, nullptr);
+        validateScanManifest(cacheDirectory, files, nullptr);
         return cache;
     }
 
@@ -1062,7 +1076,7 @@ std::map<std::string, MediaRecord> loadCatalogCache(
         }
         allAlbums->insert(allAlbums->end(), albums->begin(), albums->end());
     }
-    if (!validateScanManifest(directory, files, allAlbums.get())) {
+    if (!validateScanManifest(cacheDirectory, files, allAlbums.get())) {
         spdlog::warn("Ignoring the incremental metadata cache because its scan manifest is incomplete.");
         return {};
     }
@@ -1208,7 +1222,7 @@ MenuConfirmation ReadManualSetting(const char* prompt, std::string& response)
     std::cout << prompt << std::flush;
     if (!std::getline(std::cin, response)) {
         if (!std::cin.eof()) {
-            spdlog::error("Cannot read MP3 conversion settings.");
+            spdlog::error("Cannot read operation settings.");
             return MenuConfirmation::Error;
         }
         std::cout << "Cancelled. No action was started.\n";
@@ -1308,6 +1322,28 @@ MenuConfirmation ConfigureMenuSidecars(ConversionOptions& options)
         }
         if (response == "NO") {
             options.sidecarFormat = MetadataSidecarFormat::None;
+            return MenuConfirmation::Run;
+        }
+        std::cout << "Invalid selection. Enter YES or NO.\n";
+    }
+}
+
+MenuConfirmation ConfigureMenuScanArchives(bool& enabled)
+{
+    std::cout << "\nScan settings: Enter keeps the configured default; BACK returns to the menu; EXIT quits.\n";
+    for (;;) {
+        std::string response;
+        const std::string prompt = std::string("Export byte-exact FLAC metadata archives [") +
+            (enabled ? "YES" : "NO") + "] (YES/NO): ";
+        const auto choice = ReadManualSetting(prompt.c_str(), response);
+        if (choice != MenuConfirmation::Run) {
+            return choice;
+        }
+        if (response.empty()) {
+            return MenuConfirmation::Run;
+        }
+        if (response == "YES" || response == "NO") {
+            enabled = response == "YES";
             return MenuConfirmation::Run;
         }
         std::cout << "Invalid selection. Enter YES or NO.\n";
@@ -1473,8 +1509,8 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& libraries, const 
 }
 
 int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryList, bool bIncludeMetadata,
-    const fs::path& outputRoot, bool preview = false, ManualOperationSummary* summary = nullptr,
-    bool fullRescan = false)
+    const fs::path& outputRoot, bool archiveFlacMetadata, bool preview = false,
+    ManualOperationSummary* summary = nullptr, bool fullRescan = false)
 {
     if (summary) {
         summary->unit = "album JSON files";
@@ -1543,14 +1579,15 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             }
             targets.push_back(key);
             std::size_t previous = 0;
-            const bool targetExists = fs::exists(target, ec);
-            if (ec || (targetExists && !fs::is_directory(target, ec)) || ec) {
+            const auto targetIo = scanOutputIoPath(target);
+            const bool targetExists = fs::exists(targetIo, ec);
+            if (ec || (targetExists && !fs::is_directory(targetIo, ec)) || ec) {
                 spdlog::error("Cannot inspect scan destination: '{}'.", pathToUtf8(target));
                 reportPreflight(source, target, "Cannot inspect scan destination.", target, ec);
                 return 1;
             }
             if (targetExists) {
-                for (fs::directory_iterator it(target, ec), end; !ec && it != end; it.increment(ec)) {
+                for (fs::directory_iterator it(targetIo, ec), end; !ec && it != end; it.increment(ec)) {
                     if (isGeneratedJsonOutput(*it, ec)) {
                         ++previous;
                     }
@@ -1589,7 +1626,12 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                 << "; metadata batches: " << batches.size() << '\n'
                 << "  JSON output count is determined during serialization.\n"
                 << "  Existing generated JSON files to replace: " << previous << '\n'
-                << "  Overwrite: generated JSON only; databases and sources unchanged.\n";
+                << "  Byte-exact FLAC metadata archives: "
+                << (archiveFlacMetadata ? "enabled" : "disabled") << '\n'
+                << "  Previous manifest-owned archives will be "
+                << (archiveFlacMetadata ? "replaced or retired" : "removed")
+                << " after a successful scan.\n"
+                << "  Overwrite: generated JSON and manifest; databases and sources unchanged.\n";
             if (batches.empty()) {
                 spdlog::error("No albums found; no output will be replaced.");
                 reportPreflight(source, target, "No albums found; no output will be replaced.", source);
@@ -1605,6 +1647,8 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             summary->Start();
         }
     }
+    spdlog::info("Byte-exact FLAC metadata archive export: {}.",
+        archiveFlacMetadata ? "enabled" : "disabled");
     std::size_t libraryIndex = 0;
     for (auto& mediaEntry : mediaDirectoryList)
     {
@@ -1872,7 +1916,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                     &scanReport.diagnostics, writeAlbumStream) || !finishOutput()) {
                     throw std::runtime_error("Failed to write an album JSON file.");
                 }
-                if (!archiveBatchMetadata(
+                if (archiveFlacMetadata && !archiveBatchMetadata(
                         albumListPtr, libraryIoPath, stagedDirectory,
                         scanManifest, scanReport.diagnostics)) {
                     throw std::runtime_error("Failed to create a verified native FLAC metadata archive.");
@@ -1949,7 +1993,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                         "' were not archived." }
             });
         }
-        if (!writeScanManifest(stagedDirectory, scanManifest)) {
+        if (!writeScanManifest(stagedDirectory, scanManifest, archiveFlacMetadata)) {
             scanReport.diagnostics.push_back({
                 std::nullopt, std::nullopt,
                 { "manifest", "filesystem", DiagnosticCode::ScanManifestInvalid,
@@ -2551,10 +2595,11 @@ constexpr std::array<MenuEntry, 6> MenuEntries{ {
     { '2', ConvertActionEnum::CreateJSONEnum, "Scan directories and create metadata JSON",
         "      Input: audio libraries; reads track tags and technical metadata.\n"
         "      Output: OutDirectory/<mediaName>/media_out_<mediaName>_<part>.json.\n"
-        "              scan-report.json records run status and path-linked diagnostics.\n"
-        "      Changes: replaces the previous generated JSON set after a successful scan;\n"
-        "               a failed scan preserves the previous generated JSON and writes diagnostics;\n"
+        "              scan-report.json and scan-manifest.json; optional byte-exact FLAC archives.\n"
+        "      Changes: replaces generated JSON, manifest and prior manifest-owned archives after\n"
+        "               a successful scan; a failed scan preserves them and writes diagnostics;\n"
         "               source audio, existing databases and unrelated files are unchanged.\n"
+        "      The archive choice defaults to ScanFlacMetadataArchives (normally NO).\n"
         "      <mediaName> defaults to the source folder name; <part> is a numbered batch.\n" },
     { '3', ConvertActionEnum::ProcessJSONEnum, "Find duplicate albums",
         "      Input: generated JSON from option 2; source folders must remain accessible\n"
@@ -2732,8 +2777,16 @@ int RunLegacyMenu()
         case ConvertActionEnum::ConverEnum: //1
             return ConvertFLACToFLAC(mediaList, pathFromUtf8(appSettingPtr->OutDirectory), summary);
 
-        case ConvertActionEnum::CreateJSONEnum: //2
-            return ScanFolderAndCreateJSON(mediaList, true, pathFromUtf8(appSettingPtr->OutDirectory), true, &summary);
+        case ConvertActionEnum::CreateJSONEnum: { //2
+            bool archiveFlacMetadata = appSettingPtr->ScanFlacMetadataArchives;
+            const auto choice = ConfigureMenuScanArchives(archiveFlacMetadata);
+            if (choice != MenuConfirmation::Run) {
+                return cancelledMenuResult(choice);
+            }
+            return ScanFolderAndCreateJSON(
+                mediaList, true, pathFromUtf8(appSettingPtr->OutDirectory),
+                archiveFlacMetadata, true, &summary);
+        }
 
         case ConvertActionEnum::ProcessJSONEnum: //3
         {
@@ -2882,6 +2935,8 @@ int RunWithArguments(const std::vector<const char*>& arguments)
             if (options.scanTierSpecified) {
                 settings->ScanTier = options.scanTier;
             }
+            const bool archiveFlacMetadata = options.archiveFlacMetadata ||
+                (!options.noArchiveFlacMetadata && settings->ScanFlacMetadataArchives);
             // Scan through the given path, as the menu does; canonicalizing would expand 8.3 names and turn
             // mapped drives into UNC paths in the catalog.
             fs::path scanRoot = absoluteDisplayPath(inputPath);
@@ -2892,7 +2947,8 @@ int RunWithArguments(const std::vector<const char*>& arguments)
             library.mediaPath = pathToUtf8(scanRoot);
             library.mediaName = directoryNameUtf8(scanRoot);
             return ScanFolderAndCreateJSON(
-                { library }, true, outputDirectory, false, nullptr, options.fullRescan);
+                { library }, true, outputDirectory, archiveFlacMetadata,
+                false, nullptr, options.fullRescan);
         }
 
         case CommandAction::Duplicates:

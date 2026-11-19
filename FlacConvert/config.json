@@ -24,7 +24,8 @@
       "mediaName": "flac_tracks2"
     }
   ],
-  // Original FLAC metadata archives are used by conversion runs only (menu 1/6 and CLI convert).
+  // MetadataSidecars applies to conversion runs only (menu 1/6 and CLI convert).
+  // Scan metadata archives are controlled independently by ScanFlacMetadataArchives below.
   "MetadataSidecars": {
     // "binary" writes .flac-metadata.
     // "json" writes .flac-metadata.json (readable metadata plus the exact archive as Base64).
@@ -39,6 +40,9 @@
   "LogLevel": 1,
   "UseAsyncMetadataReads": true,
   "Incremental": true,
+  // Option 2/scan: export byte-exact native FLAC metadata archives separately from catalog JSON.
+  // The menu asks per run; scan --archive-flac-metadata/--no-archive-flac-metadata override this value.
+  "ScanFlacMetadataArchives": false,
   // Default scan depth; CLI scan --tier overrides this for one run.
   // catalog reads tags/properties; integrity fully decodes; analysis adds signal measurements.
   "ScanTier": "catalog",

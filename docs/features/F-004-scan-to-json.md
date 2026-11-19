@@ -20,11 +20,15 @@ batches, and installed batches. Discovery counts can be partial if enumeration f
 at scan scope and intentionally remain unattributed to a track.
 FFmpeg format and stream tags are included with separate source scopes; older incremental records are reread to
 populate this inventory. Each successful scan also writes `scan-manifest.json`, which inventories every batch by
-filename, size, and SHA-256 and lists verified metadata-only archives for native FLAC files. Album records carry the
+filename, size, and SHA-256. Separate byte-exact native FLAC metadata archives are optional and default to off via
+`ScanFlacMetadataArchives`; menu option 2 asks for a per-run choice, and CLI `--archive-flac-metadata` or
+`--no-archive-flac-metadata` overrides the configured default. Readable catalog JSON is written in either mode.
+When enabled, the manifest lists verified archives; when disabled, it records the policy and lists none. Album records carry the
 manifest scan ID. Duplicate detection, database import, and incremental cache reuse reject missing, extra, or changed
 batches before using the records. Legacy batches without a manifest ID remain readable. Native FLAC archives retain
 the original FLAC marker, metadata blocks, and recognized leading/trailing ID3/APE tags without copying audio;
-unsupported formats and counts are listed in the manifest and scan warnings.
+when archiving is enabled, unsupported formats and counts are listed in the manifest and scan warnings. A successful
+rescan retires archives owned by the previous manifest even when archiving is disabled; a failed scan preserves them.
 
 The reader records findings for missing title/artist/album tags, malformed track/disc numbers, non-ISO dates,
 malformed MusicBrainz UUIDs, ISRCs and EAN/UPC/GTIN check digits, inconsistent album-level tags within a directory,
@@ -48,7 +52,7 @@ preserves prior catalog files. Duplicate detection and database import validate 
 then reassemble fragment sets before use.
 
 ## Entry points
-- `FlacConvert scan <library> [--output-dir] [--full-rescan] [--tier catalog|integrity|analysis]` → `FlacConvertMain.cpp#RunWithArguments`
+- `FlacConvert scan <library> [--output-dir] [--full-rescan] [--tier catalog|integrity|analysis] [--archive-flac-metadata|--no-archive-flac-metadata]` → `FlacConvertMain.cpp#RunWithArguments`
 - Menu option 2 → `FlacConvertMain.cpp#ScanFolderAndCreateJSON`, `FlacConvertMain.cpp#installGeneratedFiles`
 - `AlbumCollection.cpp#AlbumCollection::LoadAlbumsCo`, `AlbumCollection.cpp#AlbumCollection::ImportMetadata`,
   `AlbumCollection.cpp#AlbumCollection::SaveAlbumsToJSON`
@@ -59,7 +63,7 @@ then reassemble fragment sets before use.
 - Schema: `docs/schemas/media-catalog-v2.schema.json`
 - Manifest schema: `docs/schemas/scan-manifest-v1.schema.json`
 - Scan report schema: `docs/schemas/scan-report-v2.schema.json` (version 1 remains available for older reports)
-- K-051 manifest-owned scan output replacement; K-035 fail scans before installing incomplete metadata
+- K-051 manifest-owned scan output replacement; K-053 opt-in FLAC scan archives; K-035 fail scans before installing incomplete metadata
 
 ## Acceptance checks
 - [ ] Output JSON validates against the v2 schema and contains one object per album with non-empty `Tracks`.
@@ -84,14 +88,15 @@ then reassemble fragment sets before use.
 - [ ] A malformed or unusable accepted track fails the scan instead of installing an incomplete catalog.
 - [ ] A TagLib extraction failure reports the source path and underlying diagnostic.
 - [ ] Output directory overlapping the source library is rejected.
-- [ ] On Windows, scan installs valid schema-v2 JSON under an output path longer than `MAX_PATH`.
+- [ ] On Windows, repeated scans work under near-limit and longer output paths, including toggling and retiring archives whose full paths exceed `MAX_PATH`.
 - [ ] With the byte target disabled, batch count = ceil(albums / `AlbumsSplitThreshold`).
 - [ ] With a byte limit, all batches fit, large albums reassemble correctly, and an oversized track fails safely.
-- [ ] A successful scan writes a manifest whose batch hashes/sizes match the complete batch set and whose archives verify against native FLAC sources.
+- [ ] Archive export defaults to off; menu choice and CLI flags override the configured default without changing catalog tags.
+- [ ] A successful scan writes a manifest whose batch hashes/sizes match the complete batch set and whose enabled archives verify against native FLAC sources.
 - [ ] Missing or modified batches, missing archives, and a missing manifest for manifest-marked albums fail before duplicate, database, or cache use.
-- [ ] Unsupported formats are identified and counted without claiming byte-exact archive coverage.
+- [ ] With archiving enabled, unsupported formats are identified and counted without claiming byte-exact archive coverage.
 - [ ] A failed scan/install preserves the previous manifest, JSON batches, and metadata archives; unrelated files and databases remain unchanged.
-- [ ] A successful rescan retires only archives owned by the previous manifest and keeps the latest successful scan's archives.
+- [ ] A successful rescan retires only archives owned by the previous manifest, including when export is disabled.
 - [ ] With `JsonBatchTargetBytes=0`, serialization streams the album wrapper and one track record at a time.
 - [ ] Missing, duplicate, inconsistent or mixed album fragments are rejected before database import or duplicate detection.
 - [ ] With async metadata reads enabled, scan succeeds when the configured worker cap is lower than the album's track count.
@@ -99,7 +104,7 @@ then reassemble fragment sets before use.
 
 ## Known limitations
 - `CatalogExtensions` defaults to `.flac` and `.mp3`; other formats require explicit opt-in.
-- `rawTags` contains decoded tag entries, not byte-exact source metadata. Only native FLAC metadata bytes are archived; MP3 and other formats are listed as unsupported for byte-exact archive coverage.
+- `rawTags` contains decoded tag entries, not byte-exact source metadata. When enabled, archives cover native FLAC only; MP3 and other formats are listed as unsupported for byte-exact archive coverage.
 - Files and paths skipped because their extensions are not configured are not currently emitted in a separate discovery inventory.
 - Scan diagnostics cover surfaced read, probe, decode, serialization, and installation errors; they are not a complete dump of all FFmpeg log levels or an exhaustive inventory of skipped files.
 - Unscoped FFmpeg warnings/errors are recorded at scan scope, not guessed to belong to a track. Scan preflight and

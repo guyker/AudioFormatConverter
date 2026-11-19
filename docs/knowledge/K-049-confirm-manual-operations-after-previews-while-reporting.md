@@ -6,7 +6,7 @@ area: [FlacConvert]
 status: active
 supersedes: [K-027]
 created: 2026-11-18
-reviewed: 2026-11-18
+reviewed: 2026-11-19
 cites:
   - path: FlacConvert/src/FlacConvertMain.cpp
     symbol: ConfirmPreview

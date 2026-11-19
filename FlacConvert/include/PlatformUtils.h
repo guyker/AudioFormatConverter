@@ -42,7 +42,7 @@ namespace PlatformUtils {
 	std::string WideToUTF8(const std::wstring& wstr);
 	std::string wstringToUtf8_ver2(const std::wstring& wstr);
 #ifdef _WIN32
-	std::wstring WindowsLongPath(const std::filesystem::path& path);
+	std::wstring WindowsLongPath(const std::filesystem::path& path, bool forceExtended = false);
 #endif
 
 	void OpenDirectoryInExplorer(std::wstring dirName);
