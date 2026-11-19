@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <spdlog/spdlog.h>
 #include <system_error>
+#include "PlatformUtils.h"
 
 
 namespace CommonUtils {
@@ -141,6 +142,17 @@ namespace CommonUtils {
 	}
 
     void show_progress_bar(std::shared_ptr<ProgressBarInfo> progressInfoPtr, ProgressBarType progressType) {
+        if (!PlatformUtils::IsStdoutInteractive()) {
+            if (progressType == ProgressBarType::Complete) {
+                spdlog::debug("Progress completed: {} ({}/{}).",
+                    progressInfoPtr->name, progressInfoPtr->count, progressInfoPtr->size);
+            }
+            return;
+        }
+        render_progress_bar(std::move(progressInfoPtr), progressType, PlatformUtils::EnableConsoleColors());
+    }
+
+    void render_progress_bar(std::shared_ptr<ProgressBarInfo> progressInfoPtr, ProgressBarType progressType, bool useColor) {
         //const char* spinner = "|/-\\";
         static std::string spinnerDone = std::string(reinterpret_cast<const char*>(u8"\u2714"));
         static std::string spinner = std::string(reinterpret_cast<const char*>(u8"\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F"));
@@ -206,8 +218,10 @@ namespace CommonUtils {
         if (progressType == ProgressBarType::Complete)
         {
          //   std::cout << "\r";
-            std::string green_name = "\033[32m" + progressInfoPtr->name + "\033[0m";
-            std::string spinnerDoneGreen = "\033[32m" + spinnerDone + "\033[0m";
+            std::string green_name = useColor
+                ? "\033[32m" + progressInfoPtr->name + "\033[0m" : progressInfoPtr->name;
+            std::string spinnerDoneGreen = useColor
+                ? "\033[32m" + spinnerDone + "\033[0m" : spinnerDone;
 
             if (bSubProgress) {
                 spdlog::info("{}  Progress: [{}] {}% {}/{} - {}", spinnerDoneGreen, bar, percent, normalized_count, size, green_name);

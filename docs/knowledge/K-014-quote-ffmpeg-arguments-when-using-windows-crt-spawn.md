@@ -3,8 +3,9 @@ id: K-014
 kind: trap
 title: "Quote FFmpeg arguments when using Windows CRT spawn"
 area: [FlacConvert]
-status: active
+status: superseded
 supersedes: [K-004]
+superseded_by: K-056
 created: 2026-10-10
 reviewed: 2026-11-16
 cites:

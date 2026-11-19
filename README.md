@@ -162,6 +162,11 @@ documents and structural warnings, use
 
 The executable supports explicit commands. Run `FlacConvert --help` or append `--help` to a command for detailed
 input, output, configuration, and example information.
+Each invocation writes a session log under `%LOCALAPPDATA%\AudioFormatConverter\logs` on Windows or the platform
+state directory elsewhere. Console output stays concise; `--log-level info|debug|trace` controls detail in the log
+file, not console warnings/errors. The configured `LogLevel` is the default file-log threshold. Structured conversion
+audits and scan reports remain separate outputs. Logs can contain library paths and diagnostic metadata; inactive
+session logs older than 30 days or beyond the 1 GiB retention limit are removed.
 
 ```text
 FlacConvert convert "D:\Music" --output-dir "E:\Converted"

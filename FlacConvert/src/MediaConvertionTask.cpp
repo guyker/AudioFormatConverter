@@ -9,12 +9,12 @@
 #include <filesystem>
 #include <optional>
 #include <sstream>
+#include <string_view>
 #include <utility>
 #include <vector>
 #include <system_error>
 
 #ifdef _WIN32
-#include <process.h>
 #include <windows.h>
 #else
 #include <sys/types.h>
@@ -35,6 +35,34 @@ namespace fs = std::filesystem;
 
 namespace
 {
+void logFFmpegOutput(std::string& pending, std::string_view chunk, const fs::path& source)
+{
+    pending.append(chunk);
+    std::size_t newline = 0;
+    while ((newline = pending.find('\n')) != std::string::npos) {
+        auto line = pending.substr(0, newline);
+        pending.erase(0, newline + 1);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty()) {
+            spdlog::warn("FFmpeg [{}]: {}", CommonUtils::path_to_utf8(source), line);
+        }
+    }
+    constexpr std::size_t maxPendingBytes = 8192;
+    while (pending.size() >= maxPendingBytes) {
+        spdlog::warn("FFmpeg [{}]: {}", CommonUtils::path_to_utf8(source),
+            pending.substr(0, maxPendingBytes));
+        pending.erase(0, maxPendingBytes);
+    }
+}
+
+void flushFFmpegOutput(std::string& pending, const fs::path& source)
+{
+    if (!pending.empty() && pending.back() == '\r') pending.pop_back();
+    if (!pending.empty()) {
+        spdlog::warn("FFmpeg [{}]: {}", CommonUtils::path_to_utf8(source), pending);
+    }
+}
+
 std::optional<int> parseInteger(const std::optional<std::string>& value)
 {
     if (!value || value->empty()) {
@@ -228,7 +256,7 @@ std::vector<std::string> conversionArguments(const ConversionOptions& options,
 }
 
 int runFFmpeg(const std::wstring& executable, const fs::path& source, const fs::path& destination,
-    bool overwrite, const std::vector<std::string>& conversion)
+    bool overwrite, const std::vector<std::string>& conversion, const fs::path& diagnosticSource)
 {
 #ifdef _WIN32
     std::vector<std::wstring> arguments{ executable, L"-nostdin", L"-xerror", L"-i",
@@ -237,31 +265,109 @@ int runFFmpeg(const std::wstring& executable, const fs::path& source, const fs::
         arguments.push_back(CommonUtils::utf8ToWstring(argument));
     }
     arguments.insert(arguments.end(), { overwrite ? L"-y" : L"-n", L"-v", L"warning",
-        L"-stats", PlatformUtils::WindowsLongPath(destination) });
+        L"-nostats", PlatformUtils::WindowsLongPath(destination) });
     // The Windows CRT joins spawn arguments into a command line without quoting them.
     std::vector<std::wstring> quotedArguments;
     quotedArguments.reserve(arguments.size());
     for (const auto& argument : arguments) {
         quotedArguments.push_back(quoteWindowsArgument(argument));
     }
-    std::vector<const wchar_t*> pointers;
-    pointers.reserve(quotedArguments.size() + 1);
-    for (const auto& argument : quotedArguments) {
-        pointers.push_back(argument.c_str());
-    }
-    pointers.push_back(nullptr);
-    const intptr_t result = _wspawnvp(_P_WAIT, executable.c_str(), pointers.data());
-    if (result == -1) {
-        spdlog::error("Failed to launch FFmpeg: {}", std::system_category().message(errno));
+    SECURITY_ATTRIBUTES security{ sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
+    HANDLE readPipe = nullptr;
+    HANDLE writePipe = nullptr;
+    if (!CreatePipe(&readPipe, &writePipe, &security, 0) ||
+        !SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0)) {
+        const auto error = GetLastError();
+        if (readPipe) CloseHandle(readPipe);
+        if (writePipe) CloseHandle(writePipe);
+        spdlog::error("Cannot create FFmpeg diagnostic pipe: {}",
+            std::system_category().message(static_cast<int>(error)));
         return -1;
     }
-    return static_cast<int>(result);
+
+    HANDLE nullInput = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        &security, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (nullInput == INVALID_HANDLE_VALUE) {
+        const auto error = GetLastError();
+        CloseHandle(readPipe);
+        CloseHandle(writePipe);
+        spdlog::error("Cannot open null input for FFmpeg: {}",
+            std::system_category().message(static_cast<int>(error)));
+        return -1;
+    }
+
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = nullInput;
+    startup.hStdOutput = writePipe;
+    startup.hStdError = writePipe;
+    PROCESS_INFORMATION process{};
+    std::wstring commandLine;
+    for (const auto& argument : quotedArguments) {
+        if (!commandLine.empty()) commandLine.push_back(L' ');
+        commandLine += argument;
+    }
+    std::vector<wchar_t> mutableCommandLine(commandLine.begin(), commandLine.end());
+    mutableCommandLine.push_back(L'\0');
+    const BOOL created = CreateProcessW(nullptr, mutableCommandLine.data(),
+        nullptr, nullptr, TRUE, 0, nullptr, nullptr, &startup, &process);
+    const auto createError = created ? ERROR_SUCCESS : GetLastError();
+    CloseHandle(writePipe);
+    CloseHandle(nullInput);
+    if (!created) {
+        CloseHandle(readPipe);
+        spdlog::error("Failed to launch FFmpeg: {}",
+            std::system_category().message(static_cast<int>(createError)));
+        return -1;
+    }
+
+    std::string pending;
+    char buffer[4096];
+    DWORD bytesRead = 0;
+    bool captureFailed = false;
+    DWORD captureError = ERROR_SUCCESS;
+    for (;;) {
+        if (!ReadFile(readPipe, buffer, sizeof(buffer), &bytesRead, nullptr)) {
+            captureError = GetLastError();
+            captureFailed = captureError != ERROR_BROKEN_PIPE;
+            break;
+        }
+        if (bytesRead == 0) break;
+        logFFmpegOutput(pending, std::string_view(buffer, bytesRead), diagnosticSource);
+    }
+    flushFFmpegOutput(pending, diagnosticSource);
+    CloseHandle(readPipe);
+
+    const DWORD waitResult = WaitForSingleObject(process.hProcess, INFINITE);
+    const DWORD waitError = waitResult == WAIT_FAILED ? GetLastError() : ERROR_SUCCESS;
+    DWORD exitCode = 0;
+    const bool gotExitCode = GetExitCodeProcess(process.hProcess, &exitCode) != 0;
+    const DWORD exitError = gotExitCode ? ERROR_SUCCESS : GetLastError();
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    if (waitResult != WAIT_OBJECT_0) {
+        spdlog::error("Failed while waiting for FFmpeg: {}",
+            std::system_category().message(static_cast<int>(waitError)));
+        return -1;
+    }
+    if (!gotExitCode) {
+        spdlog::error("Cannot read FFmpeg exit code: {}",
+            std::system_category().message(static_cast<int>(exitError)));
+        return -1;
+    }
+    if (captureFailed) {
+        spdlog::error("Failed to capture FFmpeg diagnostics: {}",
+            std::system_category().message(static_cast<int>(captureError)));
+        return -1;
+    }
+    return static_cast<int>(exitCode);
 #else
     const std::string executableUtf8 = PlatformUtils::wstringToUtf8_ver2(executable);
     std::vector<std::string> arguments{ executableUtf8, "-nostdin", "-xerror", "-i", source.string() };
     arguments.insert(arguments.end(), conversion.begin(), conversion.end());
     arguments.insert(arguments.end(), {
-        overwrite ? "-y" : "-n", "-v", "warning", "-stats", destination.string() });
+        overwrite ? "-y" : "-n", "-v", "warning", "-nostats", destination.string() });
     std::vector<char*> pointers;
     pointers.reserve(arguments.size() + 1);
     for (const auto& argument : arguments) {
@@ -269,15 +375,49 @@ int runFFmpeg(const std::wstring& executable, const fs::path& source, const fs::
     }
     pointers.push_back(nullptr);
 
+    int diagnosticPipe[2]{};
+    if (pipe(diagnosticPipe) != 0) {
+        spdlog::error("Cannot create FFmpeg diagnostic pipe: {}",
+            std::system_category().message(errno));
+        return -1;
+    }
     const pid_t child = fork();
     if (child == -1) {
+        close(diagnosticPipe[0]);
+        close(diagnosticPipe[1]);
         spdlog::error("Failed to launch FFmpeg: {}", std::system_category().message(errno));
         return -1;
     }
     if (child == 0) {
+        close(diagnosticPipe[0]);
+        if (dup2(diagnosticPipe[1], STDERR_FILENO) == -1 ||
+            dup2(diagnosticPipe[1], STDOUT_FILENO) == -1) {
+            _exit(126);
+        }
+        close(diagnosticPipe[1]);
         execvp(executableUtf8.c_str(), pointers.data());
         _exit(errno == ENOENT ? 127 : 126);
     }
+
+    close(diagnosticPipe[1]);
+    std::string pending;
+    char buffer[4096];
+    ssize_t bytesRead = 0;
+    bool captureFailed = false;
+    int captureError = 0;
+    for (;;) {
+        bytesRead = read(diagnosticPipe[0], buffer, sizeof(buffer));
+        if (bytesRead == -1 && errno == EINTR) continue;
+        if (bytesRead == -1) {
+            captureFailed = true;
+            captureError = errno;
+            break;
+        }
+        if (bytesRead == 0) break;
+        logFFmpegOutput(pending, std::string_view(buffer, static_cast<std::size_t>(bytesRead)), diagnosticSource);
+    }
+    flushFFmpegOutput(pending, diagnosticSource);
+    close(diagnosticPipe[0]);
 
     int status = 0;
     while (waitpid(child, &status, 0) == -1) {
@@ -287,7 +427,17 @@ int runFFmpeg(const std::wstring& executable, const fs::path& source, const fs::
         }
     }
     if (WIFEXITED(status)) {
+        if (captureFailed) {
+            spdlog::error("Failed to capture FFmpeg diagnostics: {}",
+                std::system_category().message(captureError));
+            return -1;
+        }
         return WEXITSTATUS(status);
+    }
+    if (captureFailed) {
+        spdlog::error("Failed to capture FFmpeg diagnostics: {}",
+            std::system_category().message(captureError));
+        return -1;
     }
     return 128 + (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
 #endif
@@ -415,11 +565,11 @@ int MediaConvertionTask::ConvertFile()
         executable = settings->FLACSettings.ffmpeg_exe_name;
     }
 
-    spdlog::info("Processing: {}", CommonUtils::utf8string_to_string(_sourcePath.u8string()));
+    spdlog::debug("Processing: {}", CommonUtils::path_to_utf8(_sourcePath));
     _failureType = "AUDIO";
     const auto arguments = conversionArguments(_options, metadata);
     const int result = runFFmpeg(executable, preparedInput ? temporaryInputPath(_targetTMPPath) : _sourcePath,
-        _targetTMPPath, false, arguments);
+        _targetTMPPath, false, arguments, _sourcePath);
     if (preparedInput) {
         removeTemporary(temporaryInputPath(_targetTMPPath));
     }

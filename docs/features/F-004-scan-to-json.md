@@ -18,6 +18,10 @@ is available. Report counts distinguish discovered albums/tracks, successfully s
 batches, and installed batches. Discovery counts can be partial if enumeration fails. Library-level diagnostics omit
 `albumPath`. Filesystem diagnostics carry an `affectedPath` and native error code/category when available; track paths also populate `filePath`. FFmpeg warnings/errors without a thread-local file context are captured
 at scan scope and intentionally remain unattributed to a track.
+Those warnings/errors are also written to the per-request session log, explicitly marked as unattributed; file-scoped
+TagLib/FFmpeg diagnostics include their source path. TagLib's verbose debug messages are kept in the detailed log.
+Redirected scan output contains no animated terminal sequences, and `scan-report.json` remains the structured
+diagnostic record (F-010).
 FFmpeg format and stream tags are included with separate source scopes; older incremental records are reread to
 populate this inventory. Each successful scan also writes `scan-manifest.json`, which inventories every batch by
 filename, size, and SHA-256. Separate byte-exact native FLAC metadata archives are optional and default to off via
@@ -87,6 +91,7 @@ then reassemble fragment sets before use.
 - [ ] Generated sine, leading/trailing silence, and full-scale integer fixtures verify loudness, silence, and clipping measurements within tolerances.
 - [ ] A malformed or unusable accepted track fails the scan instead of installing an incomplete catalog.
 - [ ] A TagLib extraction failure reports the source path and underlying diagnostic.
+- [ ] Session logs retain contextual TagLib/FFmpeg diagnostics without assigning unscoped errors to a track; redirected output has no terminal control sequences (F-010).
 - [ ] Output directory overlapping the source library is rejected.
 - [ ] On Windows, repeated scans work under near-limit and longer output paths, including toggling and retiring archives whose full paths exceed `MAX_PATH`.
 - [ ] With the byte target disabled, batch count = ceil(albums / `AlbumsSplitThreshold`).

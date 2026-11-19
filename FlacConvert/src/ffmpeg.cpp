@@ -129,6 +129,13 @@ namespace FFmpeg {
         const std::string severity =
             level <= AV_LOG_ERROR ? "error" : "warning";
         if (activeLogCapture != nullptr) {
+            const auto context = activeLogCapture->_filePath + " [" + activeLogCapture->_stage + "]";
+            if (severity == "error") {
+                spdlog::error("FFmpeg [{}]: {}: {}", context, component, message);
+            }
+            else {
+                spdlog::warn("FFmpeg [{}]: {}: {}", context, component, message);
+            }
             activeLogCapture->Add({
                 activeLogCapture->_filePath,
                 activeLogCapture->_stage,
@@ -145,6 +152,12 @@ namespace FFmpeg {
             runLogCapture = activeRunLogCapture;
         }
         if (runLogCapture) {
+            if (severity == "error") {
+                spdlog::error("FFmpeg [unattributed]: {}: {}", component, message);
+            }
+            else {
+                spdlog::warn("FFmpeg [unattributed]: {}: {}", component, message);
+            }
             runLogCapture->Add(severity, component, std::move(message));
         }
         else if (severity == "error") {

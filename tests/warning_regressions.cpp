@@ -32,7 +32,7 @@ static std::string render_progress(std::size_t total, std::size_t count, int wid
         std::streambuf* original;
         ~RestoreOutput() { std::cout.rdbuf(original); }
     } restore{ std::cout.rdbuf(output.rdbuf()) };
-    CommonUtils::show_progress_bar(progress);
+    CommonUtils::render_progress_bar(progress, CommonUtils::ProgressBarType::Progress, false);
     return output.str();
 }
 

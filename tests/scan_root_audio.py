@@ -57,11 +57,21 @@ def main():
             check=True,
         )
         original_track_hash = hashlib.sha256(track.read_bytes()).hexdigest()
-        subprocess.run(
+        scan_result = subprocess.run(
             [converter, "scan", str(library), "--output-dir", str(output),
              "--config", str(default_config)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True,
         )
+        if "\x1b" in scan_result.stdout or "\x1b" in scan_result.stderr:
+            raise AssertionError("A redirected scan emitted terminal control sequences")
+        if "Received batch with" in scan_result.stdout:
+            raise AssertionError("Detailed batch logging leaked into concise console output")
+        if "Session log:" not in scan_result.stdout:
+            raise AssertionError("The scan did not identify its session log")
         files = list((output / library.name).glob("media_out_*.json"))
         if len(files) != 1:
             raise AssertionError(f"Expected one generated JSON file, found {len(files)}")
@@ -1086,7 +1096,9 @@ def main():
                               capture_output=True, text=True, timeout=30)
         if menu.returncode != 0 or "JSON input files: 3" not in menu.stdout:
             raise AssertionError(f"Menu did not import all sparse batches: {menu.stdout}\n{menu.stderr}")
-        if "Use Async Metadata Reads: false" not in menu.stdout:
+        log_path = Path(next(line.split("Session log: ", 1)[1]
+                             for line in menu.stdout.splitlines() if "Session log: " in line))
+        if "Use Async Metadata Reads: false" not in log_path.read_text(encoding="utf-8"):
             raise AssertionError("Legacy async setting was ignored with ScanTier present")
         menu_duplicates = subprocess.run(
             [converter], input="3\nBACK\n0\n", cwd=root,

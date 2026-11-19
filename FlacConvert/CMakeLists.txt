@@ -35,6 +35,7 @@ add_library(FlacConvertCore STATIC
     src/JsonUtils.cpp
     src/MediaAlbum.cpp
     src/MediaRecordJson.cpp
+    src/RunLogging.cpp
     src/TagLibReader.cpp
     src/MediaConvertionAsyncTask.cpp
     src/MediaConvertionTask.cpp
@@ -68,7 +69,7 @@ foreach(_target IN ITEMS sqlite3 FlacConvertCore FlacConvert)
 endforeach()
 
 if(WIN32)
-    target_compile_definitions(FlacConvertCore PUBLIC UNICODE _UNICODE)
+    target_compile_definitions(FlacConvertCore PUBLIC UNICODE _UNICODE SPDLOG_WCHAR_FILENAMES)
     target_link_libraries(FlacConvertCore PUBLIC shell32)
     afc_copy_windows_ffmpeg_runtime(FlacConvert)
     afc_embed_windows_manifest(FlacConvert)

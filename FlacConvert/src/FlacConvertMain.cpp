@@ -58,6 +58,7 @@ extern "C" {
 #include "MediaConvertionAsyncTask.h"
 #include "AppSettings.h"
 #include "CommonUtils.h"
+#include "RunLogging.h"
 
 
 #include "PlatformUtils.h"
@@ -1805,8 +1806,9 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         int count = 0;
         try {
             const auto writeBatch = [&](const MediaAlbumListPtr& albumListPtr) {
-                spdlog::info("Received batch with {} albums", albumListPtr->size());
+                spdlog::debug("Received batch with {} albums", albumListPtr->size());
                 if (bIncludeMetadata) {
+                    spdlog::info("Reading metadata for {} album(s).", albumListPtr->size());
                     ac.ImportMetadata(albumListPtr, 0, albumListPtr->size(),
                         settings->UseAsyncMetadataReads,
                         useIncrementalCache ? &cachedRecords : nullptr);
@@ -2869,30 +2871,9 @@ ConvertActionEnum GetUserAction()
     }
 }
 
-void init_logger(spdlog::level::level_enum level = spdlog::level::debug)
-{
-    //spdlog::set_default_logger(spdlog::stdout_color_mt("console"));
-
-    auto console_logger = spdlog::stdout_color_mt("console");
-
-    // Set log level globally (e.g., to debug)
-    console_logger->set_level(level);
-
-    // Optional: Set a pattern (e.g., with color and timestamp)
-    //console_logger->set_pattern("[%H:%M:%S %z] [%^%l%$] %v");
-    console_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%t] [%^%l%$] %v");
-
-    // Set as the default logger
-    spdlog::set_default_logger(console_logger);
-
-}
-
 int RunLegacyMenu()
 {
-    init_logger();
-
-    spdlog::info("FFmpeg version: {}.{}.{}", LIBAVCODEC_VERSION_MAJOR, LIBAVCODEC_VERSION_MINOR, LIBAVCODEC_VERSION_MICRO);
-    spdlog::info("----------------");
+    spdlog::debug("FFmpeg version: {}.{}.{}", LIBAVCODEC_VERSION_MAJOR, LIBAVCODEC_VERSION_MINOR, LIBAVCODEC_VERSION_MICRO);
 
 
 
@@ -2918,6 +2899,7 @@ int RunLegacyMenu()
         return -1;
     }
 
+    RunLogging::SetFileLevel(static_cast<spdlog::level::level_enum>(appSettingPtr->LogLevel));
     FFmpeg::initialize_ffmpeg_logging();
 
 
@@ -2925,23 +2907,17 @@ int RunLegacyMenu()
 
     //std::cout << "App Settings: " << std::filesystem::path(AppSettingsJson::DefaultConfigDirectory) / AppSettingsJson::DefaultConfigFileName << std::endl;
     spdlog::info("Output root (OutDirectory): {}", appSettingPtr->OutDirectory);
-    spdlog::info("Database output: OutDirectory/<mediaName>/catalog-v2.sqlite");
+    spdlog::debug("Database output: OutDirectory/<mediaName>/catalog-v2.sqlite");
+    spdlog::debug("Configured detailed log level: {}", appSettingPtr->LogLevel);
+    spdlog::debug("Use Async Metadata Reads: {}", appSettingPtr->UseAsyncMetadataReads);
+    spdlog::debug("Metadata Scan Max Threads: {}", appSettingPtr->MetadataScanMaxThreads);
+    spdlog::debug("Extra Audio Quality Metrics: {}", appSettingPtr->ExtraAudioQualityMetrics);
+    spdlog::debug("Albums Split Threshold: {}", appSettingPtr->AlbumsSplitThreshold);
 
-    spdlog::info("----------------");
-
-    spdlog::info("Log Level: {}", AppSettingsJson::AppSetting()->LogLevel);
-    spdlog::info("Use Async Metadata Reads: {}", AppSettingsJson::AppSetting()->UseAsyncMetadataReads);
-    spdlog::info("Metadata Scan Max Threads: {}", AppSettingsJson::AppSetting()->MetadataScanMaxThreads);
-    spdlog::info("Extra Audio Quality Metrics: {}", AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics);
-    spdlog::info("Albums Split Threshold: {}", AppSettingsJson::AppSetting()->AlbumsSplitThreshold);
-
-    spdlog::info("----------------");
-
-    spdlog::info("Media Libraries:");
 	for (auto& mediaEntry : appSettingPtr->MediaDirectoryList)
 	{
 		auto activeFlag = mediaEntry.isActive ? "Active" : "Inactive";
-        spdlog::info("{} - Media Path: {} [{}]", activeFlag, mediaEntry.mediaPath, mediaEntry.mediaName.value_or(""));
+        spdlog::debug("{} - Media Path: {} [{}]", activeFlag, mediaEntry.mediaPath, mediaEntry.mediaName.value_or(""));
 
         if (mediaEntry.isActive)
         {
@@ -2949,10 +2925,13 @@ int RunLegacyMenu()
         }
 	}
 
-	spdlog::info("");
+    spdlog::info("Loaded {} active media libraries.", mediaList.size());
 
 
     const auto executeAction = [&](ConvertActionEnum action, ManualOperationSummary& summary) {
+        if (action != ConvertActionEnum::ExitEnum) {
+            spdlog::info("Starting menu option {}.", static_cast<int>(action));
+        }
         switch (action)
         {
         case ConvertActionEnum::ConverEnum: //1
@@ -3050,17 +3029,8 @@ int RunLegacyMenu()
     }
 }
 
-int RunWithArguments(const std::vector<const char*>& arguments)
+int RunWithArgumentsImpl(const std::vector<const char*>& arguments)
 {
-#ifdef _WIN32
-    if (GetConsoleCP() != CP_UTF8) {
-        SetConsoleCP(CP_UTF8);
-    }
-    if (GetConsoleOutputCP() != CP_UTF8) {
-        SetConsoleOutputCP(CP_UTF8);
-    }
-#endif
-
     if (arguments.size() == 1) {
         try {
             return RunLegacyMenu();
@@ -3091,10 +3061,15 @@ int RunWithArguments(const std::vector<const char*>& arguments)
         const auto settings = AppSettingsJson::LoadForCommandLine(explicitConfigPath, configurationError);
         if (!settings) {
             std::cerr << "Configuration error: " << configurationError << '\n';
+            RunLogging::RecordError("Configuration error: " + configurationError);
             return 1;
         }
 
-        init_logger(static_cast<spdlog::level::level_enum>(settings->LogLevel));
+        auto fileLogLevel = static_cast<spdlog::level::level_enum>(settings->LogLevel);
+        if (options.logLevel == "info") fileLogLevel = spdlog::level::info;
+        else if (options.logLevel == "debug") fileLogLevel = spdlog::level::debug;
+        else if (options.logLevel == "trace") fileLogLevel = spdlog::level::trace;
+        RunLogging::SetFileLevel(fileLogLevel);
         FFmpeg::initialize_ffmpeg_logging();
 
         const fs::path inputPath = pathFromUtf8(options.inputPath);
@@ -3117,6 +3092,7 @@ int RunWithArguments(const std::vector<const char*>& arguments)
                 options.conversion.target, options.noMetadataSidecar, sidecarError);
             if (!sidecarFormat) {
                 std::cerr << "Configuration error: " << sidecarError << '\n';
+                RunLogging::RecordError("Configuration error: " + sidecarError);
                 return 1;
             }
             options.conversion.sidecarFormat = *sidecarFormat;
@@ -3173,6 +3149,26 @@ int RunWithArguments(const std::vector<const char*>& arguments)
         spdlog::error("Command failed: {}", error.what());
         return 1;
     }
+}
+
+int RunWithArguments(const std::vector<const char*>& arguments)
+{
+#ifdef _WIN32
+    if (GetConsoleCP() != CP_UTF8) SetConsoleCP(CP_UTF8);
+    if (GetConsoleOutputCP() != CP_UTF8) SetConsoleOutputCP(CP_UTF8);
+#endif
+    const std::string operation = arguments.size() == 1
+        ? "interactive menu" : (arguments[1] == nullptr ? "command line" : arguments[1]);
+    RunLogging::Start(operation);
+    int result = 1;
+    try {
+        result = RunWithArgumentsImpl(arguments);
+    }
+    catch (const std::exception& error) {
+        spdlog::error("Application request failed: {}", error.what());
+    }
+    RunLogging::Finish(result);
+    return result;
 }
 
 #ifdef _WIN32

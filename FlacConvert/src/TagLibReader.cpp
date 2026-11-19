@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <format>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <system_error>
 
@@ -25,6 +26,7 @@
 #include <taglib/mpeg/id3v2/frames/textidentificationframe.h>
 #include <taglib/ogg/xiphcomment.h>
 #include <taglib/toolkit/tfilestream.h>
+#include <taglib/toolkit/tdebuglistener.h>
 #include <taglib/toolkit/tpropertymap.h>
 #include <taglib/mpeg/id3v1/id3v1tag.h>
 
@@ -34,6 +36,45 @@
 #include "ffmpeg.h"
 
 namespace {
+
+thread_local std::string tagLibSourcePath;
+
+class TagLibLogListener final : public TagLib::DebugListener
+{
+public:
+    void printMessage(const TagLib::String& message) override
+    {
+        auto text = message.to8Bit(true);
+        while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+        spdlog::debug("TagLib [{}]: {}", tagLibSourcePath.empty() ? "unscoped" : tagLibSourcePath,
+            text);
+    }
+};
+
+class ScopedTagLibSource
+{
+public:
+    explicit ScopedTagLibSource(const std::filesystem::path& path)
+        : previous_(std::move(tagLibSourcePath))
+    {
+        tagLibSourcePath = CommonUtils::path_to_utf8(path);
+    }
+
+    ~ScopedTagLibSource()
+    {
+        tagLibSourcePath = std::move(previous_);
+    }
+
+private:
+    std::string previous_;
+};
+
+void ensureTagLibLogListener()
+{
+    static TagLibLogListener listener;
+    static std::once_flag registered;
+    std::call_once(registered, [] { TagLib::setDebugListener(&listener); });
+}
 
 TagLibReadResult failedRead(std::string stage, std::string source, std::string code,
     std::string message, const std::error_code& error = {})
@@ -582,6 +623,8 @@ TagLibReadResult TagLibReader::Read(const std::filesystem::path& filePath,
     }
     record.sizeBytes = fileSize;
     record.modifiedUtc = CommonUtils::fileModificationTimeUtc(filePath);
+    ensureTagLibLogListener();
+    const ScopedTagLibSource sourcePath(filePath);
 
 #ifdef _WIN32
     const TagLib::FileName name(filePath.c_str());

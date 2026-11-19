@@ -21,6 +21,7 @@ It runs either as explicit CLI commands or, with no arguments, as a legacy inter
 |---|---|---|
 | Entry and orchestration | `src/FlacConvertMain.cpp` | `wmain`/`main` → `RunWithArguments`; CLI dispatch; `RunLegacyMenu` (menu, previews, `RUN` confirmation, `ManualOperationSummary`); scan, duplicate and DB-import flows |
 | CLI parsing | `src/CommandLine.cpp`, `include/CommandLine.h` | `ParseCommandLine` (CLI11) → `CommandLineOptions` |
+| Run logging | `src/RunLogging.cpp`, `include/RunLogging.h` | One console/file logger per process request, file-level override, active markers and retention |
 | Configuration | `src/AppSettings.cpp`, `include/AppSettings.h` | `AppSettingsJson` load/save, defaults, process-wide instance; `MediaDirectoryElement` output naming |
 | Conversion options | `include/ConversionOptions.h` | `AudioTarget` (Flac/Mp3), MP3 quality, downmix flag |
 | Folder conversion | `src/FolderConvert.cpp`, `include/FolderConvert.h` | `FolderConvert::PrepareConversion` (plan) and `FolderConvert::ExecuteConversion` (run, audit report, markers) |
@@ -79,7 +80,21 @@ flowchart LR
 | `db import <json dir> [--output-dir]` | `ImportJsonDirectoryToDatabase` | `<output root>/<JSON folder name>/catalog-v2.sqlite`; output root is `--output-dir`, else `OutDirectory` |
 | No arguments | `RunLegacyMenu` | Options 1 FLAC, 2 scan, 3 duplicates, 4 DB import, 5 not implemented, 6 MP3; all use active `MediaDirectoryList` entries |
 
-All commands accept `--config <file>`. Exit code is 0 on success, non-zero on any failure.
+All commands accept `--config <file>` and `--log-level info\|debug\|trace`. Exit code is 0 on success, non-zero on any failure.
+
+### Run logging
+
+`RunWithArguments` creates one uniquely named session log for the process request, shared by CLI commands and the
+interactive menu. The console sink is fixed at `info`: conversion progress/completion and meaningful warnings/errors
+remain visible, while per-file successes and expected generated-field normalization are debug-only. The file sink
+uses config `LogLevel` (0–6) or the CLI `--log-level` override. FFmpeg child-process output is captured without a
+shell and logged with the source path; linked-FFmpeg diagnostics are also logged with their known path/stage while
+remaining in their existing structured scan records. Unscoped scan diagnostics are logged as unattributed and stay
+unattributed in `scan-report.json`. TagLib debug output is routed through the file logger with thread-local file
+context. Redirected output suppresses animated progress sequences. Logs older than 30 days and oldest inactive logs
+above 1 GiB are pruned; active logs are protected. If log-file creation fails, an explicit console error is emitted
+and the request proceeds using console logging only. The session log supplements, and does not replace,
+`conversion-audit.json` or `scan-report.json`.
 
 ## Key flows
 
@@ -99,8 +114,10 @@ All commands accept `--config <file>`. Exit code is 0 on success, non-zero on an
    prints `ShowConversionPreview`, and requires `RUN` (`ConfirmPreview`). Any conflict blocks the whole run (K-049).
 3. **Execute** – `FolderConvert::ExecuteConversion` creates the library folder (ownership = created by this run),
    creates the `.conversion-in-progress` marker directory, then processes audio files sequentially:
-   `MediaConvertionTask::Run` (convert + verify + audit) then `MediaConvertionTask::PostRun` (install). Retained FLAC
-   output directories, including empty ones, are created; skipped folders are logged and never created.
+   `MediaConvertionTask::Run` (convert + verify + audit) then `MediaConvertionTask::PostRun` (install). For FLAC,
+   announce the source track's parent folder when it changes, before conversion, and indicate the transition to
+   copying unchanged files. The folder path identifies root-level tracks and disc subfolders without relying on tags.
+   Retained FLAC output directories, including empty ones, are created; skipped folders are logged and never created.
    Unchanged file copies (internally `companions`, including unsupported audio for FLAC) are
    copied to a temporary, verified byte-for-byte (`PreservationAudit::VerifyCopy`) and installed.
 4. **Finish** – re-checks every installed file, directory and sidecar (`FlacMetadata::Verify`). The report uses a
@@ -118,7 +135,7 @@ Per file, `MediaConvertionTask::ConvertFile`:
 3. for MP3 or native FLAC sources (`FlacMetadata::AppliesTo`), writes and verifies a metadata sidecar to a
    temporary when the run's `ConversionOptions::sidecarFormat` is not `None` (K-038); with format `None` it
    only prepares a clean input when appended tags must be removed;
-4. runs `ffmpeg` via `runFFmpeg` with `conversionArguments` (K-014, K-017);
+4. runs `ffmpeg` via `runFFmpeg` with `conversionArguments` (K-056, K-017);
 5. verifies output codec, rate, depth/channels and duration (±0.15 s);
 6. verifies the archive again (when written) and runs `PreservationAudit::Compare` (K-029); without an archive,
    differences that would otherwise be `SidecarOnly` are fatal (fail-closed).
@@ -322,7 +339,7 @@ database integration fixtures cover the corresponding output paths.
   being silently omitted.
   Regular-file symlinks are read as content, not reproduced as links. Plans are preview-time snapshots, not
   transactional filesystem snapshots; unrelated existing output files are not deleted.
-- **External FFmpeg tools are child processes with argument vectors**, never shell commands (K-014).
+- **External FFmpeg tools are child processes with argument vectors**, never shell commands (K-056).
   Catalog scans and duplicate-report re-probes use TagLib and linked FFmpeg libraries; the ffprobe executable is not
   used for metadata extraction.
 - **Counts reflect confirmed work only** (installed files, installed JSON batches, committed DB batches, processed
@@ -337,7 +354,7 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | Key | Default | Used by |
 |---|---|---|
 | `OutDirectory` | `C:\tmp` (Windows) / temp dir (K-007) | All outputs |
-| `LogLevel` | 1 (0–6, spdlog levels) | Logger |
+| `LogLevel` | 1 (0–6, spdlog levels) | Detailed session-log threshold; console remains concise; CLI `--log-level info\|debug\|trace` overrides it |
 | `UseAsyncMetadataReads` | true | Parallel TagLib scan reads; legacy `UseAsyncFFmpegCalls` is accepted as an alias |
 | `Incremental` | true | Reuse scan records when library-relative file path, size and modification time match and the cached tier is the requested tier or higher (`AlbumCollection::ImportMetadata`) |
 | `ScanFlacMetadataArchives` | false | Default for optional byte-exact native FLAC scan archives; menu and CLI can override per run |
@@ -367,6 +384,7 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | Metadata sidecar | `<audio file>.flac-metadata` (binary) or `<audio file>.flac-metadata.json` (MP3 and native-FLAC sources, per `MetadataSidecars`) | `FlacMetadata::Save` |
 | Unchanged file copies | Same relative path; non-converted regular files outside skipped subtrees for FLAC, non-audio companions for MP3 | `FolderConvert::ExecuteConversion` |
 | Audit report | `<library output>/conversion-audit.json` | `writeAudit` in `FolderConvert.cpp` |
+| Session log | `%LOCALAPPDATA%\AudioFormatConverter\logs\afc-<timestamp>_<pid>_<sequence>.log` (Windows); XDG/HOME state directory elsewhere | `RunLogging::Start` / `RunLogging::Finish` |
 | In-progress marker | `<library output>/.conversion-in-progress/` (directory) | `FolderConvert::ExecuteConversion` |
 | Album JSON | `OutDirectory/<name>/media_out_<name>[_<n>].json` (schema v2; see `docs/schemas/media-catalog-v2.schema.json`) | `AlbumCollection::SaveAlbumsToJSON` |
 | Scan manifest | `OutDirectory/<name>/scan-manifest.json` (schema v1; batch inventory, SHA-256 integrity and archive references) | `writeScanManifest` |
@@ -479,5 +497,5 @@ prompt, and `ShowConversionPreview`.
 
 ## Knowledge links
 
-Conversion safety: K-041, K-048, K-014, K-029, K-030, K-032, K-038. Formats: K-016, K-017, K-031. Manual menu: K-024, K-025, K-026, K-049. Catalog/DB: K-051, K-042, K-040, K-050. Platform/build: K-006, K-007, K-043, K-044, K-033.
+Conversion safety: K-041, K-048, K-056, K-029, K-030, K-032, K-038. Formats: K-016, K-017, K-031. Manual menu: K-024, K-025, K-026, K-049. Catalog/DB: K-051, K-042, K-040, K-050. Platform/build: K-006, K-007, K-043, K-044, K-033.
 Only live entries are listed; superseded history is in `docs/knowledge/index.md` under "Closed".

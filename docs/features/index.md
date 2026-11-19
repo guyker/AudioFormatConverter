@@ -33,6 +33,7 @@ diff and this index. The reports do not write entries or retain a change history
 | [F-007](F-007-configuration.md) | Configuration loading | active |
 | [F-008](F-008-interactive-menu.md) | Interactive menu, preview and confirmation | active |
 | [F-009](F-009-menu-option-5.md) | Menu option 5 | not implemented |
+| [F-010](F-010-session-logging.md) | Per-request session logging | active |
 
 ## Template
 

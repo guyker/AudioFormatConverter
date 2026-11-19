@@ -240,11 +240,24 @@ void logAudit(const PlannedFileConversion& file, const PreservationAudit::Result
         if (entry.status != PreservationAudit::Status::Preserved &&
             entry.status != PreservationAudit::Status::SourceOnly) {
             ++differences;
-            spdlog::warn("Preservation {} [{} / {}]: {}", PreservationAudit::StatusName(entry.status),
-                entry.resource, entry.name, entry.detail);
+            const bool informationalNormalization =
+                entry.status == PreservationAudit::Status::Normalized &&
+                ((entry.resource == "tag-vendor" && entry.name == "Vorbis vendor") ||
+                 (entry.resource == "tags" &&
+                  entry.detail == "Generated encoder/vendor or MP4 container/stream metadata differs; informational only."));
+            if (informationalNormalization) {
+                spdlog::debug("Preservation {} [{} / {}]: {}",
+                    PreservationAudit::StatusName(entry.status),
+                    entry.resource, entry.name, entry.detail);
+            }
+            else {
+                spdlog::warn("Preservation {} [{} / {}]: {}",
+                    PreservationAudit::StatusName(entry.status),
+                    entry.resource, entry.name, entry.detail);
+            }
         }
     }
-    spdlog::info("Installed '{}': {} preservation checks, {} differences; see {}.",
+    spdlog::debug("Installed '{}': {} preservation checks, {} differences; see {}.",
         CommonUtils::path_to_utf8(file.target), audit.entries.size(), differences, auditFilename);
 }
 }
@@ -603,6 +616,22 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
     if (!outputDirectory.EnterValidatedDirectory(plan.output, plan.input, true, &owned)) {
         return -1;
     }
+    const std::size_t totalFiles = plan.audio.size() + plan.companions.size();
+    spdlog::info("Conversion started: {} audio files, {} companion files, {} unchanged audio folders.",
+        plan.audio.size(), plan.companions.size(), plan.skippedDirectories.size());
+    std::size_t completedFiles = 0;
+    std::size_t nextProgressPercent = 10;
+    const auto reportProgress = [&] {
+        ++completedFiles;
+        if (totalFiles == 0) return;
+        const auto percent = static_cast<std::size_t>(
+            static_cast<long double>(completedFiles) * 100.0L / totalFiles);
+        if (percent >= nextProgressPercent || completedFiles == totalFiles) {
+            spdlog::info("Conversion progress: {}/{} files ({}%).",
+                completedFiles, totalFiles, percent);
+            while (nextProgressPercent <= percent) nextProgressPercent += 10;
+        }
+    };
     const auto outputPath = [&](const fs::path& path) {
         return outputDirectory.ResolvePath(path);
     };
@@ -621,7 +650,13 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
                 markerPresent = fs::exists(outputPath(markerFilename), ec) && !ec;
             }
             else {
-                if (fs::remove(outputPath(markerFilename), ec) && !ec) return 0;
+                if (fs::remove(outputPath(markerFilename), ec) && !ec) {
+                    spdlog::info("Conversion completed: {} audio files converted, {} companion files copied; output '{}'; audit '{}'.",
+                        plan.audio.size(), plan.companions.size(),
+                        CommonUtils::path_to_utf8(actualOutput),
+                        CommonUtils::path_to_utf8(actualOutput / auditFilename));
+                    return 0;
+                }
                 spdlog::error("Cannot clear conversion-in-progress marker: {}", ec.message());
                 errorType = "IO";
                 reportOk = writeAudit(plan, outputPath("."), actualOutput, files, errorType);
@@ -685,7 +720,7 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
     }
     std::size_t current = 0;
     for (const auto& skipped : plan.skippedDirectories) {
-        spdlog::info("Skipped unchanged folder (audio, no conversions): {} ({} files)",
+        spdlog::debug("Skipped unchanged folder (audio, no conversions): {} ({} files)",
             CommonUtils::path_to_utf8(skipped.source), skipped.files);
     }
     try {
@@ -705,7 +740,13 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
             return finish("IO");
         }
     }
+    fs::path currentAlbumFolder;
     for (const auto& conversion : plan.audio) {
+        const auto albumFolder = conversion.source.parent_path();
+        if (plan.options.target == AudioTarget::Flac && albumFolder != currentAlbumFolder) {
+            currentAlbumFolder = albumFolder;
+            spdlog::info("Processing album folder: {}", CommonUtils::path_to_utf8(currentAlbumFolder));
+        }
         auto& record = files[current++];
         record.status = "failed";
         const auto relativeTarget = conversion.target.lexically_relative(plan.output);
@@ -744,8 +785,12 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
         if (progress) {
             ++progress->converted;
         }
+        reportProgress();
     }
 
+    if (plan.options.target == AudioTarget::Flac && !plan.companions.empty()) {
+        spdlog::info("Audio conversion finished; copying {} unchanged files.", plan.companions.size());
+    }
     for (const auto& copy : plan.companions) {
         auto& record = files[current++];
         record.status = "failed";
@@ -799,9 +844,10 @@ int FolderConvert::ExecuteConversion(const FolderConversionPlan& plan, Conversio
         if (progress) {
             ++progress->copied;
         }
-        spdlog::info("Copied {}file unchanged: {}",
+        spdlog::debug("Copied {}file unchanged: {}",
             plan.options.target == AudioTarget::Mp3 ? "companion " : "",
             CommonUtils::path_to_utf8(relativeTarget));
+        reportProgress();
     }
 
     }

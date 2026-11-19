@@ -34,6 +34,7 @@
 #include "FolderConvert.h"
 #include "JsonUtils.h"
 #include "PlatformUtils.h"
+#include "PlatformUtils.h"
 
 #include "CommonUtils.h"
 #include "DecodeAnalyzer.h"
@@ -332,8 +333,9 @@ void validateAlbumTags(TrackInfoList& tracks)
 CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata, size_t batchSize, ScanDiscoveryCounts* counts) {
 
     std::chrono::steady_clock::time_point startTimePoint = std::chrono::steady_clock::now();
+    const bool showProgress = PlatformUtils::IsStdoutInteractive();
     //std::chrono::steady_clock::time_point endLoadTime = startLoadTime;
-    spdlog::info("===Loading album collection from storage===");
+    spdlog::debug("===Loading album collection from storage===");
 
     // Map to collect tracks per folder
     std::map<fs::path, TrackInfoList> albumMap;
@@ -345,7 +347,12 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     // First pass: Find all folders - Discove folders
     for (const auto& entry : fs::recursive_directory_iterator(albumCollectionDirPath)) {
         // Progress update
-        std::cout << "\rScanning folders, Please wait... " << ++folderCount;
+        if (showProgress) {
+            std::cout << "\rScanning folders, Please wait... " << ++folderCount;
+        }
+        else {
+            ++folderCount;
+        }
 
         auto relativePath = fs::relative(entry.path(), albumCollectionDirPath);
         auto depth = std::distance(relativePath.begin(), relativePath.end());
@@ -359,15 +366,15 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     }
 
     //std::cout << "\rScanning folders, Please wait... Completed, " << folderCount << " folders found" << std::endl;
-    std::cout << "\r";
-    spdlog::info("Scanning folders, Please wait... Completed, {} folders found", folderCount);
+    if (showProgress) std::cout << "\r";
+    spdlog::info("Discovery examined {} filesystem entries.", folderCount);
     spdlog::info("First pass: Completed, found {} folders [{}]", albumMap.size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
     startTimePoint = std::chrono::steady_clock::now();
 
     int albumCount = 0;
     spdlog::info("Second pass: Collect tracks one level deep...");
     // Second pass: Collect files one level deep
-    std::cout << "Scanning albums, Please wait... ";
+    if (showProgress) std::cout << "Scanning albums, Please wait... ";
     for (auto& [folderPath, trackList] : albumMap) {
         for (const auto& entry : fs::directory_iterator(folderPath)) {
             if (entry.is_regular_file() && MediaTrack::IsFileAcceptedAudioFile(entry)) {
@@ -381,12 +388,15 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
         }
         // Progress update
         if (!trackList.empty()) {
-            std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
-            std::cout << "Scanning albums, Please wait... " << ++albumCount;
+            ++albumCount;
+            if (showProgress) {
+                std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
+                std::cout << "Scanning albums, Please wait... " << albumCount;
+            }
         }
     }
 
-    std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
+    if (showProgress) std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
     spdlog::info("Scanning albums, Please wait... Completed, {} albums found ", albumCount);
     spdlog::info("Second pass: Completed, found {} albums [{}]", albumCount, CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
     startTimePoint = std::chrono::steady_clock::now();
@@ -409,7 +419,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
 
     if (albumMap.size() > AppSettingsJson::AppSetting()->AlbumsSplitThreshold)
     {
-        spdlog::info("Converting albums to batches of {}...", batchSize);
+        spdlog::debug("Converting albums to batches of {}...", batchSize);
     }
     size_t albumIndex = 0;
     for (auto& [albumPath, trackList] : albumMap) {
@@ -421,7 +431,7 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
                     ImportMetadata(albumListPtr, albumIndex, albumMap.size(), AppSettingsJson::AppSetting()->UseAsyncMetadataReads);
                 }
                 albumIndex += batchSize;
-                spdlog::info("Yielding batch {} with {} albums", ++batchCount, albumListPtr->size());
+                spdlog::debug("Yielding batch {} with {} albums", ++batchCount, albumListPtr->size());
                 co_yield albumListPtr;
                 albumListPtr = std::make_shared<std::vector<MediaAlbum>>();
                 albumListPtr->reserve(batchSize);
@@ -435,9 +445,10 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
             spdlog::info("Collecting metadata for final batch {}/{}...", batchCount + 1, totalBatchCount);
             ImportMetadata(albumListPtr, albumIndex, albumMap.size(), AppSettingsJson::AppSetting()->UseAsyncMetadataReads);
         }
+        ++batchCount;
         if (albumMap.size() > AppSettingsJson::AppSetting()->AlbumsSplitThreshold)
         {
-            spdlog::info("Yielding final batch {} with {} albums", ++batchCount, albumListPtr->size());
+            spdlog::debug("Yielding final batch {} with {} albums", batchCount, albumListPtr->size());
         }
         co_yield albumListPtr;
     }
@@ -681,7 +692,7 @@ size_t AlbumCollection::ImportMetadata(std::shared_ptr<DirectoryContentEntryList
         }
 
         if (reusedRecords > 0) {
-            spdlog::info("Reused {} unchanged metadata record(s) in album '{}'.",
+            spdlog::debug("Reused {} unchanged metadata record(s) in album '{}'.",
                 reusedRecords, CommonUtils::path_to_utf8(albumPath.path()));
         }
         if (!metadataTargets.empty()) {

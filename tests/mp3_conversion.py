@@ -162,11 +162,27 @@ class ConversionTests(unittest.TestCase):
         self.original_hash = hashlib.sha256(self.track.read_bytes()).digest()
 
     def convert(self, *extra, success=True, target="mp3", config=None):
+        env = os.environ.copy()
+        env["LOCALAPPDATA"] = str(self.work / "local-app-data")
         result = run(ARGS.converter, "convert", self.source, "--output-dir", self.output,
-                     "--config", config or self.config, "--to", target, *extra)
+                     "--config", config or self.config, "--to", target, *extra, env=env)
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
         self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
         self.assertNotIn("Completion summary:", result.stdout)
+        self.assertNotIn("Processing:", result.stdout + result.stderr)
+        self.assertNotIn("frame=", result.stdout + result.stderr)
+        if success:
+            self.assertIn("Conversion started:", result.stdout)
+            self.assertIn("Conversion completed:", result.stdout)
+            self.assertNotIn("Encoder/vendor text differs; this is an informational generated-field change.",
+                             result.stdout)
+            self.assertNotIn("Generated encoder/vendor or MP4 container/stream metadata differs; informational only.",
+                             result.stdout)
+            log_line = next(line for line in result.stdout.splitlines()
+                            if "Session log: " in line)
+            log_path = Path(log_line.split("Session log: ", 1)[1])
+            self.assertTrue(log_path.is_file())
+            self.assertIn("Request finished: completed", log_path.read_text(encoding="utf-8"))
         return result
 
     def assert_summary(self, result, status, completed, unit, copied=0, failed=0, started=True):
@@ -380,6 +396,8 @@ class ConversionTests(unittest.TestCase):
             [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}], "1\nRUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assert_summary(result, "Completed", 1, "audio files", copied=2)
+        self.assertIn(f"Processing album folder: {nested}", result.stdout)
+        self.assertIn("Audio conversion finished; copying 2 unchanged files.", result.stdout)
         self.assertEqual({p.relative_to(self.source): p.read_bytes()
                           for p in self.source.rglob("*") if p.is_file()}, before)
         target = self.output / "FLAC" / "Library" / "album" / track.name
@@ -402,6 +420,61 @@ class ConversionTests(unittest.TestCase):
         for companion in ("cover.png", "album.cue"):
             self.assertEqual((target.parent / companion).read_bytes(), (nested / companion).read_bytes())
         self.assertFalse(list(self.output.rglob(".afc-convert-*")))
+
+    def test_flac_reports_current_album_folder_during_conversion(self):
+        first = self.source / "Artist A" / "Album \u97f3"
+        disc = first / "CD 1"
+        second = self.source / "Artist B" / "Album \u97f3"
+        for folder in (disc, second):
+            folder.mkdir(parents=True)
+        for track in (first / "one.flac", first / "two.flac", disc / "three.flac",
+                      second / "four.flac"):
+            track.write_bytes(self.fixture.read_bytes())
+        before = {p.relative_to(self.source): hashlib.sha256(p.read_bytes()).digest()
+                  for p in self.source.rglob("*") if p.is_file()}
+
+        result = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "1\nRUN\n", LogLevel=1)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_summary(result, "Completed", 5, "audio files")
+        self.assertNotIn("Processing:", result.stdout)
+
+        prefix = "Processing album folder: "
+        console_folders = [line.split(prefix, 1)[1] for line in result.stdout.splitlines()
+                           if prefix in line]
+        self.assertEqual(set(console_folders), {str(self.source), str(first), str(disc), str(second)})
+        log_line = next(line for line in result.stdout.splitlines() if "Session log: " in line)
+        log_path = Path(log_line.split("Session log: ", 1)[1])
+        current_folder = None
+        log_folders = []
+        installed = 0
+        for line in log_path.read_text(encoding="utf-8").splitlines():
+            if prefix in line:
+                folder = line.split(prefix, 1)[1]
+                self.assertNotEqual(folder, current_folder)
+                current_folder = folder
+                log_folders.append(folder)
+            elif "Installed '" in line and " preservation checks," in line:
+                relative_target = line.split("Installed '", 1)[1].split("': ", 1)[0]
+                self.assertEqual(current_folder, str(self.source / Path(relative_target).parent))
+                installed += 1
+        self.assertEqual(console_folders, log_folders)
+        self.assertEqual(installed, 5)
+        self.assertEqual({p.relative_to(self.source): hashlib.sha256(p.read_bytes()).digest()
+                          for p in self.source.rglob("*") if p.is_file()}, before)
+
+    def test_flac_reports_album_before_conversion_failure(self):
+        result = self.legacy(
+            [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}],
+            "1\nRUN\n", LogLevel=6,
+            FLACSettings={"ffmpeg_exe_name": str(self.work / "missing-ffmpeg.exe")})
+        self.assertNotEqual(result.returncode, 0)
+        album_message = f"Processing album folder: {self.source}"
+        self.assertIn(album_message, result.stdout)
+        self.assertLess(result.stdout.index(album_message), result.stdout.index("Conversion failed ("))
+        self.assertNotIn("Audio conversion finished;", result.stdout)
+        self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
 
     def test_flac_skips_unchanged_audio_folders_and_keeps_written_folders_complete(self):
         artist = self.source / "Artist \u97f3"
@@ -476,6 +549,7 @@ class ConversionTests(unittest.TestCase):
                     FLACSettings={"ffmpeg_exe_name": str(self.work / "must-not-run.exe")})
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assert_summary(result, "Completed", 0, "audio files")
+                self.assertNotIn("Processing album folder:", result.stdout)
                 destination = self.output / "FLAC" / name
                 self.assertEqual([p.name for p in destination.iterdir()], ["conversion-audit.json"])
                 report = self.audit(destination)
@@ -498,13 +572,16 @@ class ConversionTests(unittest.TestCase):
         album.mkdir()
         (album / "song.mp3").write_bytes(b"unchanged audio")
         (album / "cover.png").write_bytes(self.image)
-        self.convert(target="flac")
+        result = self.convert(target="flac")
+        self.assertIn(f"Processing album folder: {self.source}", result.stdout)
+        self.assertNotIn(f"Processing album folder: {album}", result.stdout)
         written = self.destination("flac") / "album"
         self.assertFalse(written.exists())
         self.assertEqual([item["source"] for item in
                           self.audit(self.destination("flac"))["skippedUnchangedDirectories"]], ["album"])
         (album / "new.flac").write_bytes(self.fixture.read_bytes())
-        self.convert("--overwrite", target="flac")
+        result = self.convert("--overwrite", target="flac")
+        self.assertIn(f"Processing album folder: {album}", result.stdout)
         self.assertEqual({p.name for p in written.iterdir()},
                          {"song.mp3", "cover.png", "new.flac", "new.flac.flac-metadata"})
         self.assertEqual(self.audit(self.destination("flac"))["skippedUnchangedDirectories"], [])
@@ -647,7 +724,7 @@ class ConversionTests(unittest.TestCase):
         self.track.write_bytes(self.plain)
         self.original_hash = hashlib.sha256(self.plain).digest()
         result = self.convert("--no-metadata-sidecar", target="flac", success=False)
-        self.assertIn("required", result.stderr)
+        self.assertIn("required", result.stdout + result.stderr)
         self.assertFalse(self.destination("flac").exists())
         config = self.sidecar_config(ConvertToFlac="optional")
         self.convert("--no-metadata-sidecar", target="flac", config=config)
@@ -686,12 +763,14 @@ class ConversionTests(unittest.TestCase):
         (album / "second.FLAC").write_bytes(self.fixture.read_bytes())
         (album / "folder.png").write_bytes(self.image)
         (album / "booklet.\u65e5\u672c").write_bytes(b"unchanged companion")
-        result = self.convert()
+        result = self.convert("--log-level", "debug")
         self.assertTrue((self.destination() / "album" / "second.mp3").exists())
         self.assertEqual((self.destination() / "album" / "second.mp3.flac-metadata").read_bytes(), self.prefix)
         self.assertEqual((self.destination() / "album" / "folder.png").read_bytes(), self.image)
         self.assertEqual((self.destination() / "album" / "booklet.\u65e5\u672c").read_bytes(), b"unchanged companion")
-        self.assertEqual((result.stdout + result.stderr).count("Copied companion file unchanged"), 2)
+        log_path = Path(next(line.split("Session log: ", 1)[1]
+                             for line in result.stdout.splitlines() if "Session log: " in line))
+        self.assertEqual(log_path.read_text(encoding="utf-8").count("Copied companion file unchanged"), 2)
 
     def legacy(self, libraries, selection="6\n" + DEFAULT_MP3_SETTINGS + "RUN\n", **extra_settings):
         settings = json.loads(self.config.read_text(encoding="utf-8"))
@@ -806,6 +885,7 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
         self.assertNotIn("Type REPLACE to run", result.stdout)
         self.assertEqual(result.stdout.count("Type RUN to run"), 2)
+        self.assertNotIn("Processing album folder:", result.stdout)
 
     def test_menu_retries_then_runs_selected_action(self):
         result = self.legacy(
@@ -827,6 +907,7 @@ class ConversionTests(unittest.TestCase):
             self.assertIn("Active library", preview)
             self.assertNotIn(str(self.work / "inactive"), preview)
             self.assertIn("[Cancel]", preview)
+            self.assertNotIn("Processing album folder:", result.stdout)
             self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
             self.assertEqual(list(self.source.iterdir()), [self.track])
             self.assertFalse(self.output.exists())
@@ -1027,7 +1108,7 @@ class ConversionTests(unittest.TestCase):
         result = self.legacy(libraries, "2\n\nRUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assert_summary(result, "Completed", 1, "album JSON files")
-        self.assertEqual(result.stdout.count("===Loading album collection from storage==="), 1)
+        self.assertEqual(result.stdout.count("First pass: Find all folders"), 1)
         json_path = self.output / "Library" / "media_out_Library_1.json"
         self.assertTrue(json_path.exists())
         before = json_path.read_bytes()
@@ -1710,7 +1791,7 @@ class ConversionTests(unittest.TestCase):
             result = self.legacy(libraries, "2\n\nRUN\n", AlbumsSplitThreshold=2,
                                  UseAsyncFFmpegCalls=asynchronous)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertEqual(result.stdout.count("===Loading album collection from storage==="), 1)
+            self.assertEqual(result.stdout.count("First pass: Find all folders"), 1)
             menu_files = sorted((self.output / self.source.name).glob("media_out_*_[12].json"))
             self.assertEqual(len(menu_files), 2)
             expected = [json.loads(path.read_text(encoding="utf-8")) for path in menu_files]
@@ -1790,16 +1871,20 @@ class ConversionTests(unittest.TestCase):
                     "--config", self.config)
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
         second = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
-                     "--config", self.config)
+                     "--config", self.config, "--log-level", "debug")
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertIn("Reused 1 unchanged metadata record(s)", second.stdout + second.stderr)
+        log_path = Path(next(line.split("Session log: ", 1)[1]
+                             for line in second.stdout.splitlines() if "Session log: " in line))
+        self.assertIn("Reused 1 unchanged metadata record(s)", log_path.read_text(encoding="utf-8"))
 
         stat = track.stat()
         os.utime(track, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5_000_000_000))
         changed = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
-                      "--config", self.config)
+                      "--config", self.config, "--log-level", "debug")
         self.assertEqual(changed.returncode, 0, changed.stdout + changed.stderr)
-        self.assertNotIn("Reused 1 unchanged metadata record(s)", changed.stdout + changed.stderr)
+        log_path = Path(next(line.split("Session log: ", 1)[1]
+                             for line in changed.stdout.splitlines() if "Session log: " in line))
+        self.assertNotIn("Reused 1 unchanged metadata record(s)", log_path.read_text(encoding="utf-8"))
 
         full = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
                    "--config", self.config, "--full-rescan")
@@ -2012,6 +2097,58 @@ class ConversionTests(unittest.TestCase):
         self.assertFalse(list(self.output.glob(".afc-convert-*")))
         self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
 
+    def test_ffmpeg_diagnostic_identifies_original_source(self):
+        config = self.work / "diagnostic.json"
+        config.write_text(json.dumps({
+            "FLACSettings": {"ffmpeg_exe_name": str(ARGS.ffprobe)},
+            "MetadataSidecars": {"ConvertToMp3": "required"},
+        }), encoding="utf-8")
+        result = self.convert(config=config, success=False)
+        log_path = Path(next(line.split("Session log: ", 1)[1]
+                             for line in result.stdout.splitlines() if "Session log: " in line))
+        diagnostic = log_path.read_text(encoding="utf-8")
+        self.assertIn(f"FFmpeg [{self.track}]:", diagnostic)
+        self.assertIn("FFmpeg failed with exit code", diagnostic)
+        self.assertFalse(self.mp3().exists())
+
+    def test_ffmpeg_executable_found_on_path(self):
+        config = self.work / "path-executable.json"
+        config.write_text(json.dumps({
+            "FLACSettings": {"ffmpeg_exe_name": Path(ARGS.ffmpeg).name},
+            "MetadataSidecars": {"ConvertToMp3": "required"},
+        }), encoding="utf-8")
+        env = os.environ.copy()
+        env["PATH"] = str(Path(ARGS.ffmpeg).parent) + os.pathsep + env.get("PATH", "")
+        result = run(ARGS.converter, "convert", self.source, "--output-dir", self.output,
+                     "--config", config, "--to", "mp3", env=env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(self.mp3().is_file())
+        self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+
+    def test_taglib_debug_diagnostics_have_track_context(self):
+        self.track.unlink()
+        bare = self.work / "bare.mp3"
+        checked(ARGS.ffmpeg, "-v", "error", "-f", "lavfi", "-i",
+                "sine=frequency=997:sample_rate=44100:duration=0.2",
+                "-c:a", "libmp3lame", "-id3v2_version", "0", bare)
+        frame = b"TDAT\x00\x00\x00\x05\x00\x00\x00" + b"1704"
+        tagged = b"ID3\x03\x00\x00\x00\x00\x00" + bytes([len(frame)]) + frame + bare.read_bytes()
+        tracks = [self.source / "one.mp3", self.source / "two.mp3"]
+        for track in tracks:
+            track.write_bytes(tagged)
+        result = run(ARGS.converter, "scan", self.source, "--output-dir", self.output,
+                     "--config", self.config, "--log-level", "debug")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("no longer supports the frame type TDAT", result.stdout + result.stderr)
+        log_path = Path(next(line.split("Session log: ", 1)[1]
+                             for line in result.stdout.splitlines() if "Session log: " in line))
+        log = log_path.read_text(encoding="utf-8")
+        for track in tracks:
+            if ARGS.taglib_debug:
+                self.assertTrue(any(f"TagLib [{track}]" in line and "frame type TDAT" in line
+                                    for line in log.splitlines()), log)
+            self.assertEqual(track.read_bytes(), tagged)
+
     def test_quality_validation_and_flac_default(self):
         self.convert("--mp3-quality", "10", success=False)
         self.convert("--mp3-quality", "0", success=False, target="flac")
@@ -2104,5 +2241,6 @@ if __name__ == "__main__":
     parser.add_argument("--ffmpeg", type=lambda value: Path(value).resolve(), required=True)
     parser.add_argument("--ffprobe", type=lambda value: Path(value).resolve(), required=True)
     parser.add_argument("--audit-checker", type=lambda value: Path(value).resolve())
+    parser.add_argument("--taglib-debug", type=int, choices=(0, 1), default=0)
     ARGS, remaining = parser.parse_known_args()
     unittest.main(argv=[__file__, *remaining])

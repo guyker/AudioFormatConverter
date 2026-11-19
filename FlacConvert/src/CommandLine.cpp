@@ -1,4 +1,5 @@
 #include "CommandLine.h"
+#include "RunLogging.h"
 
 #include <CLI/CLI.hpp>
 
@@ -20,7 +21,7 @@ const std::string kConfigurationHelp =
     "    isActive (bool, default true), mediaPath (path), mediaName (string, defaults to the path's folder name): legacy menu properties.\n"
     "  MetadataSidecars.Format (binary|json, default binary): original FLAC metadata archive written next to converted audio as .flac-metadata or readable .flac-metadata.json.\n"
     "  MetadataSidecars.ConvertToFlac / ConvertToMp3 (disabled|optional|required, default disabled): sidecar policy per conversion target; optional runs may turn sidecars off (menu prompt or --no-metadata-sidecar), required runs reject that request. Without a sidecar, metadata the output cannot carry stops the conversion.\n"
-    "  LogLevel (integer 0-6, default 1): subcommand logging level (trace, debug, info, warn, err, critical, off).\n"
+    "  LogLevel (integer 0-6, default 1): detailed session-log threshold (trace, debug, info, warn, err, critical, off); console output remains concise.\n"
     "  UseAsyncMetadataReads (bool, default true): parallel TagLib metadata reads while scanning; legacy UseAsyncFFmpegCalls is also accepted.\n"
     "  Incremental (bool, default true): reuse metadata records when path, size and modification time are unchanged.\n"
     "  ScanFlacMetadataArchives (bool, default false): write byte-exact native FLAC metadata archives during scans; scan flags can override it.\n"
@@ -43,6 +44,9 @@ const std::string kConfigurationHelp =
 
 void add_config_option(CLI::App* command, CommandLineOptions& options)
 {
+    command->add_option("--log-level", options.logLevel,
+        "Detailed session-log level: info, debug, or trace. Console output stays concise.")
+        ->check(CLI::IsMember({ "info", "debug", "trace" }));
     command->add_option("--config", options.configPath,
         "Read settings from this JSON file. If omitted, use the persisted config location, then ./config.json, then built-in defaults.")
         ->check([](const std::string& value) {
@@ -190,6 +194,7 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
     catch (const CLI::ParseError& error)
     {
         const int result = app.exit(error, std::cout, std::cerr);
+        if (result != 0) RunLogging::RecordError(std::string("Command line: ") + error.what());
         return result == 0 ? 0 : 2;
     }
 

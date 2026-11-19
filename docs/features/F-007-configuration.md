@@ -7,7 +7,9 @@ Settings come from `config.json`. CLI order: `--config <file>` → directory rec
 `AppSettingsJsonPersistent.txt` (current directory) → `./config.json` → built-in defaults with no libraries. Invalid
 `LogLevel` (outside 0–6), `AlbumsSplitThreshold <= 0`, or a negative/non-integer
 `MetadataScanMaxThreads` fails. `MetadataScanMaxThreads` defaults to `0`, which uses hardware concurrency (fallback 4);
-a positive value caps concurrent metadata workers per album. `MetadataSidecars` sets the conversion sidecar
+a positive value caps concurrent metadata workers per album. `LogLevel` sets the detailed session-file threshold for
+both CLI and menu; CLI `--log-level` overrides it without changing console verbosity (F-010).
+`MetadataSidecars` sets the conversion sidecar
 `Format` (`binary`|`json`, default `binary`) and per-target policies `ConvertToFlac` / `ConvertToMp3`
 (`disabled`|`optional`|`required`, default `disabled`); other values fail loading. The sample config uses
 JSON comments to explain these options. `disabled` never writes a sidecar; `optional` writes by default and can

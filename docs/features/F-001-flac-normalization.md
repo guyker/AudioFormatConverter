@@ -16,6 +16,12 @@ AAC `.m4a` sources are exempt only from the bit-depth check because AAC does not
 depth; they still require a verified sample rate of at least 44.1 kHz and produce a warning that lossy-to-FLAC
 conversion cannot restore lost quality.
 Without `--overwrite`, existing targets are never replaced. Exit code 0 only if every planned item was preserved.
+The console reports conversion start, coarse progress and completion, along with meaningful warnings/errors. Before
+converting tracks in a different folder, it shows the full source album folder path; root-level tracks and disc
+subfolders use their own containing folder. It also signals when audio conversion ends and unchanged files are being
+copied. Per-file success details and expected generated encoder/vendor normalization are available at debug level in
+the session log (F-010); other preservation differences remain warnings, and `conversion-audit.json` retains every
+check (F-003).
 
 ## Entry points
 - `FlacConvert convert <input> [--output-dir] [--overwrite]` → `FlacConvertMain.cpp#RunWithArguments` →
@@ -25,7 +31,7 @@ Without `--overwrite`, existing targets are never replaced. Exit code 0 only if 
 
 ## Design and knowledge
 - DESIGN: `FlacConvert/DESIGN.md` → Key flows / Conversion; Contracts and invariants
-- K-041 install after success, K-048 codec-aware AAC quality gate, K-014 FFmpeg argument vector, K-038 sidecar policy,
+- K-041 install after success, K-048 codec-aware AAC quality gate, K-056 FFmpeg argument vector, K-038 sidecar policy,
   K-032 configured vs canonical paths, K-026/K-031 output tree layout, K-036 complete folders, skipped unchanged folders
 
 ## Acceptance checks
@@ -39,6 +45,8 @@ Without `--overwrite`, existing targets are never replaced. Exit code 0 only if 
 - [ ] Menu conversion accepts extended-prefix output paths with an FFmpeg launcher shim (see DESIGN's output anchoring).
 - [ ] Replacing an output directory after validation cannot redirect writes into the source library.
 - [ ] `conversion-audit.json` exists with `status: completed` (see F-003).
+- [ ] Before converting a folder's tracks, the console identifies the current source album folder without a line per track.
+- [ ] Console output stays concise while the session log retains detailed per-file and preservation diagnostics (F-010).
 - [ ] A written folder retains unsupported audio, extensionless files and audio-free/empty subfolders byte-for-byte.
 - [ ] A folder with audio but no conversions is absent from output and listed once (topmost) with its counts.
 - [ ] Libraries without conversions write only the report (listing `"."`) without launching the encoder.

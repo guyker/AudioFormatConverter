@@ -707,7 +707,18 @@ bool ScopedCurrentDirectory::Restore()
         return ret;
     }
 
+    bool IsStdoutInteractive() {
+#ifdef _WIN32
+        HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+        DWORD mode = 0;
+        return output != nullptr && output != INVALID_HANDLE_VALUE && GetConsoleMode(output, &mode);
+#else
+        return isatty(STDOUT_FILENO) != 0;
+#endif
+    }
+
     bool EnableConsoleColors() {
+        if (!IsStdoutInteractive()) return false;
 #ifdef _WIN32
         wchar_t noColor[2]{};
         if (GetEnvironmentVariableW(L"NO_COLOR", noColor, 2) > 0) return false;
