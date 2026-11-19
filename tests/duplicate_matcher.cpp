@@ -126,6 +126,26 @@ void durationsAndCounts()
     require(!evaluate(first, counts, partial).duplicate, "Partial match ignored the coverage threshold");
 }
 
+void maximumTrackPairing()
+{
+    const auto first = album("a", "Matching", "Artist", {
+        { "First recording", 100.0, std::nullopt, {} },
+        { "Second recording", 103.0, std::nullopt, {} } });
+    const auto second = album("b", "Matching", "Artist", {
+        { "Other one", 101.0, std::nullopt, {} },
+        { "Other two", 98.0, std::nullopt, {} } });
+    const auto result = evaluate(first, second);
+    require(result.duplicate && result.trackPairs.size() == 2,
+        "Greedy duration choice prevented a complete track pairing");
+    const auto matchedSecondDuration = [&](std::size_t firstIndex) {
+        const auto pair = std::ranges::find(result.trackPairs, firstIndex, &TrackPair::first);
+        require(pair != result.trackPairs.end(), "A source track was left unmatched");
+        return *second.trackList[pair->second].catalogRecord->durationSeconds;
+    };
+    require(matchedSecondDuration(0) == 98.0 && matchedSecondDuration(1) == 101.0,
+        "Maximum-cardinality duration pairing chose the wrong assignment");
+}
+
 void identifiers()
 {
     auto md5Tracks = standardTracks();
@@ -237,6 +257,7 @@ int main()
         nameConsensus();
         reorderedAndRepeatedTitles();
         durationsAndCounts();
+        maximumTrackPairing();
         identifiers();
         fuzzyAndLegacy();
         aliasesAndGroups();

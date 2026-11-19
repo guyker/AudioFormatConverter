@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <set>
@@ -457,70 +458,120 @@ DuplicateMatcher::PairEvaluation DuplicateMatcher::EvaluatePair(
     const auto& tracksB = second.tracks;
     if (tracksA.empty() || tracksB.empty()) return result;
 
-    std::vector<bool> usedA(tracksA.size(), false), usedB(tracksB.size(), false);
     const auto compatible = [&](const TrackProfile& left, const TrackProfile& right) {
         if (!knownDuration(left) || !knownDuration(right)) return true;
         return std::abs(*left.durationSeconds - *right.durationSeconds) <=
             DurationTolerance(*left.durationSeconds, *right.durationSeconds, options);
     };
-    const auto addPair = [&](std::size_t i, std::size_t j, const char* method) {
-        usedA[i] = usedB[j] = true;
-        result.trackPairs.push_back({ tracksA[i].index, tracksB[j].index, method });
-    };
-
-    for (std::size_t i = 0; i < tracksA.size(); ++i) {
-        if (tracksA[i].flacMd5.empty()) continue;
-        for (std::size_t j = 0; j < tracksB.size(); ++j) {
-            if (!usedB[j] && tracksB[j].flacMd5 == tracksA[i].flacMd5) {
-                addPair(i, j, "flac-md5");
-                break;
-            }
-        }
-    }
-    const auto pairByUniqueKey = [&](auto keyOf, const char* method) {
-        std::map<decltype(keyOf(tracksA[0])), std::vector<std::size_t>> left, right;
-        for (std::size_t i = 0; i < tracksA.size(); ++i) {
-            if (!usedA[i]) if (auto key = keyOf(tracksA[i])) left[*key].push_back(i);
-        }
-        for (std::size_t j = 0; j < tracksB.size(); ++j) {
-            if (!usedB[j]) if (auto key = keyOf(tracksB[j])) right[*key].push_back(j);
-        }
-        for (const auto& [key, indexes] : left) {
-            const auto other = right.find(key);
-            if (indexes.size() == 1 && other != right.end() && other->second.size() == 1 &&
-                compatible(tracksA[indexes.front()], tracksB[other->second.front()])) {
-                addPair(indexes.front(), other->second.front(), method);
-            }
-        }
-    };
-    pairByUniqueKey([](const TrackProfile& track) {
+    const auto numberKey = [](const TrackProfile& track) -> std::optional<std::pair<int, int>> {
         return track.track ? std::optional<std::pair<int, int>>({ track.disc.value_or(1), *track.track }) :
             std::nullopt;
-    }, "track-number");
-    pairByUniqueKey([](const TrackProfile& track) {
+    };
+    const auto uniqueKeys = [](const auto& tracks, const auto& keyOf) {
+        using Key = typename decltype(keyOf(tracks.front()))::value_type;
+        std::map<Key, std::size_t> counts;
+        for (const auto& track : tracks) {
+            if (const auto key = keyOf(track)) ++counts[*key];
+        }
+        std::set<Key> unique;
+        for (const auto& [key, count] : counts) if (count == 1) unique.insert(key);
+        return unique;
+    };
+    const auto uniqueNumbersA = uniqueKeys(tracksA, numberKey);
+    const auto uniqueNumbersB = uniqueKeys(tracksB, numberKey);
+    const auto titleKey = [](const TrackProfile& track) -> std::optional<std::string> {
         return track.title.empty() ? std::nullopt : std::optional<std::string>(track.title);
-    }, "title");
+    };
+    const auto uniqueTitlesA = uniqueKeys(tracksA, titleKey);
+    const auto uniqueTitlesB = uniqueKeys(tracksB, titleKey);
 
-    struct Candidate { double difference; std::size_t i, j; };
-    std::vector<Candidate> candidates;
+    struct Candidate
+    {
+        std::size_t other;
+        int priority;
+        double durationDifference;
+        const char* method;
+    };
+    std::vector<std::vector<Candidate>> candidates(tracksA.size());
     for (std::size_t i = 0; i < tracksA.size(); ++i) {
-        if (usedA[i] || !knownDuration(tracksA[i])) continue;
         for (std::size_t j = 0; j < tracksB.size(); ++j) {
-            if (usedB[j] || !knownDuration(tracksB[j])) continue;
-            const auto difference = std::abs(*tracksA[i].durationSeconds - *tracksB[j].durationSeconds);
-            if (difference <= DurationTolerance(*tracksA[i].durationSeconds, *tracksB[j].durationSeconds, options)) {
-                candidates.push_back({ difference, i, j });
+            const auto& left = tracksA[i];
+            const auto& right = tracksB[j];
+            int priority = 0;
+            const char* method = nullptr;
+            double durationDifference = 0;
+            if (!left.flacMd5.empty() && left.flacMd5 == right.flacMd5) {
+                priority = 0;
+                method = "flac-md5";
+            }
+            else if (const auto leftNumber = numberKey(left); leftNumber && numberKey(right) == leftNumber &&
+                uniqueNumbersA.contains(*leftNumber) && uniqueNumbersB.contains(*leftNumber) &&
+                compatible(left, right)) {
+                priority = 1;
+                method = "track-number";
+            }
+            else if (!left.title.empty() && left.title == right.title &&
+                uniqueTitlesA.contains(left.title) && uniqueTitlesB.contains(right.title) &&
+                compatible(left, right)) {
+                priority = 2;
+                method = "title";
+            }
+            else if (knownDuration(left) && knownDuration(right)) {
+                durationDifference = std::abs(*left.durationSeconds - *right.durationSeconds);
+                if (durationDifference > DurationTolerance(*left.durationSeconds, *right.durationSeconds, options)) {
+                    continue;
+                }
+                priority = 3;
+                method = "duration";
+            }
+            else if (!knownDuration(left) && !knownDuration(right)) {
+                priority = 4;
+                method = "unknown-duration";
+            }
+            if (method) candidates[i].push_back({ j, priority, durationDifference, method });
+        }
+        std::ranges::stable_sort(candidates[i], [](const Candidate& left, const Candidate& right) {
+            if (left.priority != right.priority) return left.priority < right.priority;
+            if (left.durationDifference != right.durationDifference) {
+                return left.durationDifference < right.durationDifference;
+            }
+            return left.other < right.other;
+        });
+    }
+
+    // Augmenting paths maximize the number of paired tracks instead of letting an early close
+    // duration match consume the only compatible track for another source track.
+    std::vector<std::size_t> leftOrder(tracksA.size());
+    std::iota(leftOrder.begin(), leftOrder.end(), 0);
+    std::ranges::stable_sort(leftOrder, [&](std::size_t left, std::size_t right) {
+        return candidates[left].size() < candidates[right].size();
+    });
+    const auto unmatched = (std::numeric_limits<std::size_t>::max)();
+    std::vector<std::size_t> matchedLeftByRight(tracksB.size(), unmatched);
+    std::vector<const Candidate*> matchedEdgeByRight(tracksB.size(), nullptr);
+    const auto augment = [&](auto&& self, std::size_t left, std::vector<bool>& visited) -> bool {
+        for (const auto& candidate : candidates[left]) {
+            if (visited[candidate.other]) continue;
+            visited[candidate.other] = true;
+            if (matchedLeftByRight[candidate.other] == unmatched ||
+                self(self, matchedLeftByRight[candidate.other], visited)) {
+                matchedLeftByRight[candidate.other] = left;
+                matchedEdgeByRight[candidate.other] = &candidate;
+                return true;
             }
         }
+        return false;
+    };
+    for (const auto left : leftOrder) {
+        std::vector<bool> visited(tracksB.size(), false);
+        augment(augment, left, visited);
     }
-    std::ranges::stable_sort(candidates, {}, &Candidate::difference);
-    for (const auto& candidate : candidates) {
-        if (!usedA[candidate.i] && !usedB[candidate.j]) addPair(candidate.i, candidate.j, "duration");
-    }
-    for (std::size_t i = 0, j = 0; i < tracksA.size() && j < tracksB.size();) {
-        if (usedA[i] || knownDuration(tracksA[i])) { ++i; continue; }
-        if (usedB[j] || knownDuration(tracksB[j])) { ++j; continue; }
-        addPair(i++, j++, "unknown-duration");
+    std::vector<bool> usedA(tracksA.size(), false), usedB(tracksB.size(), false);
+    for (std::size_t j = 0; j < tracksB.size(); ++j) {
+        if (matchedLeftByRight[j] == unmatched) continue;
+        const auto i = matchedLeftByRight[j];
+        usedA[i] = usedB[j] = true;
+        result.trackPairs.push_back({ tracksA[i].index, tracksB[j].index, matchedEdgeByRight[j]->method });
     }
 
     std::ranges::sort(result.trackPairs, {}, &TrackPair::first);

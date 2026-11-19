@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <iosfwd>
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 namespace DuplicateReview
@@ -38,8 +39,9 @@ namespace DuplicateReview
     };
 
     // Reviews a group of two or more duplicate albums. Albums can be moved one at a time, each with an
-    // explicit MOVE confirmation; the last remaining album can never be moved.
+    // explicit MOVE confirmation; moves that disconnect the remaining direct-match graph are refused.
     GroupResult ReviewGroup(const std::vector<std::filesystem::path>& albums,
+        const std::vector<std::pair<std::size_t, std::size_t>>& directMatches,
         const std::vector<std::filesystem::path>& libraryRoots,
         const std::filesystem::path& outputRoot, bool openFolders,
         std::istream& input, std::ostream& output);

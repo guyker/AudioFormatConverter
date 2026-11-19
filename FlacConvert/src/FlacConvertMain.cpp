@@ -2312,11 +2312,16 @@ bool writeDuplicateReport(const fs::path& reportPath, const char* status,
         fs::remove(temporary, ec);
         return false;
     }
-    fs::rename(temporary, reportPath, ec);
+    fs::create_hard_link(temporary, reportPath, ec);
     if (ec) {
-        spdlog::error("Cannot install duplicate report '{}': {}", pathToUtf8(reportPath), ec.message());
+        spdlog::error("Cannot publish duplicate report without overwriting an existing file '{}': {}",
+            pathToUtf8(reportPath), ec.message());
         fs::remove(temporary, ec);
         return false;
+    }
+    if (!fs::remove(temporary, ec) || ec) {
+        spdlog::warn("Duplicate report was published but temporary file '{}' could not be removed.",
+            pathToUtf8(temporary));
     }
     spdlog::info("Duplicate report written: '{}'.", pathToUtf8(reportPath));
     return true;
@@ -2410,6 +2415,37 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
         if (ec) {
             spdlog::error("Cannot resolve duplicate report path '{}': {}", pathToUtf8(reportPath), ec.message());
             return 1;
+        }
+        std::set<fs::path> sourceRoots;
+        bool unknownSourceRoot = false;
+        for (const auto& album : albums) {
+            if (album.trackList.empty()) continue;
+            for (const auto& track : album.trackList) {
+                if (!track.libraryRoot || track.libraryRoot->empty()) {
+                    unknownSourceRoot = true;
+                    continue;
+                }
+                std::error_code rootError;
+                const auto root = fs::canonical(*track.libraryRoot, rootError);
+                if (rootError || !fs::is_directory(root, rootError) || rootError) {
+                    spdlog::error("Cannot resolve source library root for duplicate report safety: '{}'.",
+                        track.libraryRoot ? pathToUtf8(*track.libraryRoot) : "(missing)");
+                    return 1;
+                }
+                sourceRoots.insert(root);
+            }
+        }
+        if (unknownSourceRoot || sourceRoots.empty()) {
+            spdlog::error("Cannot verify duplicate report is outside every source library because an input "
+                "has no trusted library root; rescan the library to schema-v2 JSON.");
+            return 1;
+        }
+        for (const auto& root : sourceRoots) {
+            if (DuplicateReview::IsSameOrChildPath(reportKey, root)) {
+                spdlog::error("Duplicate report must be outside every scanned source library: '{}'.",
+                    pathToUtf8(reportPath));
+                return 1;
+            }
         }
         for (const auto& key : albumKeys) {
             if (DuplicateReview::IsSameOrChildPath(reportKey, key)) {
@@ -2628,8 +2664,25 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
                 }
                 if (remaining.size() < 2) continue;
                 std::vector<fs::path> paths;
+                std::map<std::size_t, std::size_t> positionByAlbum;
                 for (const auto album : remaining) paths.push_back(albums[album].path.path());
-                const auto decision = DuplicateReview::ReviewGroup(paths,
+                for (std::size_t index = 0; index < remaining.size(); ++index) {
+                    positionByAlbum.emplace(remaining[index], index);
+                }
+                std::vector<std::pair<std::size_t, std::size_t>> directMatches;
+                for (const auto pairIndex : group.pairs) {
+                    const auto& pair = matches.pairs[pairIndex];
+                    const auto first = positionByAlbum.find(pair.first);
+                    const auto second = positionByAlbum.find(pair.second);
+                    if (first != positionByAlbum.end() && second != positionByAlbum.end()) {
+                        directMatches.emplace_back(first->second, second->second);
+                    }
+                }
+                if (directMatches.empty()) {
+                    spdlog::warn("Duplicate group has no direct match among its remaining albums; review skipped.");
+                    continue;
+                }
+                const auto decision = DuplicateReview::ReviewGroup(paths, directMatches,
                     review->libraryRoots, review->outputRoot, openDuplicateFolders, std::cin, std::cout);
                 for (std::size_t i = 0; i < decision.movedAlbums.size(); ++i) {
                     const auto& movedKey = albumKeys[remaining[decision.movedAlbums[i]]];

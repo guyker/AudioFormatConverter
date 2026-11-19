@@ -199,7 +199,10 @@ libraries, with its path logged. If the temporary location is unsafe or unavaila
 
 `ScanFolderProcessJSONAndFindDuplicates`: load batches grouped by their input directory and validate each group's
 manifest against only its own batches and albums, then combine all libraries for cross-library matching, reassemble
-fragments, then call `DuplicateMatcher::FindDuplicates` (pure in-memory; no I/O or settings lookup). Albums whose
+fragments, then call `DuplicateMatcher::FindDuplicates` (pure in-memory; no I/O or settings lookup). Per-album track
+pairing uses a deterministic augmenting-path bipartite matcher: it maximizes matched-track cardinality before
+searching alternatives in preference order (MD5, unique track number, unique title, closer compatible durations).
+Albums whose
 canonical folder path repeats (overlapping libraries) are aliases: only the first is compared, and a content difference
 is warned. Candidate pairs come from indexes on normalized album name (UTF-8 case/accent/punctuation folding, NFC/NFD
 equal, optional edition-text stripping), MusicBrainz release ID, stored FLAC MD5 (buckets above 64 albums skipped and
@@ -217,13 +220,15 @@ is reported, but these attributes cannot prove file identity; legacy records lac
 still reflects the scan. Probe errors fail the operation.
 The CLI operation remains noninteractive and read-only; folders are opened only with `--open`.
 `duplicates --report <file>` writes a schema-1 JSON report (status, statistics, aliases, groups, pairs with confidence,
-evidence, track pairings and unmatched tracks) via `.partial` then rename; an existing report or a path inside an
-album is refused, and a failed or stopped run still records its status.
+evidence, track pairings and unmatched tracks) via a sibling `.partial` and atomic no-overwrite publication; an
+existing report or a path inside any source library is refused. Report generation fails for legacy input without a
+trusted library root, and a failed or stopped run still records its status.
 Menu option 3 warns about overlapping active libraries, opens only the current group's folders and calls
 `DuplicateReview::ReviewGroup` after the group's pairs: Enter/`CONTINUE` advances, `STOP` or EOF ends review, and an
-album number selects that whole album folder for relocation while more than one album remains. The move preview shows exact paths and requires `MOVE`; any other confirmation cancels the move.
-After a move, the group list is shown again with moved albums marked; later pairs involving a moved folder or its
-descendants are skipped.
+album number selects that whole album folder for relocation while more than one album remains. The group displays
+its direct-match edges; a proposed move is rejected if the remaining induced graph would disconnect. The move preview
+shows exact paths and requires `MOVE`; any other confirmation cancels the move. After a move, the group list is shown
+again with moved albums marked; later pairs involving a moved folder or its descendants are skipped.
 The summary distinguishes user-stopped review and counts completed comparisons, moved albums, and skipped pairs.
 
 Moves use a unique `OutDirectory/deleted/album-<time>-<sequence>/<original-folder-name>` destination, with a sibling

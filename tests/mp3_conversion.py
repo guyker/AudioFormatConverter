@@ -1677,6 +1677,29 @@ class ConversionTests(unittest.TestCase):
         database = database_output / "malformed-metadata" / "catalog-v2.sqlite"
         self.assertFalse(database.exists())
 
+    def test_duplicates_report_refuses_legacy_input_without_library_root(self):
+        json_directory = self.work / "legacy-duplicates"
+        json_directory.mkdir()
+        json_file = json_directory / "media_out_legacy_1.json"
+        json_file.write_text(json.dumps([{
+            "Album Path": str(self.work / "legacy-source" / "album"),
+            "Folder": "album",
+            "Tracks": [{
+                "format": {
+                    "filename": str(self.work / "legacy-source" / "album" / "track.flac"),
+                    "format_name": "flac",
+                },
+                "streams": [{"codec_type": "audio", "codec_name": "flac"}],
+            }],
+        }]), encoding="utf-8")
+        report = self.work / "legacy-report.json"
+
+        result = run(ARGS.converter, "duplicates", json_directory, "--report", report)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("no trusted library root", result.stdout + result.stderr)
+        self.assertFalse(report.exists())
+
     def test_manual_scan_matches_explicit_scan_across_batches(self):
         for name in ("a", "b", "c"):
             album = self.source / name

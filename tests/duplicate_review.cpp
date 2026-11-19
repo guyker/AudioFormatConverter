@@ -228,11 +228,12 @@ void reviewGroup()
     const auto third = fixture.library / "third";
     write(third / "track.flac", "third");
     const std::vector<fs::path> albums{ fixture.first, fixture.second, third };
+    const std::vector<std::pair<std::size_t, std::size_t>> directMatches{ { 0, 1 }, { 1, 2 } };
     const auto run = [&](const std::string& choices) {
         std::istringstream input(choices);
         std::ostringstream messages;
-        auto result = DuplicateReview::ReviewGroup(albums, { fixture.library }, fixture.output, false,
-            input, messages);
+        auto result = DuplicateReview::ReviewGroup(albums, directMatches, { fixture.library },
+            fixture.output, false, input, messages);
         return std::pair{ result, messages.str() };
     };
     const auto [invalid, invalidText] = run("0\n4\nabc\n2\nno\n\n");
@@ -241,17 +242,23 @@ void reviewGroup()
     require(invalidText.find("Invalid choice") != std::string::npos, "Invalid group choice not reported");
     require(!fs::exists(fixture.output), "Cancelled group review created output");
 
-    const auto [moved, movedText] = run("3\nMOVE\n3\n2\nMOVE\n1\n\n");
+    const auto [blocked, blockedText] = run("2\nSTOP\n");
+    require(blocked.action == DuplicateReview::Action::Stop && blocked.movedAlbums.empty(),
+        "Moving the bridge album in a non-clique group was allowed");
+    require(blockedText.find("remaining albums would split into groups") != std::string::npos,
+        "Disconnected-group refusal was not explained");
+
+    const auto [moved, movedText] = run("1\nMOVE\n2\nMOVE\n\n");
     require(moved.action == DuplicateReview::Action::Continue &&
-        moved.movedAlbums == std::vector<std::size_t>{ 2, 1 } && moved.destinations.size() == 2,
+        moved.movedAlbums == std::vector<std::size_t>{ 0, 1 } && moved.destinations.size() == 2,
         "Group review did not move the chosen albums in order");
-    require(!fs::exists(third) && !fs::exists(fixture.second) && fs::exists(fixture.first / "track.flac"),
+    require(!fs::exists(fixture.first) && !fs::exists(fixture.second) && fs::exists(third / "track.flac"),
         "Group review moved the wrong albums");
-    require(read(moved.destinations[0] / "track.flac") == "third" &&
+    require(read(moved.destinations[0] / "track.flac") == std::string(150000, 'x') &&
         read(moved.destinations[1] / "track.flac") == "keep", "Group move changed album content");
     require(movedText.find("[moved]") != std::string::npos, "Moved album not marked in the group list");
-    require(movedText.rfind("Invalid choice") > movedText.rfind("Album moved"),
-        "Last remaining album could be selected for a move");
+    require(movedText.find("Direct matches: 1-2 2-3") != std::string::npos,
+        "Direct match relationships were not displayed");
 }
 
 #ifdef _WIN32

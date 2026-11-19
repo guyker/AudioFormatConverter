@@ -32,16 +32,26 @@ explicitly. Native metadata inventory is partial for FLAC/MP3 and unsupported fo
 1. The `convert` command uses FFmpeg to write FLAC or convert FLAC to MP3 into a separate output tree and leaves source files unchanged. The legacy menu remains available without arguments during the CLI transition.
 
 <h3>Duplicate Album Detection and Comparison:</h3>
-1. A key feature is finding "duplicate" albums within the scanned collection (`DuplicateMatcher`). Candidates share a normalized album name (case, accents and punctuation ignored), a MusicBrainz release ID, or a stored FLAC MD5; tracks are paired by MD5, disc/track number, title, then duration (within the larger of `DuplicateDurationToleranceSeconds` and `SizeMatchPercentageThreshold` percent). Matches are graded exact, strong, probable or partial and grouped, so three copies form one group. The same folder loaded twice (overlapping libraries) is compared once. Fuzzy names, edition-text stripping and partial (unequal track count) matches are opt-in settings.
+1. A key feature is finding "duplicate" albums within the scanned collection (`DuplicateMatcher`). Candidates share a
+   normalized album name (case, accents and punctuation ignored), a MusicBrainz release ID, or a stored FLAC MD5.
+   Track pairing maximizes matched tracks; its deterministic search order prefers MD5, disc/track number, title, then
+   duration (within the larger of `DuplicateDurationToleranceSeconds` and `SizeMatchPercentageThreshold` percent).
+   Matches are graded
+   exact, strong, probable or partial and grouped, so three copies form one group. The same folder loaded twice
+   (overlapping libraries) is compared once. Fuzzy names, edition-text stripping and partial (unequal track count)
+   matches are opt-in settings.
 2. Candidate pairs are re-probed and a report compares their format and tag properties; no signal-quality analysis is performed (`ExtraAudioQualityMetrics` is deprecated and ignored).
 3. Menu option 3 opens one matching group at a time and waits: Enter continues; `STOP` finishes. Choose an album number,
    then confirm the displayed paths with `MOVE`, to move that entire album folder (including artwork and subfolders)
    under `OutDirectory/deleted`. All files are copied and verified before originals are removed, also across drives.
    A unique destination and `move.json` receipt are retained; cleanup failure can leave partial originals beside a
-   complete verified copy. The last remaining album of a group cannot be moved; later pairs involving a moved folder are skipped. Rerun option 2 afterward to refresh the
+   complete verified copy. Direct match relationships are shown, and a move that disconnects the remaining group is
+   refused. Later pairs involving a moved folder are skipped. Rerun option 2 afterward to refresh the
    scan; option 4 reimports current albums but does not purge absent albums from an existing database.
    Library roots, linked/nested pairs and unsafe output overlap cannot be moved.
-   The `duplicates` command stays noninteractive/read-only, opens folders only with `--open`, and writes a JSON report of groups, evidence and track pairings with `--report <new file>`.
+   The `duplicates` command stays noninteractive/read-only and opens folders only with `--open`. Use
+   `--report <new file>` to write a JSON report of groups, evidence and track pairings. Reports must be outside source
+   libraries; legacy input without library-root metadata cannot be reported.
 
 <h3>Legacy interactive menu (no arguments):</h3>
 The compact menu shows numbered actions; selecting one displays its input, output and file changes. Enter one number and

@@ -352,6 +352,7 @@ DuplicateReview::Result DuplicateReview::ReviewPair(const fs::path& first, const
 }
 
 DuplicateReview::GroupResult DuplicateReview::ReviewGroup(const std::vector<fs::path>& albums,
+    const std::vector<std::pair<std::size_t, std::size_t>>& directMatches,
     const std::vector<fs::path>& libraryRoots, const fs::path& outputRoot, bool openFolders,
     std::istream& input, std::ostream& output)
 {
@@ -361,6 +362,11 @@ DuplicateReview::GroupResult DuplicateReview::ReviewGroup(const std::vector<fs::
         std::vector<fs::path> paths;
         paths.reserve(albums.size());
         for (const auto& album : albums) paths.push_back(ioPath(album));
+        for (const auto& [first, second] : directMatches) {
+            if (first >= paths.size() || second >= paths.size() || first == second) {
+                throw std::invalid_argument("Duplicate review contains an invalid direct-match pair.");
+            }
+        }
         const auto root = ioPath(outputRoot);
         std::vector<fs::path> roots;
         roots.reserve(libraryRoots.size());
@@ -374,6 +380,12 @@ DuplicateReview::GroupResult DuplicateReview::ReviewGroup(const std::vector<fs::
         };
         for (;;) {
             output << "\nDuplicate review:\n";
+            output << "Direct matches:";
+            if (directMatches.empty()) output << " none";
+            for (const auto& [first, second] : directMatches) {
+                output << ' ' << first + 1 << '-' << second + 1;
+            }
+            output << '\n';
             for (std::size_t index = 0; index < paths.size(); ++index) {
                 output << "  " << index + 1 << ": " << CommonUtils::path_to_utf8(paths[index])
                     << (moved[index] ? "  [moved]" : "") << '\n';
@@ -397,6 +409,35 @@ DuplicateReview::GroupResult DuplicateReview::ReviewGroup(const std::vector<fs::
                 continue;
             }
             const auto sourceIndex = selected - 1;
+            if (remaining() > 2) {
+                std::vector<bool> reachable(paths.size(), false);
+                std::size_t firstRemaining = paths.size();
+                for (std::size_t index = 0; index < paths.size(); ++index) {
+                    if (index != sourceIndex && !moved[index]) {
+                        firstRemaining = index;
+                        break;
+                    }
+                }
+                std::vector<std::size_t> pending{ firstRemaining };
+                reachable[firstRemaining] = true;
+                while (!pending.empty()) {
+                    const auto current = pending.back();
+                    pending.pop_back();
+                    for (const auto& [first, second] : directMatches) {
+                        const auto next = first == current ? second : second == current ? first : paths.size();
+                        if (next < paths.size() && next != sourceIndex && !moved[next] && !reachable[next]) {
+                            reachable[next] = true;
+                            pending.push_back(next);
+                        }
+                    }
+                }
+                const auto connectedCount = static_cast<std::size_t>(std::ranges::count(reachable, true));
+                if (connectedCount != remaining() - 1) {
+                    output << "Cannot move this album: the remaining albums would split into groups without "
+                        "direct matches.\n";
+                    continue;
+                }
+            }
             const auto& source = paths[sourceIndex];
             std::optional<std::size_t> keepIndex;
             for (std::size_t index = 0; index < paths.size(); ++index) {

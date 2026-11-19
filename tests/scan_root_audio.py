@@ -1144,6 +1144,14 @@ def main():
         )
         if repeated_report.returncode == 0:
             raise AssertionError("Existing duplicate report was overwritten")
+        source_library_report = duplicates_library / "duplicate-report.json"
+        inside_library = subprocess.run(
+            [converter, "duplicates", str(duplicate_output / duplicates_library.name),
+             "--report", str(source_library_report)],
+            capture_output=True, text=True, timeout=30,
+        )
+        if inside_library.returncode == 0 or source_library_report.exists():
+            raise AssertionError("Duplicate report was allowed inside its source library")
         if "Different number of tracks" in duplicate_run.stdout or \
                 "Album duration check (album1/2)" in duplicate_run.stdout:
             raise AssertionError("Nested or unordered tracks caused a false mismatch")
