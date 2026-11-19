@@ -222,6 +222,38 @@ void movedPathContainment()
         "Moving an album incorrectly excluded other albums");
 }
 
+void reviewGroup()
+{
+    Fixture fixture;
+    const auto third = fixture.library / "third";
+    write(third / "track.flac", "third");
+    const std::vector<fs::path> albums{ fixture.first, fixture.second, third };
+    const auto run = [&](const std::string& choices) {
+        std::istringstream input(choices);
+        std::ostringstream messages;
+        auto result = DuplicateReview::ReviewGroup(albums, { fixture.library }, fixture.output, false,
+            input, messages);
+        return std::pair{ result, messages.str() };
+    };
+    const auto [invalid, invalidText] = run("0\n4\nabc\n2\nno\n\n");
+    require(invalid.action == DuplicateReview::Action::Continue && invalid.movedAlbums.empty(),
+        "Invalid or cancelled group choices moved an album");
+    require(invalidText.find("Invalid choice") != std::string::npos, "Invalid group choice not reported");
+    require(!fs::exists(fixture.output), "Cancelled group review created output");
+
+    const auto [moved, movedText] = run("3\nMOVE\n3\n2\nMOVE\n1\n\n");
+    require(moved.action == DuplicateReview::Action::Continue &&
+        moved.movedAlbums == std::vector<std::size_t>{ 2, 1 } && moved.destinations.size() == 2,
+        "Group review did not move the chosen albums in order");
+    require(!fs::exists(third) && !fs::exists(fixture.second) && fs::exists(fixture.first / "track.flac"),
+        "Group review moved the wrong albums");
+    require(read(moved.destinations[0] / "track.flac") == "third" &&
+        read(moved.destinations[1] / "track.flac") == "keep", "Group move changed album content");
+    require(movedText.find("[moved]") != std::string::npos, "Moved album not marked in the group list");
+    require(movedText.rfind("Invalid choice") > movedText.rfind("Album moved"),
+        "Last remaining album could be selected for a move");
+}
+
 #ifdef _WIN32
 void failedCopyAndCleanup()
 {
@@ -265,6 +297,7 @@ int main()
         unsafeMoves();
         relativePaths();
         movedPathContainment();
+        reviewGroup();
 #ifdef _WIN32
         failedCopyAndCleanup();
 #endif

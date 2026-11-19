@@ -3,7 +3,8 @@ id: K-046
 kind: decision
 title: "Match duplicate tracks by duration rather than compressed size"
 area: [FlacConvert]
-status: active
+status: superseded
+superseded_by: K-054
 created: 2026-11-16
 reviewed: 2026-11-16
 cites:

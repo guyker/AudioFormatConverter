@@ -5,12 +5,14 @@ title: "Quarantine duplicate albums only by explicit per-pair choice"
 area: [FlacConvert]
 status: active
 created: 2026-11-18
-reviewed: 2026-11-18
+reviewed: 2026-11-19
 cites:
   - path: FlacConvert/src/DuplicateReview.cpp
     symbol: "DuplicateReview::ReviewPair"
   - path: FlacConvert/src/DuplicateReview.cpp
     symbol: moveAlbum
+  - path: FlacConvert/src/DuplicateReview.cpp
+    symbol: "DuplicateReview::ReviewGroup"
 ---
 
 **Fact:** `DuplicateReview::ReviewPair` requires a separate album choice and exact `MOVE` confirmation for each

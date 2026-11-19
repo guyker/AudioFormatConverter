@@ -96,13 +96,10 @@ public:
 	//compare
 //	void SortAlbums(std::shared_ptr<std::vector<MediaAlbum>>, bool ascending = true);
 	void SortAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr, const std::vector<std::pair<SortBy, bool>>& criteria);
-	SimilarAlbumIndexPairs FindDuplicateAlbums(std::shared_ptr<DirectoryContentEntryList> albumListPtr);
 
 	
 private:
 
-	//sort and find duplications
-	SimilarAlbumIndexPairs FindDuplicationInGroup(std::shared_ptr<DirectoryContentEntryList> albumListPtr, const std::vector<DirectoryContentEntryList::const_iterator>& group);
 
 	//private Helpers
 	std::pair<long long, long long> GetNumberOfItemsInFolder(std::filesystem::path path, int depth);

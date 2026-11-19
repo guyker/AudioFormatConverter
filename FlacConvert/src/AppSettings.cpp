@@ -287,6 +287,11 @@ std::string AppSettingsJson::toJsonString() const {
     doc.AddMember("RecursionDirectorySearchDepth", RecursionDirectorySearchDepth, allocator);
     doc.AddMember("AlbumsSplitThreshold", AlbumsSplitThreshold, allocator);
     doc.AddMember("JsonBatchTargetBytes", JsonBatchTargetBytes, allocator);
+    doc.AddMember("DuplicateDurationToleranceSeconds", DuplicateDurationToleranceSeconds, allocator);
+    doc.AddMember("DuplicateFuzzyNames", DuplicateFuzzyNames, allocator);
+    doc.AddMember("DuplicateStripEditionText", DuplicateStripEditionText, allocator);
+    doc.AddMember("DuplicatePartialMatches", DuplicatePartialMatches, allocator);
+    doc.AddMember("DuplicatePartialMinCoverage", DuplicatePartialMinCoverage, allocator);
 
     rapidjson::StringBuffer buffer;
     rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
@@ -388,6 +393,29 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
             parsedExtensions.push_back(std::move(extension));
         }
         CatalogExtensions = std::move(parsedExtensions);
+    }
+    if (doc.HasMember("SizeMatchPercentageThreshold") &&
+        (!doc["SizeMatchPercentageThreshold"].IsInt() || doc["SizeMatchPercentageThreshold"].GetInt() < 0)) {
+        spdlog::error("SizeMatchPercentageThreshold must be a non-negative integer.");
+        return false;
+    }
+    if (doc.HasMember("DuplicateDurationToleranceSeconds") &&
+        (!doc["DuplicateDurationToleranceSeconds"].IsNumber() ||
+            !(doc["DuplicateDurationToleranceSeconds"].GetDouble() >= 0.0))) {
+        spdlog::error("DuplicateDurationToleranceSeconds must be a non-negative number.");
+        return false;
+    }
+    for (const char* name : { "DuplicateFuzzyNames", "DuplicateStripEditionText", "DuplicatePartialMatches" }) {
+        if (doc.HasMember(name) && !doc[name].IsBool()) {
+            spdlog::error("{} must be a boolean.", name);
+            return false;
+        }
+    }
+    if (doc.HasMember("DuplicatePartialMinCoverage") &&
+        (!doc["DuplicatePartialMinCoverage"].IsInt() || doc["DuplicatePartialMinCoverage"].GetInt() < 1 ||
+            doc["DuplicatePartialMinCoverage"].GetInt() > 100)) {
+        spdlog::error("DuplicatePartialMinCoverage must be an integer from 1 through 100.");
+        return false;
     }
     if (doc.HasMember("ScanTier") &&
         (!doc["ScanTier"].IsString() ||
@@ -558,6 +586,21 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
     }
     if (doc.HasMember("JsonBatchTargetBytes")) {
         JsonBatchTargetBytes = doc["JsonBatchTargetBytes"].GetUint64();
+    }
+    if (doc.HasMember("DuplicateDurationToleranceSeconds")) {
+        DuplicateDurationToleranceSeconds = doc["DuplicateDurationToleranceSeconds"].GetDouble();
+    }
+    if (doc.HasMember("DuplicateFuzzyNames")) {
+        DuplicateFuzzyNames = doc["DuplicateFuzzyNames"].GetBool();
+    }
+    if (doc.HasMember("DuplicateStripEditionText")) {
+        DuplicateStripEditionText = doc["DuplicateStripEditionText"].GetBool();
+    }
+    if (doc.HasMember("DuplicatePartialMatches")) {
+        DuplicatePartialMatches = doc["DuplicatePartialMatches"].GetBool();
+    }
+    if (doc.HasMember("DuplicatePartialMinCoverage")) {
+        DuplicatePartialMinCoverage = doc["DuplicatePartialMinCoverage"].GetInt();
     }
     
     return true;

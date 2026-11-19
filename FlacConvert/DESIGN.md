@@ -31,8 +31,9 @@ It runs either as explicit CLI commands or, with no arguments, as a legacy inter
 | Catalog metadata | `src/TagLibReader.cpp`, `include/TagLibReader.h`, `include/MediaRecord.h`, `src/MediaRecordJson.cpp` | Read-only TagLib extraction, normalized multi-value tags, source-scoped raw tags, picture descriptors, and schema-v2 JSON |
 | Track/album model | `src/MediaTrack.cpp`, `include/MediaTrack.h`, `include/MediaInformation.h`, `include/MediaAlbum.h` | `MediaTrack` (legacy probe parsing/comparison), `FFprobeOutput`, `MediaAlbum` |
 | Catalog database | `src/CatalogDatabase.cpp`, `include/CatalogDatabase.h` | Schema-v2 SQLite writer, stable library-relative identity, incremental upsert and stale-file cleanup |
-| Album collection | `src/AlbumCollection.cpp`, `include/AlbumCollection.h` | Discovery (`AlbumCollection::LoadAlbumsCo`), metadata import/cache reuse, JSON save/load, duplicate search, `AlbumCollection::ExportToDatabase` |
-| Duplicate review | `src/DuplicateReview.cpp`, `include/DuplicateReview.h` | Per-pair menu choices; explicitly confirmed, verified whole-folder moves to `OutDirectory/deleted` |
+| Album collection | `src/AlbumCollection.cpp`, `include/AlbumCollection.h` | Discovery (`AlbumCollection::LoadAlbumsCo`), metadata import/cache reuse, JSON save/load, `AlbumCollection::ExportToDatabase` |
+| Duplicate matching | `src/DuplicateMatcher.cpp`, `include/DuplicateMatcher.h` | `DuplicateMatcher::FindDuplicates`: aliases, candidate indexes, pair evaluation, confidence and grouping |
+| Duplicate review | `src/DuplicateReview.cpp`, `include/DuplicateReview.h` | Per-group menu choices; explicitly confirmed, verified whole-folder moves to `OutDirectory/deleted` |
 | Platform adapters | `src/PlatformUtils.cpp`, `include/PlatformUtils.h` | UTF-16/UTF-8, `PlatformUtils::WindowsLongPath`, `PlatformUtils::OpenDirectory` |
 | Utilities | `src/CommonUtils.cpp`, `include/CommonUtils.h`, `include/BoundedTaskRunner.h`, `src/JsonUtils.cpp`, `include/JsonUtils.h` | UTF-8 path helpers, coroutine `Generator`, bounded task runner, JSON helpers |
 | Legacy (unused) | `FolderConvert::ConverAudioFolder`, `FolderConvert::ConverAudioFolder2`, `MediaConvertionAsyncTask` | In-place conversion paths with no caller outside themselves; not part of any current flow |
@@ -73,7 +74,7 @@ flowchart LR
 |---|---|---|
 | `convert <input> [--to flac\|mp3] [--mp3-quality 0-9] [--downmix-to-stereo] [--overwrite] [--no-metadata-sidecar] [--output-dir]` | `RunWithArguments` → `FolderConvert::ConvertAudioFolderToOutput` | Output `<root>/<FLAC\|MP3>/<input folder name>` (K-031); `--no-metadata-sidecar` is valid only for an `optional` sidecar policy (K-038) |
 | `scan <library> [--output-dir] [--full-rescan] [--tier catalog\|integrity\|analysis] [--archive-flac-metadata\|--no-archive-flac-metadata]` | `ScanFolderAndCreateJSON` | One library; name = folder name; archive flags override configuration |
-| `duplicates <json dir> [--open]` | `ScanFolderProcessJSONAndFindDuplicates` | Opens folders only with `--open` |
+| `duplicates <json dir> [--open] [--report <file>]` | `ScanFolderProcessJSONAndFindDuplicates` | Opens folders only with `--open`; `--report` writes a new JSON report |
 | `db import <json dir> [--output-dir]` | `ImportJsonDirectoryToDatabase` | `<output root>/<JSON folder name>/catalog-v2.sqlite`; output root is `--output-dir`, else `OutDirectory` |
 | No arguments | `RunLegacyMenu` | Options 1 FLAC, 2 scan, 3 duplicates, 4 DB import, 5 not implemented, 6 MP3; all use active `MediaDirectoryList` entries |
 
@@ -198,19 +199,31 @@ libraries, with its path logged. If the temporary location is unsafe or unavaila
 
 `ScanFolderProcessJSONAndFindDuplicates`: load batches grouped by their input directory and validate each group's
 manifest against only its own batches and albums, then combine all libraries for cross-library matching, reassemble
-fragments, sort by track count, `AlbumCollection::FindDuplicateAlbums`
-(track count, album identity, then sorted durations within the legacy `SizeMatchPercentageThreshold` percentage).
-Album artist tags form the artist identity when present; otherwise the set of track artists is used. It pairs
-cataloged tracks in scanned duration/title order and re-probes those paths in parallel before printing a
+fragments, then call `DuplicateMatcher::FindDuplicates` (pure in-memory; no I/O or settings lookup). Albums whose
+canonical folder path repeats (overlapping libraries) are aliases: only the first is compared, and a content difference
+is warned. Candidate pairs come from indexes on normalized album name (UTF-8 case/accent/punctuation folding, NFC/NFD
+equal, optional edition-text stripping), MusicBrainz release ID, stored FLAC MD5 (buckets above 64 albums skipped and
+warned) and, with fuzzy names, artist; each unordered pair is evaluated once (`EvaluatePair`). The album name is the
+most common track tag (folder name fallback). Tracks pair by MD5, unique disc/track number, unique title, then closest
+duration within `max(DuplicateDurationToleranceSeconds, SizeMatchPercentageThreshold% of the longer)`; unknown
+durations pair in order. Equal track counts with all tracks paired are required unless `DuplicatePartialMatches`.
+Confidence: exact (all pairs by MD5), strong (MusicBrainz match, or name and artists match with known durations and no
+MusicBrainz conflict), probable, partial. Differing artists reject unless MusicBrainz or MD5 agree. Album artist and
+track artist sets are compared. Accepted pairs are grouped by union-find. The flow re-probes each grouped album once,
+compares matched tracks in album order and re-probes those paths in parallel before printing a
 stream-property and tag comparison (`MediaTrack::GenerateComparisonReport`). Missing tracks retain their positions;
 new immediate files are reported but not substituted. For v2 records, changed size or available modification time
 is reported, but these attributes cannot prove file identity; legacy records lack this check and candidate selection
 still reflects the scan. Probe errors fail the operation.
 The CLI operation remains noninteractive and read-only; folders are opened only with `--open`.
-Menu option 3 opens only the current pair's folders and calls `DuplicateReview::ReviewPair` before advancing:
-Enter/`CONTINUE` advances, `STOP` or EOF ends review, and `1`/`2` selects the corresponding whole album folder for
-relocation. The move preview shows exact paths and requires `MOVE`; any other confirmation cancels the move.
-After a move, the same prompt waits for Enter/STOP, and later pairs involving that folder or its descendants are skipped.
+`duplicates --report <file>` writes a schema-1 JSON report (status, statistics, aliases, groups, pairs with confidence,
+evidence, track pairings and unmatched tracks) via `.partial` then rename; an existing report or a path inside an
+album is refused, and a failed or stopped run still records its status.
+Menu option 3 warns about overlapping active libraries, opens only the current group's folders and calls
+`DuplicateReview::ReviewGroup` after the group's pairs: Enter/`CONTINUE` advances, `STOP` or EOF ends review, and an
+album number selects that whole album folder for relocation while more than one album remains. The move preview shows exact paths and requires `MOVE`; any other confirmation cancels the move.
+After a move, the group list is shown again with moved albums marked; later pairs involving a moved folder or its
+descendants are skipped.
 The summary distinguishes user-stopped review and counts completed comparisons, moved albums, and skipped pairs.
 
 Moves use a unique `OutDirectory/deleted/album-<time>-<sequence>/<original-folder-name>` destination, with a sibling
@@ -307,7 +320,8 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | `CatalogExtensions` | `[".flac", ".mp3"]` | Accepted scan formats; additional TagLib formats may be enabled explicitly |
 | `UseFFmpegLibraryAPI` | deprecated | Ignored with a warning; metadata re-probes always use linked FFmpeg libraries |
 | `ExtraAudioQualityMetrics` | false | Deprecated; true warns and is ignored; use the `analysis` scan tier |
-| `MinMatchingTracksForDuplicate`, `SizeMatchPercentageThreshold` | 1, 3 | Duplicate search |
+| `MinMatchingTracksForDuplicate`, `SizeMatchPercentageThreshold` (duration %), `DuplicateDurationToleranceSeconds` | 1, 1, 2.0 | Duplicate track duration tolerance is the larger of the two |
+| `DuplicateFuzzyNames`, `DuplicateStripEditionText`, `DuplicatePartialMatches`, `DuplicatePartialMinCoverage` | false, false, false, 80 | Opt-in duplicate matching |
 | `RecursionDirectorySearchDepth` | 10 | Discovery |
 | `AlbumsSplitThreshold` | 2000 (>0) | JSON batch size |
 | `JsonBatchTargetBytes` | 0 (disabled) | Hard output JSON byte limit; oversized albums split into track fragments |
@@ -330,7 +344,7 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | Album JSON | `OutDirectory/<name>/media_out_<name>[_<n>].json` (schema v2; see `docs/schemas/media-catalog-v2.schema.json`) | `AlbumCollection::SaveAlbumsToJSON` |
 | Scan manifest | `OutDirectory/<name>/scan-manifest.json` (schema v1; batch inventory, SHA-256 integrity and archive references) | `writeScanManifest` |
 | FLAC metadata archive | Optional `OutDirectory/<name>/scan_metadata_<source-path-sha256>.flac-metadata` (native metadata blocks only; referenced by manifest) | `FlacMetadata::Save` / `FlacMetadata::Verify` |
-| Quarantined duplicate album | `OutDirectory/deleted/album-<time>-<sequence>/<original-folder-name>/` plus sibling `move.json` | `DuplicateReview::ReviewPair` after explicit `MOVE` confirmation |
+| Quarantined duplicate album | `OutDirectory/deleted/album-<time>-<sequence>/<original-folder-name>/` plus sibling `move.json` | `DuplicateReview::ReviewGroup` after explicit `MOVE` confirmation |
 | JSON diagnostic reports | `<album json>_ffmpeg_error.json` when captured (excluded from inputs); legacy `_error.json` reports are also excluded | `AlbumCollection` |
 | SQLite catalog | `OutDirectory/<name>/catalog-v2.sqlite` (`user_version=2`) | `CatalogDatabase::Import` |
 

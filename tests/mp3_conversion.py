@@ -1452,7 +1452,7 @@ class ConversionTests(unittest.TestCase):
 
         result = self.legacy(libraries, "3\nRUN\n", **settings)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("Found 0 duplicated albums", result.stdout)
+        self.assertIn("Found 0 duplicate album pair(s)", result.stdout)
         self.assertEqual({path: path.read_bytes()
                           for path in self.output.rglob("*") if path.is_file()},
                          original_outputs)

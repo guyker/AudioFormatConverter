@@ -160,7 +160,7 @@ struct AppSettingsJson
 	int DecodeWorkers{ 0 };
 	bool ExtraAudioQualityMetrics{ false };
 	int MinMatchingTracksForDuplicate{ 1 };
-	int SizeMatchPercentageThreshold{ 3 }; // legacy name; maximum track-duration difference in percent
+	int SizeMatchPercentageThreshold{ 1 }; // legacy name; duplicate track-duration tolerance in percent of the longer track
 	int RecursionDirectorySearchDepth{ 10 }; // max depth for recursive search
 	int AlbumsSplitThreshold{ 2000 }; // max number of album in each chunk (this help with memory usage and performance)
 	std::uint64_t JsonBatchTargetBytes{ 0 };
@@ -169,6 +169,11 @@ struct AppSettingsJson
 	std::vector<MediaDirectoryElement> MediaDirectoryList{};
 	MetadataSidecarSettings MetadataSidecars{};
 	std::vector<std::string> CatalogExtensions{ ".flac", ".mp3" };
+	double DuplicateDurationToleranceSeconds{ 2.0 }; // minimum absolute duplicate duration tolerance
+	bool DuplicateFuzzyNames{ false };
+	bool DuplicateStripEditionText{ false };
+	bool DuplicatePartialMatches{ false };
+	int DuplicatePartialMinCoverage{ 80 }; // percent of the larger album's tracks
 
 	//APP Setting properties - END
 
@@ -199,7 +204,7 @@ struct AppSettingsJson
 			0, //DecodeWorkers (automatic)
 			false, //ExtraAudioQualityMetrics
 			1, //MinMatchingTracksForDuplicate
-			3, //SizeMatchPercentageThreshold
+			1, //SizeMatchPercentageThreshold
 			10, //RecursionDirectorySearchDepth
 			2000, //AlbumsSplitThreshold
 			0, //JsonBatchTargetBytes (disabled)

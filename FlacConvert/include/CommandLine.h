@@ -18,6 +18,7 @@ struct CommandLineOptions
     std::string inputPath;
     std::string outputDirectory;
     std::string configPath;
+    std::string reportPath;
     bool outputDirectorySpecified{ false };
     bool configPathSpecified{ false };
     bool overwrite{ false };

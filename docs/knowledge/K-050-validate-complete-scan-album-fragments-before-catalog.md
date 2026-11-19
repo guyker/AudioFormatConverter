@@ -5,7 +5,7 @@ title: "Validate complete scan album fragments before catalog operations"
 area: [FlacConvert]
 status: active
 created: 2026-11-18
-reviewed: 2026-11-18
+reviewed: 2026-11-19
 cites:
   - path: FlacConvert/src/AlbumCollection.cpp
     symbol: AlbumCollection.ReassembleAlbums

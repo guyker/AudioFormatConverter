@@ -54,7 +54,15 @@
   "CatalogExtensions": [".flac", ".mp3"],
   "ExtraAudioQualityMetrics": false,
   "MinMatchingTracksForDuplicate": 1,
-  "SizeMatchPercentageThreshold": 3,
+  // Duplicate track durations match within max(DuplicateDurationToleranceSeconds,
+  // SizeMatchPercentageThreshold % of the longer track).
+  "SizeMatchPercentageThreshold": 1,
+  "DuplicateDurationToleranceSeconds": 2,
+  // Opt-in duplicate matching: similar names (same artists), ignoring edition text, partial track lists.
+  "DuplicateFuzzyNames": false,
+  "DuplicateStripEditionText": false,
+  "DuplicatePartialMatches": false,
+  "DuplicatePartialMinCoverage": 80,
   "RecursionDirectorySearchDepth": 10,
   "AlbumsSplitThreshold": 2000
 }

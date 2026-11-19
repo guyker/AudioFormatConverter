@@ -5,6 +5,8 @@
 #include <atomic>
 #include <cstdint>
 #include <cctype>
+#include <cwctype>
+#include <fstream>
 #include <filesystem>
 #include <array>
 #include <algorithm>
@@ -34,6 +36,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
+#include <rapidjson/prettywriter.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
@@ -45,6 +48,7 @@ extern "C" {
 #include "CommandLine.h"
 #include "FolderConvert.h"
 #include "FlacMetadata.h"
+#include "DuplicateMatcher.h"
 #include "DuplicateReview.h"
 
 #include "MediaInformation.h"
@@ -2186,8 +2190,142 @@ std::string compareAndPrintTagsTable(const JsonUtils::Tags& tags1, const JsonUti
     return oss.str();
 }
 
+namespace
+{
+void writeJsonString(rapidjson::PrettyWriter<rapidjson::StringBuffer>& writer, const std::string& value)
+{
+    writer.String(value.data(), static_cast<rapidjson::SizeType>(value.size()));
+}
+
+std::string duplicateIdentityKey(const fs::path& canonical)
+{
+#ifdef _WIN32
+    auto text = canonical.native();
+    std::ranges::transform(text, text.begin(), [](wchar_t character) {
+        return static_cast<wchar_t>(std::towlower(character));
+    });
+    return pathToUtf8(fs::path(text));
+#else
+    return pathToUtf8(canonical);
+#endif
+}
+
+bool writeDuplicateReport(const fs::path& reportPath, const char* status,
+    const DirectoryContentEntryList& albums, const DuplicateMatcher::Result& matches)
+{
+    rapidjson::StringBuffer buffer;
+    rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
+    const auto albumPath = [&](std::size_t index) { return pathToUtf8(albums[index].path.path()); };
+    const auto trackPath = [&](std::size_t album, std::size_t track) {
+        return pathToUtf8(albums[album].path.path() / albums[album].trackList[track].trackPath);
+    };
+    const auto& stats = matches.statistics;
+    writer.StartObject();
+    writer.Key("schemaVersion"); writer.Int(1);
+    writer.Key("status"); writer.String(status);
+    writer.Key("statistics");
+    writer.StartObject();
+    for (const auto& [name, value] : std::initializer_list<std::pair<const char*, std::size_t>>{
+            { "albumsLoaded", stats.loaded }, { "aliasesExcluded", stats.aliasesExcluded },
+            { "emptyAlbumsExcluded", stats.emptyExcluded }, { "albumsConsidered", stats.considered },
+            { "candidatePairsEvaluated", stats.candidatePairs }, { "pairsReported", stats.reportedPairs },
+            { "exact", stats.exact }, { "strong", stats.strong }, { "probable", stats.probable },
+            { "partial", stats.partial }, { "groups", stats.groups },
+            { "skippedMd5Buckets", stats.skippedMd5Buckets } }) {
+        writer.Key(name);
+        writer.Uint64(value);
+    }
+    writer.EndObject();
+    writer.Key("aliases");
+    writer.StartArray();
+    for (const auto& alias : matches.aliases) {
+        writer.StartObject();
+        writer.Key("excluded"); writeJsonString(writer, albumPath(alias.excluded));
+        writer.Key("kept"); writeJsonString(writer, albumPath(alias.kept));
+        writer.Key("contentDiffers"); writer.Bool(alias.contentDiffers);
+        writer.EndObject();
+    }
+    writer.EndArray();
+    writer.Key("groups");
+    writer.StartArray();
+    for (const auto& group : matches.groups) {
+        writer.StartObject();
+        writer.Key("albums");
+        writer.StartArray();
+        for (const auto album : group.albums) writeJsonString(writer, albumPath(album));
+        writer.EndArray();
+        writer.Key("pairs");
+        writer.StartArray();
+        for (const auto pairIndex : group.pairs) {
+            const auto& pair = matches.pairs[pairIndex];
+            const auto& evaluation = pair.evaluation;
+            writer.StartObject();
+            writer.Key("album1"); writeJsonString(writer, albumPath(pair.first));
+            writer.Key("album2"); writeJsonString(writer, albumPath(pair.second));
+            writer.Key("confidence"); writer.String(DuplicateMatcher::ConfidenceName(evaluation.confidence));
+            writer.Key("evidence");
+            writer.StartArray();
+            for (const auto& evidence : evaluation.evidence) writeJsonString(writer, evidence);
+            writer.EndArray();
+            writer.Key("trackPairs");
+            writer.StartArray();
+            for (const auto& tracks : evaluation.trackPairs) {
+                writer.StartObject();
+                writer.Key("track1"); writeJsonString(writer, trackPath(pair.first, tracks.first));
+                writer.Key("track2"); writeJsonString(writer, trackPath(pair.second, tracks.second));
+                writer.Key("method"); writer.String(tracks.method);
+                writer.EndObject();
+            }
+            writer.EndArray();
+            writer.Key("unmatchedTracks");
+            writer.StartArray();
+            for (const auto track : evaluation.unmatchedFirst) writeJsonString(writer, trackPath(pair.first, track));
+            for (const auto track : evaluation.unmatchedSecond) writeJsonString(writer, trackPath(pair.second, track));
+            writer.EndArray();
+            writer.EndObject();
+        }
+        writer.EndArray();
+        writer.EndObject();
+    }
+    writer.EndArray();
+    writer.EndObject();
+
+    auto temporary = reportPath;
+    temporary += ".partial";
+    std::error_code ec;
+    if (fs::exists(temporary, ec) || ec) {
+        spdlog::error("Duplicate report temporary file already exists: '{}'.", pathToUtf8(temporary));
+        return false;
+    }
+    {
+        std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+        file.write(buffer.GetString(), static_cast<std::streamsize>(buffer.GetSize()));
+        file.close();
+        if (!file) {
+            spdlog::error("Cannot write duplicate report '{}'.", pathToUtf8(temporary));
+            fs::remove(temporary, ec);
+            return false;
+        }
+    }
+    if (fs::exists(reportPath, ec) || ec) {
+        spdlog::error("Duplicate report appeared during the run; not overwritten: '{}'.", pathToUtf8(reportPath));
+        fs::remove(temporary, ec);
+        return false;
+    }
+    fs::rename(temporary, reportPath, ec);
+    if (ec) {
+        spdlog::error("Cannot install duplicate report '{}': {}", pathToUtf8(reportPath), ec.message());
+        fs::remove(temporary, ec);
+        return false;
+    }
+    spdlog::info("Duplicate report written: '{}'.", pathToUtf8(reportPath));
+    return true;
+}
+}
+
 int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFiles, bool openDuplicateFolders,
-    ManualOperationSummary* summary = nullptr, const DuplicateReview::Options* review = nullptr)
+    ManualOperationSummary* summary = nullptr, const DuplicateReview::Options* review = nullptr,
+    const fs::path& reportPath = {})
 {
 	AlbumCollection albumCollection;
 	std::shared_ptr<DirectoryContentEntryList> albumListPtr = std::make_shared<DirectoryContentEntryList>();
@@ -2195,6 +2333,14 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
     if (jsonFiles.empty()) {
         spdlog::error("No generated album JSON files found.");
         return 1;
+    }
+    if (!reportPath.empty()) {
+        std::error_code ec;
+        if (fs::exists(reportPath, ec) || ec) {
+            spdlog::error("Duplicate report already exists or cannot be checked; refusing to overwrite: '{}'.",
+                pathToUtf8(reportPath));
+            return 1;
+        }
     }
     struct LibraryInput
     {
@@ -2232,201 +2378,294 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
     if (!albumCollection.ReassembleAlbums(albumListPtr)) {
         return 1;
     }
+    const auto& albums = *albumListPtr;
 
-    //Step 2
-	//sort albums by track count, find duplicates in the collection
-    spdlog::info("Finding duplicated albums...");
-    albumCollection.SortAlbums(albumListPtr, { { SortBy::TrackCount, true } });
-    auto dupList = albumCollection.FindDuplicateAlbums(albumListPtr);
-
-
-    spdlog::info("Found {} duplicated albums", dupList.size());
+    // Physical folder identity: the same folder loaded through overlapping libraries or repeated JSON
+    // must never be reported as a duplicate of itself.
     std::vector<fs::path> albumKeys;
-    if (review) {
-        for (const auto& album : *albumListPtr) {
-            std::error_code ec;
-            auto key = fs::weakly_canonical(album.path.path(), ec);
-            if (ec) {
+    std::vector<std::string> identityKeys;
+    albumKeys.reserve(albums.size());
+    identityKeys.reserve(albums.size());
+    for (const auto& album : albums) {
+        std::error_code ec;
+        auto key = fs::weakly_canonical(album.path.path(), ec);
+        if (ec) {
+            if (review) {
                 spdlog::error("Cannot resolve duplicate album '{}': {}",
                     pathToUtf8(album.path.path()), ec.message());
                 return 1;
             }
-            albumKeys.push_back(std::move(key));
+            spdlog::warn("Cannot resolve duplicate album '{}' ({}); using its normalized path for identity.",
+                pathToUtf8(album.path.path()), ec.message());
+            std::error_code absoluteError;
+            key = fs::absolute(album.path.path(), absoluteError).lexically_normal();
+            if (absoluteError) key = album.path.path().lexically_normal();
+        }
+        identityKeys.push_back(duplicateIdentityKey(key));
+        albumKeys.push_back(std::move(key));
+    }
+    if (!reportPath.empty()) {
+        std::error_code ec;
+        auto reportKey = fs::weakly_canonical(fs::absolute(reportPath, ec), ec);
+        if (ec) {
+            spdlog::error("Cannot resolve duplicate report path '{}': {}", pathToUtf8(reportPath), ec.message());
+            return 1;
+        }
+        for (const auto& key : albumKeys) {
+            if (DuplicateReview::IsSameOrChildPath(reportKey, key)) {
+                spdlog::error("Duplicate report must not be written inside a scanned album folder: '{}'.",
+                    pathToUtf8(reportPath));
+                return 1;
+            }
         }
     }
-    std::vector<bool> movedAlbums(albumListPtr->size(), false);
-    int iCurrent = 0;
-    for (const auto& entry : dupList)
-    {
-        iCurrent++;
-        const auto [albumIndex1, albumIndex2] = entry;
-        if (movedAlbums[albumIndex1] || movedAlbums[albumIndex2]) {
-            spdlog::info("Skipping duplicate pair {}/{} because an album was moved to deleted.",
-                iCurrent, dupList.size());
-            if (summary) ++summary->skippedDuplicatePairs;
-            continue;
-        }
-        const auto* album1 = &albumListPtr->at(albumIndex1);
-        const auto* album2 = &albumListPtr->at(albumIndex2);
-        const auto& dir1 = album1->path.path();
-        const auto& dir2 = album2->path.path();
 
-        const bool bIncludeAudioQualityMetrics = AppSettingsJson::AppSetting()->ExtraAudioQualityMetrics;
-        try {
-            const auto trackOrder = [](const MediaTrack* left, const MediaTrack* right) {
-                const auto leftDuration = left->formatInfo.format.duration.value_or(-1);
-                const auto rightDuration = right->formatInfo.format.duration.value_or(-1);
-                if (leftDuration != rightDuration) return leftDuration < rightDuration;
-                const auto title = [](const MediaTrack* track) {
-                    if (!track->formatInfo.format.tags) return std::string{};
-                    const auto& tags = *track->formatInfo.format.tags;
-                    const auto found = tags.find("title");
-                    return found == tags.end() ? std::string{} : found->second;
+    const auto settings = AppSettingsJson::AppSetting();
+    DuplicateMatcher::Options matchOptions;
+    matchOptions.durationTolerancePercent = settings->SizeMatchPercentageThreshold;
+    matchOptions.durationToleranceSeconds = settings->DuplicateDurationToleranceSeconds;
+    matchOptions.minMatchingTracks = static_cast<std::size_t>((std::max)(1, settings->MinMatchingTracksForDuplicate));
+    matchOptions.fuzzyNames = settings->DuplicateFuzzyNames;
+    matchOptions.stripEditionText = settings->DuplicateStripEditionText;
+    matchOptions.partialMatches = settings->DuplicatePartialMatches;
+    matchOptions.partialMinCoverage = settings->DuplicatePartialMinCoverage;
+
+    spdlog::info("Finding duplicated albums...");
+    const auto matches = DuplicateMatcher::FindDuplicates(albums, identityKeys, matchOptions);
+    const auto& stats = matches.statistics;
+    for (const auto& alias : matches.aliases) {
+        if (alias.contentDiffers) {
+            spdlog::warn("Album folder loaded more than once with different catalog contents; compared once "
+                "(rescan with option 2 to refresh): '{}'.", pathToUtf8(albums[alias.excluded].path.path()));
+        }
+        else {
+            spdlog::warn("Album folder loaded more than once (overlapping libraries or JSON); compared once: '{}'.",
+                pathToUtf8(albums[alias.excluded].path.path()));
+        }
+    }
+    if (stats.skippedMd5Buckets) {
+        spdlog::warn("{} FLAC MD5 value(s) shared by more than {} albums were not used to propose candidates.",
+            stats.skippedMd5Buckets, matchOptions.maxMd5BucketAlbums);
+    }
+    spdlog::info("Duplicate coverage: {} album(s) loaded, {} alias(es) excluded, {} empty excluded, "
+        "{} considered, {} candidate pair(s) evaluated.",
+        stats.loaded, stats.aliasesExcluded, stats.emptyExcluded, stats.considered, stats.candidatePairs);
+    spdlog::info("Found {} duplicate album pair(s) in {} group(s) (exact {}, strong {}, probable {}, partial {}).",
+        stats.reportedPairs, stats.groups, stats.exact, stats.strong, stats.probable, stats.partial);
+
+    const bool bIncludeAudioQualityMetrics = settings->ExtraAudioQualityMetrics;
+    const auto trackOrder = [](const MediaTrack* left, const MediaTrack* right) {
+        const auto leftDuration = left->formatInfo.format.duration.value_or(-1);
+        const auto rightDuration = right->formatInfo.format.duration.value_or(-1);
+        if (leftDuration != rightDuration) return leftDuration < rightDuration;
+        const auto title = [](const MediaTrack* track) {
+            if (!track->formatInfo.format.tags) return std::string{};
+            const auto& tags = *track->formatInfo.format.tags;
+            const auto found = tags.find("title");
+            return found == tags.end() ? std::string{} : found->second;
+        };
+        const auto leftTitle = title(left);
+        const auto rightTitle = title(right);
+        if (leftTitle != rightTitle) return leftTitle < rightTitle;
+        return left->trackPath < right->trackPath;
+    };
+    struct ProbedAlbum
+    {
+        std::vector<std::optional<MediaTrack>> tracks; // indexed like MediaAlbum::trackList
+        std::size_t currentCount{ 0 };
+    };
+    // Re-reads the current files once per album so reports reflect the disk, not only the catalog.
+    const auto reProbe = [&](const MediaAlbum& album) {
+        ProbedAlbum probed;
+        std::set<fs::path> scannedNames;
+        for (const auto& track : album.trackList) {
+            if (track.trackPath.empty() || track.trackPath.has_root_path() ||
+                track.trackPath.has_parent_path() || track.trackPath == "." ||
+                track.trackPath == ".." || !scannedNames.insert(track.trackPath).second) {
+                throw std::runtime_error("Invalid or repeated track path in duplicate catalog.");
+            }
+        }
+        for (const auto& current : fs::directory_iterator(album.path.path())) {
+            if (MediaTrack::IsValidMedia(current)) {
+                ++probed.currentCount;
+                if (!scannedNames.contains(current.path().filename())) {
+                    spdlog::warn("Track added since scan; not compared: '{}'.", pathToUtf8(current.path()));
+                }
+            }
+        }
+        const auto& tracks = album.trackList;
+        std::vector<MediaLoadingFuture> futures(tracks.size());
+        probed.tracks.resize(tracks.size());
+        for (std::size_t i = 0; i < tracks.size(); ++i) {
+            const auto path = album.path.path() / tracks[i].trackPath;
+            std::error_code ec;
+            const auto status = fs::status(path, ec);
+            if (ec == std::errc::no_such_file_or_directory || (!ec && !fs::exists(status))) {
+                spdlog::warn("Scanned track is missing: '{}'.", pathToUtf8(path));
+                continue;
+            }
+            if (ec || !fs::is_regular_file(status)) {
+                throw std::runtime_error("Cannot access scanned track '" + pathToUtf8(path) +
+                    "': " + (ec ? ec.message() : "not a regular file"));
+            }
+            if (tracks[i].catalogRecord) {
+                const auto size = fs::file_size(path);
+                const auto modified = CommonUtils::fileModificationTimeUtc(path);
+                const auto& record = *tracks[i].catalogRecord;
+                if (size != record.sizeBytes ||
+                    (modified && record.modifiedUtc && modified != record.modifiedUtc)) {
+                    spdlog::warn("Scanned track changed since scan: '{}'; results use current metadata.",
+                        pathToUtf8(path));
+                }
+            }
+            futures[i] = std::async(std::launch::async, MediaTrack::ReadMetadataInfoFromFile,
+                path, bIncludeAudioQualityMetrics);
+        }
+        for (std::size_t i = 0; i < tracks.size(); ++i) {
+            if (!futures[i].valid()) continue;
+            auto result = futures[i].get();
+            if (result.error || !std::ranges::any_of(result.mediaInfo.streams,
+                [](const Stream& stream) { return stream.codec_type == "audio"; })) {
+                throw std::runtime_error("Duplicate comparison could not read '" +
+                    pathToUtf8(album.path.path() / tracks[i].trackPath) + "': " +
+                    result.error.value_or("No audio stream found."));
+            }
+            probed.tracks[i] = MediaTrack{ tracks[i].trackPath, 0, std::move(result.mediaInfo) };
+        }
+        return probed;
+    };
+
+    const auto processGroups = [&]() -> int {
+        std::vector<bool> movedAlbums(albums.size(), false);
+        std::size_t pairNumber = 0;
+        for (const auto& group : matches.groups) {
+            try {
+                std::map<std::size_t, ProbedAlbum> probes;
+                const auto probe = [&](std::size_t index) -> const ProbedAlbum& {
+                    auto found = probes.find(index);
+                    if (found == probes.end()) found = probes.emplace(index, reProbe(albums[index])).first;
+                    return found->second;
                 };
-                const auto leftTitle = title(left);
-                const auto rightTitle = title(right);
-                if (leftTitle != rightTitle) return leftTitle < rightTitle;
-                return left->trackPath < right->trackPath;
-            };
-            const auto reProbe = [&](const MediaAlbum& album,
-                std::vector<std::optional<MediaTrack>>& results, std::size_t& currentCount) {
-                std::vector<const MediaTrack*> tracks;
-                std::set<fs::path> scannedNames;
-                for (const auto& track : album.trackList) {
-                    if (track.trackPath.empty() || track.trackPath.has_root_path() ||
-                        track.trackPath.has_parent_path() || track.trackPath == "." ||
-                        track.trackPath == ".." || !scannedNames.insert(track.trackPath).second) {
-                        throw std::runtime_error("Invalid or repeated track path in duplicate catalog.");
-                    }
-                    tracks.push_back(&track);
-                }
-                std::ranges::sort(tracks, trackOrder);
-                for (const auto& current : fs::directory_iterator(album.path.path())) {
-                    if (MediaTrack::IsValidMedia(current)) {
-                        ++currentCount;
-                        if (!scannedNames.contains(current.path().filename())) {
-                            spdlog::warn("Track added since scan; not compared: '{}'.",
-                                pathToUtf8(current.path()));
-                        }
-                    }
-                }
-                std::vector<MediaLoadingFuture> futures(tracks.size());
-                results.resize(tracks.size());
-                for (std::size_t i = 0; i < tracks.size(); ++i) {
-                    const auto path = album.path.path() / tracks[i]->trackPath;
-                    std::error_code ec;
-                    const auto status = fs::status(path, ec);
-                    if (ec == std::errc::no_such_file_or_directory || (!ec && !fs::exists(status))) {
-                        spdlog::warn("Scanned track is missing: '{}'.", pathToUtf8(path));
+                for (const auto pairIndex : group.pairs) {
+                    ++pairNumber;
+                    const auto& pair = matches.pairs[pairIndex];
+                    const auto& evaluation = pair.evaluation;
+                    if (movedAlbums[pair.first] || movedAlbums[pair.second]) {
+                        spdlog::info("Skipping duplicate pair {}/{} because an album was moved to deleted.",
+                            pairNumber, matches.pairs.size());
+                        if (summary) ++summary->skippedDuplicatePairs;
                         continue;
                     }
-                    if (ec || !fs::is_regular_file(status)) {
-                        throw std::runtime_error("Cannot access scanned track '" + pathToUtf8(path) +
-                            "': " + (ec ? ec.message() : "not a regular file"));
+                    const auto& album1 = albums[pair.first];
+                    const auto& album2 = albums[pair.second];
+                    const auto& dir1 = album1.path.path();
+                    const auto& dir2 = album2.path.path();
+                    std::string evidence;
+                    for (const auto& item : evaluation.evidence) {
+                        evidence += (evidence.empty() ? "" : "; ") + item;
                     }
-                    if (tracks[i]->catalogRecord) {
-                        const auto size = fs::file_size(path);
-                        const auto modified = CommonUtils::fileModificationTimeUtc(path);
-                        const auto& record = *tracks[i]->catalogRecord;
-                        if (size != record.sizeBytes ||
-                            (modified && record.modifiedUtc && modified != record.modifiedUtc)) {
-                            spdlog::warn("Scanned track changed since scan: '{}'; results use current metadata.",
-                                pathToUtf8(path));
+                    spdlog::info("Duplicate candidate [{}/{}] confidence {}: {}", pairNumber,
+                        matches.pairs.size(), DuplicateMatcher::ConfidenceName(evaluation.confidence), evidence);
+                    const auto& probe1 = probe(pair.first);
+                    const auto& probe2 = probe(pair.second);
+                    if (probe1.currentCount != probe2.currentCount) {
+                        spdlog::warn("Album track count differs: {} vs {}", probe1.currentCount, probe2.currentCount);
+                    }
+                    auto trackPairs = evaluation.trackPairs;
+                    std::ranges::sort(trackPairs, [&](const auto& left, const auto& right) {
+                        return trackOrder(&album1.trackList[left.first], &album1.trackList[right.first]);
+                    });
+                    std::size_t position = 0;
+                    for (const auto& tracks : trackPairs) {
+                        ++position;
+                        const auto& track1 = probe1.tracks[tracks.first];
+                        const auto& track2 = probe2.tracks[tracks.second];
+                        if (!track1 || !track2) {
+                            spdlog::warn("Track missing in one of the albums. Matched position: {}", position);
+                            continue;
                         }
+                        spdlog::info("Comparing scanned tracks: '{}' and '{}' (matched by {}).",
+                            pathToUtf8(dir1 / track1->trackPath), pathToUtf8(dir2 / track2->trackPath),
+                            tracks.method);
+                        const std::vector<MediaTrack> left{ *track1 };
+                        const std::vector<MediaTrack> right{ *track2 };
+                        if (!MediaTrack::CompareAudioTracks(left, right)) {
+                            spdlog::info("Audio Metrics for matched track {}:\n{}",
+                                position, MediaTrack::GenerateComparisonReport(left, right));
+                        }
+                        const auto duration1 = left.front().formatInfo.format.duration;
+                        const auto duration2 = right.front().formatInfo.format.duration;
+                        if (duration1 && duration2 && *duration1 != *duration2) {
+                            spdlog::info("Album duration check (album1/2), track {}: {} / {}",
+                                position, *duration1, *duration2);
+                        }
+                        compareAndPrintTagsTable(
+                            left.front().formatInfo.format.tags.value_or(JsonUtils::Tags{}),
+                            right.front().formatInfo.format.tags.value_or(JsonUtils::Tags{}));
                     }
-                    futures[i] = std::async(std::launch::async, MediaTrack::ReadMetadataInfoFromFile,
-                        path, bIncludeAudioQualityMetrics);
-                }
-                for (std::size_t i = 0; i < tracks.size(); ++i) {
-                    if (!futures[i].valid()) continue;
-                    auto result = futures[i].get();
-                    if (result.error || !std::ranges::any_of(result.mediaInfo.streams,
-                        [](const Stream& stream) { return stream.codec_type == "audio"; })) {
-                        throw std::runtime_error("Duplicate comparison could not read '" +
-                            pathToUtf8(album.path.path() / tracks[i]->trackPath) + "': " +
-                            result.error.value_or("No audio stream found."));
+                    for (const auto track : evaluation.unmatchedFirst) {
+                        spdlog::warn("Track missing in one of the albums. Unmatched: '{}'.",
+                            pathToUtf8(dir1 / album1.trackList[track].trackPath));
                     }
-                    results[i] = MediaTrack{ tracks[i]->trackPath, 0, std::move(result.mediaInfo) };
+                    for (const auto track : evaluation.unmatchedSecond) {
+                        spdlog::warn("Track missing in one of the albums. Unmatched: '{}'.",
+                            pathToUtf8(dir2 / album2.trackList[track].trackPath));
+                    }
+                    spdlog::info("Potentially duplicated albums [{}/{}]:\n\tAlbum1: \"{}\"\n\tAlbum2: \"{}\"",
+                        pairNumber, matches.pairs.size(), pathToUtf8(dir1), pathToUtf8(dir2));
+                    if (summary) ++summary->completed;
                 }
-            };
-            std::vector<std::optional<MediaTrack>> tracks1;
-            std::vector<std::optional<MediaTrack>> tracks2;
-            std::size_t count1 = 0, count2 = 0;
-            reProbe(*album1, tracks1, count1);
-            reProbe(*album2, tracks2, count2);
-            if (count1 != count2) {
-                spdlog::warn("Album track count differs: {} vs {}", count1, count2);
-            }
-            const auto pairedCount = (std::max)(tracks1.size(), tracks2.size());
-            for (std::size_t i = 0; i < pairedCount; ++i) {
-                if (i >= tracks1.size() || i >= tracks2.size() || !tracks1[i] || !tracks2[i]) {
-                    spdlog::warn("Track missing in one of the albums. Scanned position: {}", i + 1);
+
+                std::vector<std::size_t> remaining;
+                for (const auto album : group.albums) {
+                    if (!movedAlbums[album]) remaining.push_back(album);
+                }
+                if (!review) {
+                    if (openDuplicateFolders) {
+                        for (const auto album : remaining) PlatformUtils::OpenDirectory(albums[album].path.path());
+                    }
                     continue;
                 }
-                spdlog::info("Comparing scanned tracks: '{}' and '{}'.",
-                    pathToUtf8(dir1 / tracks1[i]->trackPath),
-                    pathToUtf8(dir2 / tracks2[i]->trackPath));
-                const std::vector<MediaTrack> left{ *tracks1[i] };
-                const std::vector<MediaTrack> right{ *tracks2[i] };
-                if (!MediaTrack::CompareAudioTracks(left, right)) {
-                    spdlog::info("Audio Metrics for scanned track {}:\n{}",
-                        i + 1, MediaTrack::GenerateComparisonReport(left, right));
-                }
-                const auto duration1 = left.front().formatInfo.format.duration;
-                const auto duration2 = right.front().formatInfo.format.duration;
-                if (duration1 && duration2 && *duration1 != *duration2) {
-                    spdlog::info("Album duration check (album1/2), track {}: {} / {}",
-                        i + 1, *duration1, *duration2);
-                }
-                compareAndPrintTagsTable(
-                    left.front().formatInfo.format.tags.value_or(JsonUtils::Tags{}),
-                    right.front().formatInfo.format.tags.value_or(JsonUtils::Tags{}));
-            }
-
-            spdlog::info("Potentially duplicated albums [{}/{}]:\n\tAlbum1: \"{}\"\n\tAlbum2: \"{}\"",
-                iCurrent, dupList.size(), pathToUtf8(dir1), pathToUtf8(dir2));
-
-            if (openDuplicateFolders && !review) {
-                PlatformUtils::OpenDirectory(dir1);
-                PlatformUtils::OpenDirectory(dir2);
-            }
-
-            if (summary) {
-                ++summary->completed;
-            }
-            if (review) {
-                const auto decision = DuplicateReview::ReviewPair(dir1, dir2,
+                if (remaining.size() < 2) continue;
+                std::vector<fs::path> paths;
+                for (const auto album : remaining) paths.push_back(albums[album].path.path());
+                const auto decision = DuplicateReview::ReviewGroup(paths,
                     review->libraryRoots, review->outputRoot, openDuplicateFolders, std::cin, std::cout);
-                if (decision.movedAlbum != 0) {
-                    const auto& movedKey = albumKeys[
-                        decision.movedAlbum == 1 ? albumIndex1 : albumIndex2];
-                    for (std::size_t i = 0; i < albumKeys.size(); ++i) {
-                        if (DuplicateReview::IsSameOrChildPath(albumKeys[i], movedKey)) movedAlbums[i] = true;
+                for (std::size_t i = 0; i < decision.movedAlbums.size(); ++i) {
+                    const auto& movedKey = albumKeys[remaining[decision.movedAlbums[i]]];
+                    for (std::size_t album = 0; album < albumKeys.size(); ++album) {
+                        if (DuplicateReview::IsSameOrChildPath(albumKeys[album], movedKey)) movedAlbums[album] = true;
                     }
                     if (summary) {
                         ++summary->movedAlbums;
-                        summary->outputs.push_back(decision.destination);
+                        summary->outputs.push_back(decision.destinations[i]);
                     }
                 }
                 if (decision.action == DuplicateReview::Action::Error) return 1;
                 if (decision.action == DuplicateReview::Action::Stop) {
                     if (summary) summary->reviewStopped = true;
-                    spdlog::info("Duplicate review stopped by user; remaining pairs were not processed.");
-                    return 0;
+                    spdlog::info("Duplicate review stopped by user; remaining groups were not processed.");
+                    return 2;
                 }
             }
+            catch (const fs::filesystem_error& e) {
+                spdlog::error("Error getting track information: {}", e.what());
+                return 1;
+            }
+            catch (const std::exception& e) {
+                spdlog::error("Error processing duplicate group: {}", e.what());
+                return 1;
+            }
         }
-        catch (const fs::filesystem_error& e) {
-            spdlog::error("Error getting track information: {}", e.what());
-            return 1;
-        }
-        catch (const std::exception& e) {
-            spdlog::error("Error processing duplicate pair: {}", e.what());
-            return 1;
-        }
-    }
+        return 0;
+    };
 
-    return 0;
+    const auto outcome = processGroups();
+    if (!reportPath.empty()) {
+        const char* status = outcome == 0 ? "completed" : outcome == 2 ? "stopped" : "failed";
+        if (!writeDuplicateReport(reportPath, status, albums, matches)) return 1;
+    }
+    return outcome == 1 ? 1 : 0;
 }
 
 int ExportJSONToDB(const std::vector<MediaDirectoryElement>& mediaDirectoryList, ManualOperationSummary& summary)
@@ -2796,15 +3035,28 @@ int RunLegacyMenu()
             for (const auto& library : mediaList) {
                 review.libraryRoots.push_back(absoluteDisplayPath(pathFromUtf8(library.mediaPath)));
             }
+            for (std::size_t i = 0; i < review.libraryRoots.size(); ++i) {
+                for (std::size_t j = i + 1; j < review.libraryRoots.size(); ++j) {
+                    std::error_code ec1, ec2;
+                    const auto left = fs::weakly_canonical(review.libraryRoots[i], ec1);
+                    const auto right = fs::weakly_canonical(review.libraryRoots[j], ec2);
+                    if (!ec1 && !ec2 && (DuplicateReview::IsSameOrChildPath(left, right) ||
+                            DuplicateReview::IsSameOrChildPath(right, left))) {
+                        spdlog::warn("Active libraries overlap: '{}' and '{}'; albums loaded twice are compared once.",
+                            pathToUtf8(review.libraryRoots[i]), pathToUtf8(review.libraryRoots[j]));
+                    }
+                }
+            }
             const auto jsonFiles = findConfiguredJsonFiles(mediaList, pathFromUtf8(appSettingPtr->OutDirectory));
             std::cout << "\nOperation preview: find duplicate albums\n  JSON input files: " << jsonFiles.size() << '\n';
             for (const auto& json : jsonFiles) {
                 std::cout << "    Input: " << pathToUtf8(absoluteDisplayPath(json)) << '\n';
             }
             std::cout << "  Output: console reports and opened matching album folders.\n"
-                "  Pauses after each pair: Enter continues; STOP ends review.\n"
-                "  Optional: choose album 1 or 2, then type MOVE to move its entire folder to:\n"
+                "  Matches are grouped; review pauses after each group: Enter continues; STOP ends review.\n"
+                "  Optional: choose an album number, then type MOVE to move its entire folder to:\n"
                 "    " << pathToUtf8(review.outputRoot / "deleted") << "\n"
+                "  The last remaining album of a group cannot be moved.\n"
                 "  Moves copy and verify all files before removing originals; no destination is overwritten.\n"
                 "  JSON/databases remain unchanged; run option 2 after moving albums.\n"
                 "  Track metadata is read from source folders during comparisons.\n";
@@ -2957,7 +3209,8 @@ int RunWithArguments(const std::vector<const char*>& arguments)
                 return 1;
             }
             return ScanFolderProcessJSONAndFindDuplicates(
-                findJsonFiles(inputPath), options.openDuplicateFolders);
+                findJsonFiles(inputPath), options.openDuplicateFolders, nullptr, nullptr,
+                options.reportPath.empty() ? fs::path{} : pathFromUtf8(options.reportPath));
 
         case CommandAction::DatabaseImport:
             if (!fs::is_directory(inputPath)) {

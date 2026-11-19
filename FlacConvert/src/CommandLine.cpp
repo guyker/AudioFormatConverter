@@ -30,8 +30,13 @@ const std::string kConfigurationHelp =
     "  ScanTier (catalog|integrity|analysis, default catalog): default metadata scan depth; scan --tier overrides it.\n"
     "  DecodeWorkers (integer >=0, default 0): separate full-decode worker cap; 0 uses at most 4 workers.\n"
     "  ExtraAudioQualityMetrics (bool, default false): deprecated compatibility setting; use ScanTier analysis.\n"
-    "  MinMatchingTracksForDuplicate (integer, default 1): minimum matching tracks for a duplicate candidate.\n"
-    "  SizeMatchPercentageThreshold (integer, default 3): track-duration matching tolerance, in percent.\n"
+    "  MinMatchingTracksForDuplicate (integer, default 1): minimum matched tracks for a duplicate pair.\n"
+    "  SizeMatchPercentageThreshold (integer, default 1): duplicate track-duration tolerance, in percent of the longer track.\n"
+    "  DuplicateDurationToleranceSeconds (number, default 2): minimum duplicate duration tolerance; the larger tolerance applies.\n"
+    "  DuplicateFuzzyNames (bool, default false): also match similar album names when the artists match.\n"
+    "  DuplicateStripEditionText (bool, default false): ignore edition text such as (Remastered) or [Deluxe Edition] in names.\n"
+    "  DuplicatePartialMatches (bool, default false): report albums whose track lists only partly match.\n"
+    "  DuplicatePartialMinCoverage (integer 1-100, default 80): minimum matched percentage of the larger album for partial matches.\n"
     "  RecursionDirectorySearchDepth (integer, default 10): maximum directory depth for scans.\n"
     "  AlbumsSplitThreshold (integer, default 2000): maximum albums per metadata batch.\n"
     "  JsonBatchTargetBytes (integer, default 0): optional hard JSON byte limit; large albums split.";
@@ -147,11 +152,14 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
         });
     duplicates->add_flag("--open", options.openDuplicateFolders,
         "Open matching album folders in the operating system's file manager; by default only report matches.");
+    duplicates->add_option("--report", options.reportPath,
+        "Write a JSON report of duplicate groups to this new file (refuses to overwrite).");
     add_config_option(duplicates, options);
     duplicates->footer(command_footer(
-        "Inputs: a directory containing generated album JSON files. Duplicate reports are printed without prompting. Use --open to launch matching folders in the operating system's file manager.",
+        "Inputs: a directory containing generated album JSON files. Duplicate groups are printed without prompting. Use --open to launch matching folders in the operating system's file manager and --report to save a JSON report.",
         "  FlacConvert duplicates \"C:\\tmp\\Music\"\n"
-        "  FlacConvert duplicates \"C:\\tmp\\Music\" --open"));
+        "  FlacConvert duplicates \"C:\\tmp\\Music\" --open\n"
+        "  FlacConvert duplicates \"C:\\tmp\\Music\" --report \"C:\\tmp\\duplicates.json\""));
     duplicates->callback([&options] { options.action = CommandAction::Duplicates; });
 
     auto* database = app.add_subcommand("db", "Database operations.");

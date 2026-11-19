@@ -1124,12 +1124,26 @@ def main():
         duplicate_output = root / "duplicate-output"
         subprocess.run([converter, "scan", str(duplicates_library),
                         "--output-dir", str(duplicate_output)], check=True)
+        duplicate_report = root / "duplicate-report.json"
         duplicate_run = subprocess.run(
-            [converter, "duplicates", str(duplicate_output / duplicates_library.name)],
+            [converter, "duplicates", str(duplicate_output / duplicates_library.name),
+             "--report", str(duplicate_report)],
             capture_output=True, text=True, timeout=30,
         )
-        if duplicate_run.returncode != 0 or "Found 1 duplicated albums" not in duplicate_run.stdout:
+        if duplicate_run.returncode != 0 or "Found 1 duplicate album pair(s)" not in duplicate_run.stdout:
             raise AssertionError(f"Compilation duplicate was not found: {duplicate_run.stdout}")
+        report = json.loads(duplicate_report.read_text(encoding="utf-8"))
+        if report.get("status") != "completed" or len(report.get("groups", [])) != 1 or \
+                len(report["groups"][0]["pairs"]) != 1 or \
+                len(report["groups"][0]["pairs"][0]["trackPairs"]) != 2:
+            raise AssertionError(f"Duplicate report content is wrong: {report}")
+        repeated_report = subprocess.run(
+            [converter, "duplicates", str(duplicate_output / duplicates_library.name),
+             "--report", str(duplicate_report)],
+            capture_output=True, text=True, timeout=30,
+        )
+        if repeated_report.returncode == 0:
+            raise AssertionError("Existing duplicate report was overwritten")
         if "Different number of tracks" in duplicate_run.stdout or \
                 "Album duration check (album1/2)" in duplicate_run.stdout:
             raise AssertionError("Nested or unordered tracks caused a false mismatch")
@@ -1222,7 +1236,7 @@ def main():
         mixed_run = subprocess.run(
             [converter, "duplicates", str(mixed_dir)], capture_output=True, text=True, timeout=30,
         )
-        if mixed_run.returncode != 0 or "Found 1 duplicated albums" not in mixed_run.stdout or \
+        if mixed_run.returncode != 0 or "Found 1 duplicate album pair(s)" not in mixed_run.stdout or \
                 "Scanned track is missing:" not in mixed_run.stdout:
             raise AssertionError(f"Mixed catalog duplicate reconciliation failed: {mixed_run.stdout}\n"
                                  f"{mixed_run.stderr}")

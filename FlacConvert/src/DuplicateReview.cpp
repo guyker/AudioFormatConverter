@@ -4,10 +4,13 @@
 #include "PlatformUtils.h"
 #include "PreservationAudit.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -250,6 +253,27 @@ std::string readResponse(std::istream& input)
     const auto last = response.find_last_not_of(" \t\r");
     return first == std::string::npos ? std::string{} : response.substr(first, last - first + 1);
 }
+
+fs::path newDestination(const fs::path& root, const fs::path& source)
+{
+    static std::atomic_uint64_t sequence{ 0 };
+    const auto receiptDirectory = root / "deleted" /
+        ("album-" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) +
+            "-" + std::to_string(sequence.fetch_add(1)));
+    return receiptDirectory / source.filename();
+}
+
+std::string confirmMove(const fs::path& source, const fs::path& destination,
+    std::istream& input, std::ostream& output)
+{
+    output << "\nMove entire folder (including artwork and subfolders):\n  From: "
+        << CommonUtils::path_to_utf8(source) << "\n  To: "
+        << CommonUtils::path_to_utf8(destination)
+        << "\nThe complete copy is verified before removing originals. A cleanup failure can leave\n"
+           "partial originals; the verified copy is retained. Catalog JSON/databases are not updated.\n"
+           "Type MOVE to confirm, or press Enter to cancel: " << std::flush;
+    return readResponse(input);
+}
 }
 
 bool DuplicateReview::IsSameOrChildPath(const fs::path& candidate, const fs::path& base)
@@ -301,18 +325,8 @@ DuplicateReview::Result DuplicateReview::ReviewPair(const fs::path& first, const
             const auto& source = selected == 1 ? album1 : album2;
             const auto& keep = selected == 1 ? album2 : album1;
             validateMove(source, keep, roots, root);
-            static std::atomic_uint64_t sequence{ 0 };
-            const auto receiptDirectory = root / "deleted" /
-                ("album-" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) +
-                    "-" + std::to_string(sequence.fetch_add(1)));
-            result.destination = receiptDirectory / source.filename();
-            output << "\nMove entire folder (including artwork and subfolders):\n  From: "
-                << CommonUtils::path_to_utf8(source) << "\n  To: "
-                << CommonUtils::path_to_utf8(result.destination)
-                << "\nThe complete copy is verified before removing originals. A cleanup failure can leave\n"
-                   "partial originals; the verified copy is retained. Catalog JSON/databases are not updated.\n"
-                   "Type MOVE to confirm, or press Enter to cancel: " << std::flush;
-            const auto confirmation = readResponse(input);
+            result.destination = newDestination(root, source);
+            const auto confirmation = confirmMove(source, result.destination, input, output);
             if (confirmation == "STOP") {
                 result.action = Action::Stop;
                 return result;
@@ -332,6 +346,88 @@ DuplicateReview::Result DuplicateReview::ReviewPair(const fs::path& first, const
         spdlog::error("Duplicate review failed: {}. Any move copy is retained at '{}'; inspect move.json "
             "before retrying. Source cleanup may be incomplete only after verification.",
             error.what(), CommonUtils::path_to_utf8(result.destination));
+        result.action = Action::Error;
+        return result;
+    }
+}
+
+DuplicateReview::GroupResult DuplicateReview::ReviewGroup(const std::vector<fs::path>& albums,
+    const std::vector<fs::path>& libraryRoots, const fs::path& outputRoot, bool openFolders,
+    std::istream& input, std::ostream& output)
+{
+    GroupResult result;
+    fs::path pendingDestination;
+    try {
+        std::vector<fs::path> paths;
+        paths.reserve(albums.size());
+        for (const auto& album : albums) paths.push_back(ioPath(album));
+        const auto root = ioPath(outputRoot);
+        std::vector<fs::path> roots;
+        roots.reserve(libraryRoots.size());
+        for (const auto& libraryRoot : libraryRoots) roots.push_back(ioPath(libraryRoot));
+        if (openFolders) {
+            for (const auto& path : paths) PlatformUtils::OpenDirectory(path);
+        }
+        std::vector<bool> moved(paths.size(), false);
+        const auto remaining = [&] {
+            return static_cast<std::size_t>(std::ranges::count(moved, false));
+        };
+        for (;;) {
+            output << "\nDuplicate review:\n";
+            for (std::size_t index = 0; index < paths.size(); ++index) {
+                output << "  " << index + 1 << ": " << CommonUtils::path_to_utf8(paths[index])
+                    << (moved[index] ? "  [moved]" : "") << '\n';
+            }
+            const bool canMove = remaining() > 1;
+            output << "Press Enter to continue, STOP to finish";
+            if (canMove) output << ", or an album number to move that entire album to deleted";
+            output << ": " << std::flush;
+            const auto response = readResponse(input);
+            if (response.empty() || response == "CONTINUE") return result;
+            if (response == "STOP") {
+                result.action = Action::Stop;
+                return result;
+            }
+            std::size_t selected = 0;
+            const bool numeric = !response.empty() && response.size() < 6 &&
+                std::ranges::all_of(response, [](unsigned char c) { return std::isdigit(c) != 0; });
+            if (numeric) selected = static_cast<std::size_t>(std::stoul(response));
+            if (!canMove || selected == 0 || selected > paths.size() || moved[selected - 1]) {
+                output << "Invalid choice; no additional action was taken.\n";
+                continue;
+            }
+            const auto sourceIndex = selected - 1;
+            const auto& source = paths[sourceIndex];
+            std::optional<std::size_t> keepIndex;
+            for (std::size_t index = 0; index < paths.size(); ++index) {
+                if (index == sourceIndex || moved[index]) continue;
+                validateMove(source, paths[index], roots, root);
+                if (!keepIndex) keepIndex = index;
+            }
+            pendingDestination = newDestination(root, source);
+            const auto confirmation = confirmMove(source, pendingDestination, input, output);
+            if (confirmation == "STOP") {
+                result.action = Action::Stop;
+                return result;
+            }
+            if (confirmation != "MOVE") {
+                pendingDestination.clear();
+                output << "Move cancelled; originals unchanged.\n";
+                continue;
+            }
+            moveAlbum(source, paths[*keepIndex], roots, root, pendingDestination);
+            moved[sourceIndex] = true;
+            result.movedAlbums.push_back(sourceIndex);
+            result.destinations.push_back(pendingDestination);
+            output << "Album moved to " << CommonUtils::path_to_utf8(pendingDestination)
+                << "\nRun option 2 after review to refresh the catalog.\n";
+            pendingDestination.clear();
+        }
+    }
+    catch (const std::exception& error) {
+        spdlog::error("Duplicate review failed: {}. Any move copy is retained at '{}'; inspect move.json "
+            "before retrying. Source cleanup may be incomplete only after verification.",
+            error.what(), CommonUtils::path_to_utf8(pendingDestination));
         result.action = Action::Error;
         return result;
     }
