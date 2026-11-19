@@ -88,6 +88,60 @@ void checkMarkerCreatedAfterPlanning(const fs::path& source, const fs::path& out
     require(fs::is_directory(marker), "Competing run's marker was removed");
     require(!fs::exists(output / "conversion-audit.json"), "Competing run's audit was written");
 }
+
+#ifdef _WIN32
+int runMappedDriveFixture()
+{
+    const DWORD drives = GetLogicalDrives();
+    const auto fixtureName = "afc-scoped-mapped-drive-" + std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    for (unsigned index = 0; index < 26; ++index) {
+        if ((drives & (1u << index)) == 0) continue;
+        const wchar_t driveRoot[] = {
+            static_cast<wchar_t>(L'A' + index), L':', L'\\', L'\0'
+        };
+        if (GetDriveTypeW(driveRoot) != DRIVE_REMOTE) continue;
+
+        const fs::path remoteRoot = fs::path(driveRoot) / fixtureName;
+        std::error_code ec;
+        if (!fs::create_directory(remoteRoot, ec) || ec) continue;
+        fs::path source;
+        try {
+            source = fs::temp_directory_path() / (fixtureName + "-source");
+            const fs::path output = remoteRoot / "new" / "nested" / "output";
+            require(fs::create_directory(source, ec) && !ec,
+                "Could not create the local source fixture");
+            const auto extendedOutput = PlatformUtils::WindowsLongPath(output, true);
+            {
+                PlatformUtils::ScopedCurrentDirectory anchor;
+                require(anchor.EnterValidatedDirectory(extendedOutput, source, true),
+                    "Could not enter an extended output path on a mapped drive");
+                require(anchor.IsAnchored(extendedOutput),
+                    "Extended mapped-drive output was not anchored");
+                requireCompatibleWorkingDirectory();
+                require(anchor.Restore(),
+                    "Could not restore the working directory after mapped-drive validation");
+            }
+
+            fs::remove_all(PlatformUtils::WindowsLongPath(remoteRoot, true), ec);
+            require(!ec, "Could not remove the mapped-drive fixture output");
+            fs::remove_all(cleanupPath(source), ec);
+            require(!ec, "Could not remove the mapped-drive source fixture");
+            return 0;
+        }
+        catch (const std::exception& error) {
+            std::cerr << error.what() << '\n';
+            std::error_code cleanupError;
+            fs::remove_all(PlatformUtils::WindowsLongPath(remoteRoot, true), cleanupError);
+            if (!source.empty()) fs::remove_all(cleanupPath(source), cleanupError);
+            return 1;
+        }
+    }
+
+    std::cout << "No writable mapped drive was available; mapped-drive fixture skipped.\n";
+    return 0;
+}
+#endif
 }
 
 int runFixture([[maybe_unused]] bool longPath, [[maybe_unused]] bool extendedPath)
@@ -202,7 +256,7 @@ int main()
             if (runFixture(longPath, extendedPath) != 0) return 1;
         }
     }
-    return 0;
+    return runMappedDriveFixture();
 #else
     return runFixture(false, false);
 #endif

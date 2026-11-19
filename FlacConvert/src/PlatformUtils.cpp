@@ -174,22 +174,10 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
             CommonUtils::path_to_utf8(target), ec.message());
         return false;
     }
-    const fs::path canonicalTarget = fs::weakly_canonical(absoluteTarget, ec);
-    if (ec) {
-        spdlog::error("Cannot validate output directory '{}': {}",
-            CommonUtils::path_to_utf8(target), ec.message());
-        return false;
-    }
     const fs::path canonicalSource = fs::weakly_canonical(sourceRoot, ec);
     if (ec) {
         spdlog::error("Cannot validate source directory '{}': {}",
             CommonUtils::path_to_utf8(sourceRoot), ec.message());
-        return false;
-    }
-    if (isSameOrChildPath(canonicalTarget, canonicalSource) ||
-        isSameOrChildPath(canonicalSource, canonicalTarget)) {
-        spdlog::error("Output directory overlaps the source library: '{}'.",
-            CommonUtils::path_to_utf8(target));
         return false;
     }
 
@@ -219,6 +207,13 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
         return false;
     }
 
+    const fs::path canonicalAnchor = fs::weakly_canonical(anchor, ec);
+    if (ec) {
+        spdlog::error("Cannot validate output anchor '{}': {}",
+            CommonUtils::path_to_utf8(anchor), ec.message());
+        return false;
+    }
+
     const fs::path relativeTarget = absoluteTarget.lexically_relative(anchor);
     if (relativeTarget.empty() && absoluteTarget != anchor) {
         spdlog::error("Cannot anchor output directory '{}'.", CommonUtils::path_to_utf8(target));
@@ -226,6 +221,7 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
     }
     std::vector<fs::path> components;
     fs::path prefix;
+    fs::path expectedBase = canonicalAnchor;
     std::vector<fs::path> expectedPrefixes;
     for (const auto& component : relativeTarget) {
         if (component == "." || component.empty()) continue;
@@ -236,18 +232,35 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
         }
         components.push_back(component);
         prefix /= component;
-        const auto expected = fs::weakly_canonical(anchor / prefix, ec);
+        const auto configuredPrefix = anchor / prefix;
+        const bool prefixExists = fs::exists(configuredPrefix, ec);
         if (ec) {
-            spdlog::error("Cannot validate output path component '{}': {}",
-                CommonUtils::path_to_utf8(anchor / prefix), ec.message());
+            spdlog::error("Cannot inspect output path component '{}': {}",
+                CommonUtils::path_to_utf8(configuredPrefix), ec.message());
             return false;
         }
+        const auto expected = prefixExists
+            ? fs::weakly_canonical(configuredPrefix, ec)
+            : (expectedBase / component).lexically_normal();
+        if (ec) {
+            spdlog::error("Cannot validate output path component '{}': {}",
+                CommonUtils::path_to_utf8(configuredPrefix), ec.message());
+            return false;
+        }
+        expectedBase = expected;
         if (isSameOrChildPath(expected, canonicalSource)) {
             spdlog::error("Output path component overlaps the source library: '{}'.",
                 CommonUtils::path_to_utf8(anchor / prefix));
             return false;
         }
         expectedPrefixes.push_back(expected);
+    }
+    const fs::path canonicalTarget = components.empty() ? canonicalAnchor : expectedPrefixes.back();
+    if (isSameOrChildPath(canonicalTarget, canonicalSource) ||
+        isSameOrChildPath(canonicalSource, canonicalTarget)) {
+        spdlog::error("Output directory overlaps the source library: '{}'.",
+            CommonUtils::path_to_utf8(target));
+        return false;
     }
     if (components.empty()) {
         expectedPrefixes.push_back(canonicalTarget);
@@ -287,7 +300,18 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
         _targetPath = absoluteTarget;
         _canonicalTarget = canonicalTarget;
 
-        const auto lockAndValidate = [&](const fs::path& directory) {
+        std::error_code anchorError;
+        const auto canonicalShortAnchor = fs::weakly_canonical(shortAnchor, anchorError);
+        const auto canonicalPrevious = anchorError
+            ? fs::path{} : fs::weakly_canonical(_previousPath, anchorError);
+        const bool currentDirectoryProtectsAnchor = !anchorError &&
+            isSameOrChildPath(canonicalPrevious, canonicalShortAnchor);
+        if (anchorError || isSameOrChildPath(canonicalShortAnchor, canonicalSource)) {
+            Restore();
+            return false;
+        }
+
+        const auto lockAndValidate = [&](const fs::path& directory, const fs::path& expected) {
             DWORD lockError = ERROR_SUCCESS;
             HANDLE handle = openLockedDirectory(directory, lockError);
             if (handle == INVALID_HANDLE_VALUE) {
@@ -305,9 +329,7 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
                 CloseHandle(handle);
                 return false;
             }
-            std::error_code canonicalError;
-            const auto expected = fs::weakly_canonical(directory, canonicalError);
-            if (canonicalError || !samePath(actual, expected) ||
+            if (!samePath(actual, expected) ||
                 isSameOrChildPath(actual, canonicalSource)) {
                 spdlog::error("Output directory changed or overlaps the source library: '{}'.",
                     CommonUtils::path_to_utf8(directory));
@@ -318,16 +340,6 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
             return true;
         };
 
-        std::error_code anchorError;
-        const auto canonicalShortAnchor = fs::weakly_canonical(shortAnchor, anchorError);
-        const auto canonicalPrevious = anchorError
-            ? fs::path{} : fs::weakly_canonical(_previousPath, anchorError);
-        const bool currentDirectoryProtectsAnchor = !anchorError &&
-            isSameOrChildPath(canonicalPrevious, canonicalShortAnchor);
-        if (anchorError || isSameOrChildPath(canonicalShortAnchor, canonicalSource)) {
-            Restore();
-            return false;
-        }
         if (!currentDirectoryProtectsAnchor &&
             !SetCurrentDirectoryW(normalizedWindowsPath(shortAnchor).c_str())) {
             const DWORD changeError = GetLastError();
@@ -350,6 +362,7 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
         _active = true;
 
         fs::path currentPath = shortAnchor;
+        fs::path expectedPath = canonicalShortAnchor;
         bool targetCreated = false;
         for (const auto& component : relativeToShortAnchor) {
             if (component == "." || component.empty()) continue;
@@ -371,6 +384,7 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
                     Restore();
                     return false;
                 }
+                expectedPath = (expectedPath / component).lexically_normal();
                 if (!createDirectories) {
                     spdlog::error("Output directory does not exist: '{}'.",
                         CommonUtils::path_to_utf8(currentPath));
@@ -392,11 +406,20 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
                 }
                 attributes = GetFileAttributesW(apiPath.c_str());
             }
+            else {
+                expectedPath = fs::weakly_canonical(currentPath, ec);
+                if (ec) {
+                    spdlog::error("Cannot resolve existing output directory '{}': {}",
+                        CommonUtils::path_to_utf8(currentPath), ec.message());
+                    Restore();
+                    return false;
+                }
+            }
             const DWORD attributesError =
                 attributes == INVALID_FILE_ATTRIBUTES ? GetLastError() : ERROR_SUCCESS;
             if (attributes == INVALID_FILE_ATTRIBUTES ||
                 (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
-                !lockAndValidate(currentPath)) {
+                !lockAndValidate(currentPath, expectedPath)) {
                 if (attributes == INVALID_FILE_ATTRIBUTES) {
                     spdlog::error("Cannot inspect output directory '{}': {}",
                         CommonUtils::path_to_utf8(currentPath),
@@ -412,7 +435,7 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
         }
         if (_lockedDirectories.empty() ||
             !samePath(currentPath, absoluteTarget) ||
-            !samePath(_canonicalTarget, fs::weakly_canonical(currentPath, ec)) || ec) {
+            !samePath(_canonicalTarget, expectedPath)) {
             spdlog::error("Long output directory changed during validation: '{}'.",
                 CommonUtils::path_to_utf8(target));
             Restore();
@@ -446,9 +469,8 @@ bool ScopedCurrentDirectory::EnterValidatedDirectory(
         Restore();
         return false;
     }
-    const auto canonicalAnchor = fs::weakly_canonical(fs::current_path(ec), ec);
-    const auto expectedAnchor = ec ? fs::path{} : fs::weakly_canonical(anchor, ec);
-    if (ec || !samePath(canonicalAnchor, expectedAnchor) ||
+    const auto enteredAnchor = fs::weakly_canonical(fs::current_path(ec), ec);
+    if (ec || !samePath(enteredAnchor, canonicalAnchor) ||
         isSameOrChildPath(canonicalAnchor, canonicalSource)) {
         spdlog::error("Output anchor changed during validation: '{}'.",
             CommonUtils::path_to_utf8(anchor));

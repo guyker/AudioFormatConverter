@@ -43,6 +43,7 @@ check (F-003).
 - [ ] Non-ASCII and >260-character paths convert on Windows.
 - [ ] A near-limit Windows output directory succeeds when marker and temporary filenames would exceed `MAX_PATH`.
 - [ ] Menu conversion accepts extended-prefix output paths with an FFmpeg launcher shim (see DESIGN's output anchoring).
+- [ ] An extended-prefix output below a mapped drive succeeds when its target descendants do not yet exist.
 - [ ] Replacing an output directory after validation cannot redirect writes into the source library.
 - [ ] `conversion-audit.json` exists with `status: completed` (see F-003).
 - [ ] Before converting a folder's tracks, the console identifies the current source album folder without a line per track.

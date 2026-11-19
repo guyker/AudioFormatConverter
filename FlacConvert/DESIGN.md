@@ -309,6 +309,9 @@ open each directory from that anchor with delete-sharing disabled. They validate
 paths and expose absolute extended paths through `ResolvePath`; filesystem paths receive the `\\?\` prefix at the
 Windows directory path limit (`MAX_PATH - 12`). Scan preview and incremental-cache I/O also use extended prefixes on
 shorter output directories because generated archive filenames can push their full paths beyond `MAX_PATH`.
+For mapped drives, validation canonicalizes the deepest existing output ancestor and derives missing descendants from
+that stable path; it does not canonicalize a not-yet-created extended-path descendant. Existing components are still
+resolved individually, and each directory is checked after entry/open so reparse-point redirects remain rejected.
 Conversion, scan installation, and catalog publication use these resolved
 paths and check `IsAnchored` before finalizing. Windows working-directory changes and restoration use ordinary
 drive/UNC paths, not the extended prefix: legacy FFmpeg launchers such as Chocolatey's .NET shim reject an inherited
