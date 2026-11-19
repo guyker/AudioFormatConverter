@@ -48,5 +48,8 @@ namespace PlatformUtils {
 	void OpenDirectoryInExplorer(std::wstring dirName);
 	void OpenDirectory(const std::filesystem::path& path);
 
+	// True when stdout is an interactive terminal that accepts ANSI colour (honours NO_COLOR).
+	bool EnableConsoleColors();
+
 	int waitForKeyPress(std::string message);
 }

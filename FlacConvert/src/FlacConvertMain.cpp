@@ -48,6 +48,7 @@ extern "C" {
 #include "CommandLine.h"
 #include "FolderConvert.h"
 #include "FlacMetadata.h"
+#include "DuplicateComparison.h"
 #include "DuplicateMatcher.h"
 #include "DuplicateReview.h"
 
@@ -2080,116 +2081,6 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
 
 
 
-// Case-insensitive comparator (from your previous context)
-struct CaseInsensitiveCompare {
-    bool operator()(const std::string& lhs, const std::string& rhs) const {
-        return std::lexicographical_compare(
-            lhs.begin(), lhs.end(), rhs.begin(), rhs.end(),
-            [](char a, char b) { return std::tolower(a) < std::tolower(b); }
-        );
-    }
-};
-
-// Lexicographical comparison (adapted from your wstring compareLex)
-int compareLex2(const std::string& a, const std::string& b) {
-    std::size_t n = std::min(a.size(), b.size());
-    for (std::size_t i = 0; i < n; ++i) {
-        unsigned char ca = static_cast<unsigned char>(a[i]);
-        unsigned char cb = static_cast<unsigned char>(b[i]);
-        if (ca < cb) return -1;
-        else if (ca > cb) return 1;
-    }
-    if (a.size() < b.size()) return -1;
-    if (a.size() > b.size()) return 1;
-    return 0;
-}
-
-
-// Function to compare and print two Tags objects in a table
-std::string compareAndPrintTagsTable(const JsonUtils::Tags& tags1, const JsonUtils::Tags& tags2) {
-    std::ostringstream oss;
-
-    // Collect all unique keys
-    std::vector<std::string> allKeys;
-    for (const auto& [key, _] : tags1) allKeys.push_back(key);
-    for (const auto& [key, _] : tags2) {
-        if (!tags1.contains(key)) allKeys.push_back(key);
-    }
-    std::ranges::sort(allKeys, [](const auto& a, const auto& b) { return compareLex2(a, b) < 0; });
-    allKeys.erase(std::unique(allKeys.begin(), allKeys.end()), allKeys.end());
-
-    // Determine column widths
-    constexpr size_t keyWidth = 25;    // Increased for long tag names
-    constexpr size_t valueWidth = 40;  // Increased for long values
-    constexpr size_t statusWidth = 15;
-    const std::string separator = std::string(keyWidth + valueWidth * 2 + statusWidth + 7, '-');
-
-    // Print table header
-    auto printHeader = [&](std::ostream& os) {
-        os << std::left
-            << std::setw(keyWidth) << "Key"
-            << " | " << std::setw(valueWidth) << "Tags 1 Value"
-            << " | " << std::setw(valueWidth) << "Tags 2 Value"
-            << " | " << std::setw(statusWidth) << "Status" << "\n";
-        os << separator << "\n";
-        };
-    printHeader(std::cout);
-    printHeader(oss);
-
-    // Print table rows
-    bool hasDifferences = false;
-    for (const auto& key : allKeys) {
-        auto it1 = tags1.find(key);
-        auto it2 = tags2.find(key);
-
-        std::string value1 = it1 != tags1.end() ? it1->second : "-";
-        std::string value2 = it2 != tags2.end() ? it2->second : "-";
-        std::string status;
-
-        if (it1 != tags1.end() && it2 != tags2.end()) {
-            if (it1->second == it2->second) {
-                status = "Same";
-            }
-            else {
-                status = "Different";
-                hasDifferences = true;
-            }
-        }
-        else if (it1 != tags1.end()) {
-            status = "Only in Tags1";
-            hasDifferences = true;
-        }
-        else {
-            status = "Only in Tags2";
-            hasDifferences = true;
-        }
-
-        // Truncate long values for display
-        if (value1.length() > valueWidth - 2) value1 = value1.substr(0, valueWidth - 5) + "...";
-        if (value2.length() > valueWidth - 2) value2 = value2.substr(0, valueWidth - 5) + "...";
-
-        auto printRow = [&](std::ostream& os) {
-            os << std::left
-                << std::setw(keyWidth) << key
-                << " | " << std::setw(valueWidth) << value1
-                << " | " << std::setw(valueWidth) << value2
-                << " | " << std::setw(statusWidth) << status << "\n";
-            };
-        printRow(std::cout);
-        printRow(oss);
-    }
-
-    // Footer
-    auto printFooter = [&](std::ostream& os) {
-        os << separator << "\n";
-        os << (hasDifferences ? "Differences found\n" : "No differences found\n");
-        };
-    printFooter(std::cout);
-    printFooter(oss);
-
-    return oss.str();
-}
-
 namespace
 {
 void writeJsonString(rapidjson::PrettyWriter<rapidjson::StringBuffer>& writer, const std::string& value)
@@ -2505,11 +2396,7 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
         if (leftTitle != rightTitle) return leftTitle < rightTitle;
         return left->trackPath < right->trackPath;
     };
-    struct ProbedAlbum
-    {
-        std::vector<std::optional<MediaTrack>> tracks; // indexed like MediaAlbum::trackList
-        std::size_t currentCount{ 0 };
-    };
+    using ProbedAlbum = DuplicateComparison::AlbumSnapshot;
     // Re-reads the current files once per album so reports reflect the disk, not only the catalog.
     const auto reProbe = [&](const MediaAlbum& album) {
         ProbedAlbum probed;
@@ -2525,12 +2412,15 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
             if (MediaTrack::IsValidMedia(current)) {
                 ++probed.currentCount;
                 if (!scannedNames.contains(current.path().filename())) {
+                    probed.addedTracks.push_back(current.path().filename());
                     spdlog::warn("Track added since scan; not compared: '{}'.", pathToUtf8(current.path()));
                 }
             }
+            else probed.otherEntries.push_back(current.path().filename());
         }
         const auto& tracks = album.trackList;
         std::vector<MediaLoadingFuture> futures(tracks.size());
+        std::vector<std::uintmax_t> sizes(tracks.size());
         probed.tracks.resize(tracks.size());
         for (std::size_t i = 0; i < tracks.size(); ++i) {
             const auto path = album.path.path() / tracks[i].trackPath;
@@ -2544,12 +2434,13 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
                 throw std::runtime_error("Cannot access scanned track '" + pathToUtf8(path) +
                     "': " + (ec ? ec.message() : "not a regular file"));
             }
+            sizes[i] = fs::file_size(path);
             if (tracks[i].catalogRecord) {
-                const auto size = fs::file_size(path);
                 const auto modified = CommonUtils::fileModificationTimeUtc(path);
                 const auto& record = *tracks[i].catalogRecord;
-                if (size != record.sizeBytes ||
+                if (sizes[i] != record.sizeBytes ||
                     (modified && record.modifiedUtc && modified != record.modifiedUtc)) {
+                    probed.changedTracks.push_back(i);
                     spdlog::warn("Scanned track changed since scan: '{}'; results use current metadata.",
                         pathToUtf8(path));
                 }
@@ -2566,7 +2457,7 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
                     pathToUtf8(album.path.path() / tracks[i].trackPath) + "': " +
                     result.error.value_or("No audio stream found."));
             }
-            probed.tracks[i] = MediaTrack{ tracks[i].trackPath, 0, std::move(result.mediaInfo) };
+            probed.tracks[i] = MediaTrack{ tracks[i].trackPath, sizes[i], std::move(result.mediaInfo) };
         }
         return probed;
     };
@@ -2574,8 +2465,17 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
     const auto processGroups = [&]() -> int {
         std::vector<bool> movedAlbums(albums.size(), false);
         std::size_t pairNumber = 0;
+        const bool useColor = PlatformUtils::EnableConsoleColors();
         for (const auto& group : matches.groups) {
             try {
+                std::vector<std::size_t> remaining;
+                std::map<std::size_t, std::size_t> positionByAlbum;
+                for (const auto album : group.albums) {
+                    if (!movedAlbums[album]) {
+                        positionByAlbum.emplace(album, remaining.size());
+                        remaining.push_back(album);
+                    }
+                }
                 std::map<std::size_t, ProbedAlbum> probes;
                 const auto probe = [&](std::size_t index) -> const ProbedAlbum& {
                     auto found = probes.find(index);
@@ -2600,8 +2500,11 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
                     for (const auto& item : evaluation.evidence) {
                         evidence += (evidence.empty() ? "" : "; ") + item;
                     }
-                    spdlog::info("Duplicate candidate [{}/{}] confidence {}: {}", pairNumber,
-                        matches.pairs.size(), DuplicateMatcher::ConfidenceName(evaluation.confidence), evidence);
+                    std::string confidenceLabel = DuplicateMatcher::ConfidenceName(evaluation.confidence);
+                    std::ranges::transform(confidenceLabel, confidenceLabel.begin(),
+                        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+                    spdlog::info("Duplicate candidate [{}/{}] CONFIDENCE {} (scan-time): {}", pairNumber,
+                        matches.pairs.size(), confidenceLabel, evidence);
                     const auto& probe1 = probe(pair.first);
                     const auto& probe2 = probe(pair.second);
                     if (probe1.currentCount != probe2.currentCount) {
@@ -2611,50 +2514,40 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
                     std::ranges::sort(trackPairs, [&](const auto& left, const auto& right) {
                         return trackOrder(&album1.trackList[left.first], &album1.trackList[right.first]);
                     });
-                    std::size_t position = 0;
-                    for (const auto& tracks : trackPairs) {
-                        ++position;
-                        const auto& track1 = probe1.tracks[tracks.first];
-                        const auto& track2 = probe2.tracks[tracks.second];
-                        if (!track1 || !track2) {
-                            spdlog::warn("Track missing in one of the albums. Matched position: {}", position);
-                            continue;
-                        }
-                        spdlog::info("Comparing scanned tracks: '{}' and '{}' (matched by {}).",
-                            pathToUtf8(dir1 / track1->trackPath), pathToUtf8(dir2 / track2->trackPath),
-                            tracks.method);
-                        const std::vector<MediaTrack> left{ *track1 };
-                        const std::vector<MediaTrack> right{ *track2 };
-                        if (!MediaTrack::CompareAudioTracks(left, right)) {
-                            spdlog::info("Audio Metrics for matched track {}:\n{}",
-                                position, MediaTrack::GenerateComparisonReport(left, right));
-                        }
-                        const auto duration1 = left.front().formatInfo.format.duration;
-                        const auto duration2 = right.front().formatInfo.format.duration;
-                        if (duration1 && duration2 && *duration1 != *duration2) {
-                            spdlog::info("Album duration check (album1/2), track {}: {} / {}",
-                                position, *duration1, *duration2);
-                        }
-                        compareAndPrintTagsTable(
-                            left.front().formatInfo.format.tags.value_or(JsonUtils::Tags{}),
-                            right.front().formatInfo.format.tags.value_or(JsonUtils::Tags{}));
-                    }
-                    for (const auto track : evaluation.unmatchedFirst) {
-                        spdlog::warn("Track missing in one of the albums. Unmatched: '{}'.",
-                            pathToUtf8(dir1 / album1.trackList[track].trackPath));
-                    }
-                    for (const auto track : evaluation.unmatchedSecond) {
-                        spdlog::warn("Track missing in one of the albums. Unmatched: '{}'.",
-                            pathToUtf8(dir2 / album2.trackList[track].trackPath));
-                    }
-                    spdlog::info("Potentially duplicated albums [{}/{}]:\n\tAlbum1: \"{}\"\n\tAlbum2: \"{}\"",
-                        pairNumber, matches.pairs.size(), pathToUtf8(dir1), pathToUtf8(dir2));
+                    auto displayEvaluation = evaluation;
+                    displayEvaluation.trackPairs = trackPairs;
+                    spdlog::info("{}", DuplicateComparison::DescribePair(positionByAlbum.at(pair.first) + 1,
+                        positionByAlbum.at(pair.second) + 1, album1, probe1, album2, probe2,
+                        displayEvaluation, matchOptions, true, useColor));
+                    spdlog::info("Potentially duplicated albums [{}/{}]:\n\tAlbum [{}]: \"{}\"\n\tAlbum [{}]: \"{}\"",
+                        pairNumber, matches.pairs.size(), positionByAlbum.at(pair.first) + 1, pathToUtf8(dir1),
+                        positionByAlbum.at(pair.second) + 1, pathToUtf8(dir2));
                     if (summary) ++summary->completed;
                 }
 
-                std::vector<std::size_t> remaining;
-                for (const auto album : group.albums) {
-                    if (!movedAlbums[album]) remaining.push_back(album);
+                if (remaining.size() > 1) {
+                    spdlog::info("\n=== Duplicate group review summary (album numbers match the menu) ===");
+                    for (const auto album : remaining) {
+                        spdlog::info("{}", DuplicateComparison::DescribeAlbum(
+                            positionByAlbum.at(album) + 1, albums[album], probe(album)));
+                    }
+                    for (const auto pairIndex : group.pairs) {
+                        const auto& pair = matches.pairs[pairIndex];
+                        if (movedAlbums[pair.first] || movedAlbums[pair.second]) continue;
+                        spdlog::info("{}", DuplicateComparison::DescribePair(positionByAlbum.at(pair.first) + 1,
+                            positionByAlbum.at(pair.second) + 1, albums[pair.first], probe(pair.first),
+                            albums[pair.second], probe(pair.second), pair.evaluation, matchOptions, false, useColor));
+                    }
+                    spdlog::info("Decision notes: only listed pairs are direct matches; a connected group does not "
+                        "mean every album matches every other album.\n"
+                        "Current properties/tags are re-probed; hashes, artwork inventory and integrity results "
+                        "are scan-only. Size/time checks cannot prove unchanged audio; legacy scans lack these checks.\n"
+                        "Higher bitrate, sample rate, bit depth or larger files do not establish better source quality. "
+                        "Lossless format does not prove a lossless original. No listening/signal-quality analysis "
+                        "or fresh decoded-audio hash verification was performed.\n"
+                        "Non-audio companion files and subfolders are not compared; whole-folder moves include them.\n"
+                        "Missing/unknown data is not evidence of equality. Review edition tags, bonus/missing tracks "
+                        "and warnings before choosing an album; no automatic keep/delete recommendation is made.");
                 }
                 if (!review) {
                     if (openDuplicateFolders) {
@@ -2664,11 +2557,7 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
                 }
                 if (remaining.size() < 2) continue;
                 std::vector<fs::path> paths;
-                std::map<std::size_t, std::size_t> positionByAlbum;
                 for (const auto album : remaining) paths.push_back(albums[album].path.path());
-                for (std::size_t index = 0; index < remaining.size(); ++index) {
-                    positionByAlbum.emplace(remaining[index], index);
-                }
                 std::vector<std::pair<std::size_t, std::size_t>> directMatches;
                 for (const auto pairIndex : group.pairs) {
                     const auto& pair = matches.pairs[pairIndex];

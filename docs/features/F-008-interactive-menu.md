@@ -9,7 +9,8 @@ an operation preview (inputs, outputs, counts, overwrite effects) and runs only 
 Conflicts block the run before installing output. After a started or failed operation a summary reports Completed, Partially
 completed or Failed with confirmed counts, and the program exits. Duplicate review also reports `Stopped by user`
 when ended early. `0` or EOF at the menu exits; `?` shows help.
-After the initial `RUN`, option 3 pauses per duplicate pair; an optional whole-folder move to `deleted` requires
+After the initial `RUN`, option 3 pauses per duplicate group, with a numbered evidence/metadata recap beside the
+choice prompt; an optional whole-folder move to `deleted` requires
 its own path preview and exact `MOVE` confirmation (F-005). Enter continues the review rather than canceling it.
 Before the option 2 preview, a per-run YES/NO prompt selects byte-exact FLAC metadata archives; Enter keeps the
 configured default (normally NO), and BACK/EXIT/EOF cancels before the scan. The preview shows the selected policy

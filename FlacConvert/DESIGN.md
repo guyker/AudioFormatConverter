@@ -33,6 +33,7 @@ It runs either as explicit CLI commands or, with no arguments, as a legacy inter
 | Catalog database | `src/CatalogDatabase.cpp`, `include/CatalogDatabase.h` | Schema-v2 SQLite writer, stable library-relative identity, incremental upsert and stale-file cleanup |
 | Album collection | `src/AlbumCollection.cpp`, `include/AlbumCollection.h` | Discovery (`AlbumCollection::LoadAlbumsCo`), metadata import/cache reuse, JSON save/load, `AlbumCollection::ExportToDatabase` |
 | Duplicate matching | `src/DuplicateMatcher.cpp`, `include/DuplicateMatcher.h` | `DuplicateMatcher::FindDuplicates`: aliases, candidate indexes, pair evaluation, confidence and grouping |
+| Duplicate comparison output | `src/DuplicateComparison.cpp`, `include/DuplicateComparison.h` | Pure descriptions of current album snapshots and scan-time pair evidence; stable group-local album numbers |
 | Duplicate review | `src/DuplicateReview.cpp`, `include/DuplicateReview.h` | Per-group menu choices; explicitly confirmed, verified whole-folder moves to `OutDirectory/deleted` |
 | Platform adapters | `src/PlatformUtils.cpp`, `include/PlatformUtils.h` | UTF-16/UTF-8, `PlatformUtils::WindowsLongPath`, `PlatformUtils::OpenDirectory` |
 | Utilities | `src/CommonUtils.cpp`, `include/CommonUtils.h`, `include/BoundedTaskRunner.h`, `src/JsonUtils.cpp`, `include/JsonUtils.h` | UTF-8 path helpers, coroutine `Generator`, bounded task runner, JSON helpers |
@@ -213,11 +214,32 @@ durations pair in order. Equal track counts with all tracks paired are required 
 Confidence: exact (all pairs by MD5), strong (MusicBrainz match, or name and artists match with known durations and no
 MusicBrainz conflict), probable, partial. Differing artists reject unless MusicBrainz or MD5 agree. Album artist and
 track artist sets are compared. Accepted pairs are grouped by union-find. The flow re-probes each grouped album once,
-compares matched tracks in album order and re-probes those paths in parallel before printing a
-stream-property and tag comparison (`MediaTrack::GenerateComparisonReport`). Missing tracks retain their positions;
+with parallel reads of scanned paths, then prints `DuplicateComparison::DescribePair` output in deterministic
+duration/title/path order. Each pair starts with a prominent confidence banner that marks the active rule-based label
+and shows exact/strong/probable as ordered tiers, with partial identified separately as coverage-only; the one-line
+candidate log also uppercases the label. All coloured labels reset inherited styling and use normal-intensity black
+text, avoiding terminals that render bold black as grey. ANSI background colour is used only for interactive stdout that supports it,
+and is disabled by `NO_COLOR`; redirected logs retain the plain-text banner. This label is not a probability. Every
+readable matched track shows filenames, titles, disc/track tags, match method,
+stored-hash agreement, current duration/delta/tolerance, file bytes, codec, sample rate, declared bit depth, channels,
+layout and reported bitrate. Known technical differences are listed; unknowns are not counted as equal.
+Current container and first-audio-stream tags are compared separately; equal values are counted, differing/missing
+values printed in full, with UTF-8-safe wrapping and escaped control characters. Artwork/video streams are not
+mistaken for audio; additional audio streams are explicitly warned.
+`DuplicateComparison::DescribeAlbum` provides a group recap adjacent to review: menu-aligned album numbers,
+current release/artist/date/edition/label/catalog/identifier tag variants, track counts, format/resolution variants,
+duration/bytes over readable scanned tracks, and scan-only artwork/integrity/findings inventories.
+Other immediate files/folders are listed as uncompared companions; no recursive or non-audio content comparison is
+implied, even though a whole-folder move includes them.
+The recap repeats each direct pair's confidence, rationale, coverage and hash agreement without repeating track
+details. Exact confidence means equal stored FLAC MD5s, not byte-identical files or fresh decoded-audio verification.
+Properties are not source-quality scores; no automatic keep/delete recommendation or signal-quality analysis is made.
+Missing tracks retain their positions;
 new immediate files are reported but not substituted. For v2 records, changed size or available modification time
-is reported, but these attributes cannot prove file identity; legacy records lack this check and candidate selection
-still reflects the scan. Probe errors fail the operation.
+is reported and retained in the snapshot; recap warnings flag changed/missing/added files and advise rescanning.
+These attributes cannot prove file identity; legacy records lack this check and candidate selection still reflects
+the scan. Hashes, artwork descriptors and integrity/findings remain explicitly scan-only, never reverified claims.
+The presentation module performs no I/O and changes neither matching nor quarantine policy. Probe errors fail the operation.
 The CLI operation remains noninteractive and read-only; folders are opened only with `--open`.
 `duplicates --report <file>` writes a schema-1 JSON report (status, statistics, aliases, groups, pairs with confidence,
 evidence, track pairings and unmatched tracks) via a sibling `.partial` and atomic no-overwrite publication; an

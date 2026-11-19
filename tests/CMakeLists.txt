@@ -24,8 +24,10 @@ add_executable(duplicate_review_test duplicate_review.cpp)
 target_link_libraries(duplicate_review_test PRIVATE FlacConvertCore)
 add_executable(duplicate_matcher_test duplicate_matcher.cpp)
 target_link_libraries(duplicate_matcher_test PRIVATE FlacConvertCore)
+add_executable(duplicate_comparison_test duplicate_comparison.cpp)
+target_link_libraries(duplicate_comparison_test PRIVATE FlacConvertCore)
 
-foreach(_target IN ITEMS preservation_audit_test warning_regressions_test media_metadata_json_test media_record_json_test taglib_smoke_test decode_analyzer_test bounded_task_runner_test scoped_current_directory_test scan_report_schema_test duplicate_review_test duplicate_matcher_test)
+foreach(_target IN ITEMS preservation_audit_test warning_regressions_test media_metadata_json_test media_record_json_test taglib_smoke_test decode_analyzer_test bounded_task_runner_test scoped_current_directory_test scan_report_schema_test duplicate_review_test duplicate_matcher_test duplicate_comparison_test)
     target_compile_options(${_target} PRIVATE
         "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/W3;/utf-8;/permissive->"
         "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>>:-Wall;-Wextra;-Wpedantic>")
@@ -73,6 +75,8 @@ add_test(NAME duplicate-review
     COMMAND "$<TARGET_FILE:duplicate_review_test>")
 add_test(NAME duplicate-matcher
     COMMAND "$<TARGET_FILE:duplicate_matcher_test>")
+add_test(NAME duplicate-comparison
+    COMMAND "$<TARGET_FILE:duplicate_comparison_test>")
 add_test(NAME mp3-conversion-integration
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/mp3_conversion.py"
         --converter "$<TARGET_FILE:FlacConvert>"

@@ -40,7 +40,12 @@ explicitly. Native metadata inventory is partial for FLAC/MP3 and unsupported fo
    exact, strong, probable or partial and grouped, so three copies form one group. The same folder loaded twice
    (overlapping libraries) is compared once. Fuzzy names, edition-text stripping and partial (unequal track count)
    matches are opt-in settings.
-2. Candidate pairs are re-probed and a report compares their format and tag properties; no signal-quality analysis is performed (`ExtraAudioQualityMetrics` is deprecated and ignored).
+2. Candidate pairs are re-probed. A numbered album recap and track-by-track comparison show why each pair matched,
+   coverage, edition/release tags, format/resolution, durations and differences, missing/added tracks and full differing
+   tags. Stored hashes, artwork and integrity results are clearly scan-only; changed files prompt a rescan warning.
+   Unknowns are not proof of equality, and higher bitrate/resolution/size does not prove better source quality.
+   No signal-quality analysis or automatic keep/delete recommendation is performed (`ExtraAudioQualityMetrics` is
+   deprecated and ignored).
 3. Menu option 3 opens one matching group at a time and waits: Enter continues; `STOP` finishes. Choose an album number,
    then confirm the displayed paths with `MOVE`, to move that entire album folder (including artwork and subfolders)
    under `OutDirectory/deleted`. All files are copied and verified before originals are removed, also across drives.

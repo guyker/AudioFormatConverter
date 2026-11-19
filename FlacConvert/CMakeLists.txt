@@ -25,6 +25,7 @@ add_library(FlacConvertCore STATIC
     src/CommonUtils.cpp
     src/CommandLine.cpp
     src/DecodeAnalyzer.cpp
+    src/DuplicateComparison.cpp
     src/DuplicateMatcher.cpp
     src/DuplicateReview.cpp
     src/ffmpeg.cpp

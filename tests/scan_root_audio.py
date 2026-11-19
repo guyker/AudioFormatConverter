@@ -1153,10 +1153,27 @@ def main():
         if inside_library.returncode == 0 or source_library_report.exists():
             raise AssertionError("Duplicate report was allowed inside its source library")
         if "Different number of tracks" in duplicate_run.stdout or \
-                "Album duration check (album1/2)" in duplicate_run.stdout:
+                "OUTSIDE tolerance" in duplicate_run.stdout:
             raise AssertionError("Nested or unordered tracks caused a false mismatch")
         if "44100" not in duplicate_run.stdout or "48000" not in duplicate_run.stdout:
             raise AssertionError("Basic audio property difference was not reported")
+        for expected in ("Pair [1] <-> [2]", "SCAN-TIME evidence", "Coverage: 2/2",
+                         "Match methods:", "Stored FLAC MD5:", "Technical differences:",
+                         "Current tags:", "Duplicate group review summary",
+                         "Other immediate files/folders NOT compared", "nested",
+                         "Tracks: 2 scanned; 2 currently present; 2 scanned paths readable.",
+                         "Higher bitrate, sample rate, bit depth or larger files do not establish"):
+            if expected not in duplicate_run.stdout:
+                raise AssertionError(f"Duplicate decision aids missing {expected!r}: {duplicate_run.stdout}")
+        if "## CONFIDENCE: " not in duplicate_run.stdout:
+            raise AssertionError(f"Confidence banner missing from redirected output: {duplicate_run.stdout}")
+        confidence_line = next(
+            line for line in duplicate_run.stdout.splitlines() if "## CONFIDENCE: " in line
+        )
+        if "\x1b[" in confidence_line:
+            raise AssertionError("ANSI colour leaked into confidence banner in redirected output")
+        if "Skipped: Audio analysis was not run." in duplicate_run.stdout:
+            raise AssertionError("Duplicate comparison printed obsolete per-track analysis noise")
         if os.name == "nt":
             import ctypes
             from ctypes import wintypes
@@ -1197,7 +1214,9 @@ def main():
                          "Track added since scan;", "renamed.flac", "added.flac",
                          "Scanned track changed since scan:", "b.flac",
                          "Track missing in one of the albums.",
-                         "Album duration check (album1/2), track 2:"):
+                         "rescan before relying on them", "added/uncompared",
+                         "currently readable pairs 1/2",
+                         "Track pair 2 | matched by", "delta 1.000 s"):
             if expected not in changed_run.stdout:
                 raise AssertionError(f"Changed duplicate report missing {expected!r}: "
                                      f"{changed_run.stdout}")
@@ -1229,7 +1248,7 @@ def main():
             [converter, "duplicates", str(legacy_dir)], capture_output=True, text=True, timeout=30,
         )
         if legacy_run.returncode != 0 or "Scanned track is missing:" not in legacy_run.stdout or \
-                "Album duration check (album1/2), track 2:" not in legacy_run.stdout:
+                "delta 1.000 s" not in legacy_run.stdout:
             raise AssertionError(f"Legacy duplicate reconciliation failed: {legacy_run.stdout}\n"
                                  f"{legacy_run.stderr}")
         mixed_dir = root / "mixed-duplicates"

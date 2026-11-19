@@ -18,6 +18,7 @@
 #include <unistd.h>
 #endif
 #include <cerrno>
+#include <cstdlib>
 #include <cstdio>
 #include <mutex>
 #include <vector>
@@ -704,5 +705,23 @@ bool ScopedCurrentDirectory::Restore()
             std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
         }
         return ret;
+    }
+
+    bool EnableConsoleColors() {
+#ifdef _WIN32
+        wchar_t noColor[2]{};
+        if (GetEnvironmentVariableW(L"NO_COLOR", noColor, 2) > 0) return false;
+        HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+        DWORD mode = 0;
+        if (output == nullptr || output == INVALID_HANDLE_VALUE || !GetConsoleMode(output, &mode)) return false;
+        if (mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) return true;
+        return SetConsoleMode(output, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0;
+#else
+        const char* noColor = std::getenv("NO_COLOR");
+        if (noColor != nullptr && *noColor != '\0') return false;
+        if (!isatty(STDOUT_FILENO)) return false;
+        const char* term = std::getenv("TERM");
+        return term == nullptr || std::string(term) != "dumb";
+#endif
     }
 }
