@@ -105,6 +105,10 @@ Menu actions log every active source library before preparation, and CLI command
 (identified as catalog JSON for duplicate detection and database import). Conversion and scan transitions identify
 the current source library. `RunLogging` serializes transient progress with console log messages so warnings/errors
 end the progress line cleanly; transient redraws are not written to session logs or redirected output.
+Long phases use `RunLogging::PhaseProgress` (repair phases, scan discovery and scan track collection): it logs the
+phase start, redraws one line every second when interactive, logs a snapshot every five seconds when redirected, and
+logs a final `[done]`/`[stopped]` line with counts, elapsed time and, when the total is known, an ETA. Scan metadata
+progress spans every batch of a library rather than restarting per batch.
 
 ## Key flows
 
@@ -197,8 +201,8 @@ of the FLAC metadata section. Unreadable files are reported as `unreadable`.
 Repair preparation announces its source before discovery and reports discovery, inspection and planning progress,
 including elapsed time while work is pending. Discovery/planning totals are unknown; inspection shows completed
 files and a percentage once discovery establishes the total. Execution progress counts only verified installed
-files, including unchanged companions, not merely staged files. Progress is per library and per phase, not a
-time-based estimate of the entire operation. Interactive progress updates one line every second; redirected output
+files, including unchanged companions, not merely staged files. Progress is per library and per phase; phases with
+a known total add a rough ETA from the phase's average rate after five seconds. Interactive progress updates one line every second; redirected output
 receives periodic five-second snapshots instead. Phase boundaries are logged in both modes. Preparation remains read-only.
 
 Output is a separate `FIXED/<library-name>` tree. Only folders containing a safe repair are copied, each with its

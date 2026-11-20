@@ -41,74 +41,14 @@ namespace fs = std::filesystem;
 
 using FixList = std::vector<std::pair<std::string, std::size_t>>;
 
-class RepairProgress
+class RepairProgress : public RunLogging::PhaseProgress
 {
 public:
     RepairProgress(std::string phase, std::optional<std::size_t> total = std::nullopt,
         std::string unit = "files")
-        : _phase(std::move(phase)), _total(total), _unit(std::move(unit))
+        : PhaseProgress("Repair " + std::move(phase), total, std::move(unit))
     {
-        spdlog::info("{}", Message());
-        _worker = std::jthread([this](std::stop_token stop) {
-            std::unique_lock lock(_mutex);
-            unsigned ticks = 0;
-            while (!_wake.wait_for(lock, stop, std::chrono::seconds(1), [] { return false; })) {
-                if (stop.stop_requested()) break;
-                if (PlatformUtils::IsStdoutInteractive()) {
-                    RunLogging::ShowProgress(Message());
-                }
-                else if (++ticks % 5 == 0) {
-                    spdlog::info("{}", Message());
-                }
-            }
-        });
     }
-
-    ~RepairProgress() { Stop(); }
-
-    void Advance() { _completed.fetch_add(1, std::memory_order_relaxed); }
-
-    void Finish(bool success = true)
-    {
-        Stop();
-        spdlog::info("{} [{}].", Message(), success ? "done" : "stopped");
-    }
-
-private:
-    std::string Message() const
-    {
-        const auto count = _completed.load(std::memory_order_relaxed);
-        std::string message = "Repair " + _phase + ": " + std::to_string(count);
-        if (_total) message += "/" + std::to_string(*_total);
-        message += " " + _unit;
-        if (_total) {
-            const auto percent = *_total == 0 ? 100 :
-                static_cast<unsigned>(static_cast<long double>(count) * 100 / *_total);
-            message += " (" + std::to_string(percent) + "%)";
-        }
-        else message += " (total unknown)";
-        const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - _started).count();
-        return message + ", " + std::to_string(elapsed) + "s";
-    }
-
-    void Stop()
-    {
-        if (_worker.joinable()) {
-            _worker.request_stop();
-            _worker.join();
-        }
-        RunLogging::ClearProgress();
-    }
-
-    std::string _phase;
-    std::optional<std::size_t> _total;
-    std::string _unit;
-    std::atomic_size_t _completed{ 0 };
-    std::chrono::steady_clock::time_point _started{ std::chrono::steady_clock::now() };
-    std::mutex _mutex;
-    std::condition_variable_any _wake;
-    std::jthread _worker;
 };
 
 std::string utf8(const fs::path& path)

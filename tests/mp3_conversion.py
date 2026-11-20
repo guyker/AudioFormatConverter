@@ -1664,6 +1664,8 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assert_summary(result, "Completed", 1, "album JSON files")
         self.assertEqual(result.stdout.count("First pass: Find all folders"), 1)
+        self.assertRegex(result.stdout, r"Scan discovery: \d+ entries \(total unknown\), \d+ folders, .* \[done\]")
+        self.assertRegex(result.stdout, r"Scan track collection: (\d+)/\1 folders \(100%\), 1 albums, .* \[done\]")
         json_path = self.output / "Library" / "media_out_Library_1.json"
         self.assertTrue(json_path.exists())
         before = json_path.read_bytes()

@@ -39,6 +39,7 @@
 #include "CommonUtils.h"
 #include "DecodeAnalyzer.h"
 #include "MediaRecordJson.h"
+#include "RunLogging.h"
 #include "TagLibReader.h"
 
 #include "sqlite3.h"
@@ -333,8 +334,6 @@ void validateAlbumTags(TrackInfoList& tracks)
 CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::filesystem::path albumCollectionDirPath, bool bIncludeMetadata, size_t batchSize, ScanDiscoveryCounts* counts) {
 
     std::chrono::steady_clock::time_point startTimePoint = std::chrono::steady_clock::now();
-    const bool showProgress = PlatformUtils::IsStdoutInteractive();
-    //std::chrono::steady_clock::time_point endLoadTime = startLoadTime;
     spdlog::debug("===Loading album collection from storage===");
 
     // Map to collect tracks per folder
@@ -343,75 +342,58 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
 
     spdlog::info("First pass: Find all folders, Please wait (might take a few minutes)...");
 
-    long long folderCount = 0;
-    // First pass: Find all folders - Discove folders
-    for (const auto& entry : fs::recursive_directory_iterator(albumCollectionDirPath)) {
-        // Progress update
-        if (showProgress) {
-            std::cout << "\rScanning folders, Please wait... " << ++folderCount;
+    {
+        // First pass: discover folders (the count of entries is unknown until the walk completes)
+        RunLogging::PhaseProgress discovery("Scan discovery", std::nullopt, "entries", "folders");
+        for (const auto& entry : fs::recursive_directory_iterator(albumCollectionDirPath)) {
+            discovery.Advance();
+            auto relativePath = fs::relative(entry.path(), albumCollectionDirPath);
+            auto depth = std::distance(relativePath.begin(), relativePath.end());
+            if (depth > AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth) {
+                spdlog::error("Recursion rirectory search depth reached, depth: {}", depth);
+                continue;
+            }
+            if (entry.is_directory()) {
+                albumMap[entry.path()];
+                discovery.AdvanceSecondary();
+            }
         }
-        else {
-            ++folderCount;
-        }
-
-        auto relativePath = fs::relative(entry.path(), albumCollectionDirPath);
-        auto depth = std::distance(relativePath.begin(), relativePath.end());
-        if (depth > AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth) {
-            spdlog::error("Recursion rirectory search depth reached, depth: {}", depth);
-            continue;
-        }
-        if (entry.is_directory()) {
-            albumMap[entry.path()];
-        }
+        discovery.Finish();
     }
-
-    //std::cout << "\rScanning folders, Please wait... Completed, " << folderCount << " folders found" << std::endl;
-    if (showProgress) std::cout << "\r";
-    spdlog::info("Discovery examined {} filesystem entries.", folderCount);
     spdlog::info("First pass: Completed, found {} folders [{}]", albumMap.size(), CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
     startTimePoint = std::chrono::steady_clock::now();
 
     int albumCount = 0;
-    std::size_t lastProgressLength = 0;
-    const std::string scanningText = "Scanning albums, Please wait... ";
     spdlog::info("Second pass: Collect tracks one level deep...");
-    // Second pass: Collect files one level deep
-    if (showProgress) {
-        std::cout << scanningText << std::flush;
-        lastProgressLength = scanningText.size();
-    }
-    for (auto& [folderPath, trackList] : albumMap) {
-        for (const auto& entry : fs::directory_iterator(folderPath)) {
-            if (entry.is_regular_file() && MediaTrack::IsFileAcceptedAudioFile(entry)) {
-                if (counts) {
-                    if (trackList.empty()) ++counts->albums;
-                    ++counts->tracks;
+    {
+        // Second pass: collect audio files one level deep in each discovered folder
+        RunLogging::PhaseProgress collection("Scan track collection", albumMap.size(), "folders", "albums");
+        for (auto& [folderPath, trackList] : albumMap) {
+            for (const auto& entry : fs::directory_iterator(folderPath)) {
+                if (entry.is_regular_file() && MediaTrack::IsFileAcceptedAudioFile(entry)) {
+                    if (counts) {
+                        if (trackList.empty()) ++counts->albums;
+                        ++counts->tracks;
+                    }
+                    uintmax_t fileSize = fs::file_size(entry.path());
+                    trackList.push_back({ entry.path().filename(), fileSize, FFprobeOutput{}, std::nullopt, std::nullopt });
                 }
-                uintmax_t fileSize = fs::file_size(entry.path());
-                trackList.push_back({ entry.path().filename(), fileSize, FFprobeOutput{}, std::nullopt, std::nullopt });
             }
-        }
-        // Progress update
-        if (!trackList.empty()) {
-            ++albumCount;
-            if (showProgress) {
-                const auto progressText = scanningText + std::to_string(albumCount);
-                PlatformUtils::ClearConsoleLine(lastProgressLength);
-                std::cout << progressText << std::flush;
-                lastProgressLength = progressText.size();
+            if (!trackList.empty()) {
+                ++albumCount;
+                collection.AdvanceSecondary();
             }
+            collection.Advance();
         }
+        collection.Finish();
     }
-
-    if (showProgress) PlatformUtils::ClearConsoleLine(lastProgressLength);
-    spdlog::info("Scanning albums, Please wait... Completed, {} albums found ", albumCount);
     spdlog::info("Second pass: Completed, found {} albums [{}]", albumCount, CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
     startTimePoint = std::chrono::steady_clock::now();
 
     // Convert map to std::shared_ptr<std::vector<MediaAlbum>> in batches
     MediaAlbumListPtr albumListPtr = std::make_shared<std::vector<MediaAlbum>>();
     albumListPtr->reserve(batchSize); // Optimize allocation
-    int totalBatchCount = albumCount / AppSettingsJson::AppSetting()->AlbumsSplitThreshold;
+    const int totalBatchCount = batchSize == 0 ? 1 : static_cast<int>((albumCount + batchSize - 1) / batchSize);
     int batchCount = 0;
 
     //erase all empty folders

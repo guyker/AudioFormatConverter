@@ -24,8 +24,8 @@ still applies. Inspection and staging use four workers by default; CLI `--jobs <
 Before the preview, progress identifies the source folder and the discovery, inspection and planning phases.
 Inspection shows completed/total files and a percentage; discovery/planning show counts without an invented total.
 During execution, progress shows verified files installed out of all planned repairs and unchanged copies.
-Each phase shows elapsed time and remains visibly active during long files. Progress is per library, not a
-whole-run time estimate. Interactive updates reuse one line; redirected output uses periodic snapshots instead
+Each phase shows elapsed time and remains visibly active during long files. Progress is per library and per phase;
+phases with a known total show a rough ETA. Interactive updates reuse one line; redirected output uses periodic snapshots instead
 of terminal control sequences. Phase boundaries are retained in the session log in both modes.
 
 ## Entry points

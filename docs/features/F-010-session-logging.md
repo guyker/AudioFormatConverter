@@ -9,7 +9,9 @@ Each process invocation (CLI command or interactive-menu session) writes a uniqu
 platform-specific location is unavailable. The console remains concise: informational progress (including the current
 source album folder during FLAC conversion), completion, meaningful warnings, and errors; per-file details and
 expected generated-field normalization are reserved for the session log. Redirected output contains no animated
-progress control sequences.
+progress control sequences. Scan folder discovery and track collection report counts, discovered folders/albums,
+elapsed time and (for track collection) an ETA on one updating line, with periodic snapshots when redirected; scan
+metadata progress spans all batches of a library.
 Before any menu action prepares work, it logs all active source library paths. CLI commands log the input folder,
 explicitly labeled as catalog JSON for duplicates/database import. Conversion and scan library transitions and
 repair preparation identify the current source folder, including before long preprocessing begins.

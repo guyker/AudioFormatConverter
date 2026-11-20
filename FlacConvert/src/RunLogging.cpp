@@ -355,6 +355,85 @@ void RunLogging::ClearProgress()
     if (consoleSink) consoleSink->Clear();
 }
 
+namespace
+{
+std::string formatElapsed(long long seconds)
+{
+    if (seconds < 60) return std::to_string(seconds) + "s";
+    if (seconds < 3600) return std::to_string(seconds / 60) + "m " + std::to_string(seconds % 60) + "s";
+    return std::to_string(seconds / 3600) + "h " + std::to_string(seconds % 3600 / 60) + "m";
+}
+}
+
+RunLogging::PhaseProgress::PhaseProgress(std::string label, std::optional<std::size_t> total,
+    std::string unit, std::string secondaryUnit)
+    : _label(std::move(label)), _total(total), _unit(std::move(unit)), _secondaryUnit(std::move(secondaryUnit))
+{
+    spdlog::info("{}", Message());
+    const bool interactive = PlatformUtils::IsStdoutInteractive();
+    _worker = std::jthread([this, interactive](std::stop_token stop) {
+        std::unique_lock lock(_mutex);
+        unsigned ticks = 0;
+        while (!_wake.wait_for(lock, stop, std::chrono::seconds(1), [] { return false; })) {
+            if (stop.stop_requested()) break;
+            if (interactive) {
+                ShowProgress(Message());
+            }
+            else if (++ticks % 5 == 0) {
+                spdlog::info("{}", Message());
+            }
+        }
+    });
+}
+
+RunLogging::PhaseProgress::~PhaseProgress()
+{
+    Stop();
+}
+
+void RunLogging::PhaseProgress::Finish(bool success)
+{
+    Stop();
+    if (_finished) return;
+    _finished = true;
+    spdlog::info("{} [{}].", Message(), success ? "done" : "stopped");
+}
+
+void RunLogging::PhaseProgress::Stop()
+{
+    if (_worker.joinable()) {
+        _worker.request_stop();
+        _worker.join();
+        ClearProgress();
+    }
+}
+
+std::string RunLogging::PhaseProgress::Message() const
+{
+    const auto count = _completed.load(std::memory_order_relaxed);
+    std::string message = _label + ": " + std::to_string(count);
+    if (_total) message += "/" + std::to_string(*_total);
+    message += " " + _unit;
+    if (_total) {
+        const auto percent = *_total == 0 ? 100 :
+            static_cast<unsigned>(static_cast<long double>((std::min)(count, *_total)) * 100 / *_total);
+        message += " (" + std::to_string(percent) + "%)";
+    }
+    else message += " (total unknown)";
+    if (!_secondaryUnit.empty()) {
+        message += ", " + std::to_string(_secondary.load(std::memory_order_relaxed)) + " " + _secondaryUnit;
+    }
+    const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - _started).count();
+    message += ", " + formatElapsed(elapsed);
+    if (_total && count > 0 && count < *_total && elapsed >= 5) {
+        const auto remaining = static_cast<long long>(
+            static_cast<long double>(elapsed) * (*_total - count) / count);
+        message += ", ETA " + formatElapsed(remaining);
+    }
+    return message;
+}
+
 std::optional<std::filesystem::path> RunLogging::CurrentLogPath()
 {
     return runLogPath;

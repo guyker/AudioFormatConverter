@@ -1949,15 +1949,20 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         ScanManifestData scanManifest;
         scanManifest.id = scanReport.runId;
         int count = 0;
+        std::size_t processedAlbums = 0;
         try {
             const auto writeBatch = [&](const MediaAlbumListPtr& albumListPtr) {
                 spdlog::debug("Received batch with {} albums", albumListPtr->size());
                 if (bIncludeMetadata) {
                     spdlog::info("Reading metadata for {} album(s).", albumListPtr->size());
-                    ac.ImportMetadata(albumListPtr, 0, albumListPtr->size(),
+                    // Discovery has counted every album before the first batch, so progress spans all batches.
+                    const auto totalAlbums = (std::max)(static_cast<std::size_t>(scanReport.discovery.albums),
+                        processedAlbums + albumListPtr->size());
+                    ac.ImportMetadata(albumListPtr, processedAlbums, totalAlbums,
                         settings->UseAsyncMetadataReads,
                         useIncrementalCache ? &cachedRecords : nullptr);
                 }
+                processedAlbums += albumListPtr->size();
                 for (auto& album : *albumListPtr) {
                     album.scanManifestId = scanManifest.id;
                 }
