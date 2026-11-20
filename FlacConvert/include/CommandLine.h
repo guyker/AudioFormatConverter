@@ -7,6 +7,7 @@ enum class CommandAction
 {
     None,
     Convert,
+    Repair,
     Scan,
     Duplicates,
     DatabaseImport

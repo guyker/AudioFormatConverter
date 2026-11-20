@@ -9,6 +9,7 @@ tracked in `docs/features/`. Code is cited as `path#Symbol`.
 `FlacConvert` is a console utility for a local music library. It:
 
 - converts audio to a separate output tree (16-bit / 44.1 kHz FLAC, or FLAC to MP3) without touching sources;
+- repairs a narrowly recognized native FLAC metadata defect into a separate output tree;
 - scans libraries into JSON metadata batches;
 - finds probable duplicate albums from those batches;
 - imports the batches into a per-library SQLite database.
@@ -26,6 +27,7 @@ It runs either as explicit CLI commands or, with no arguments, as a legacy inter
 | Conversion options | `include/ConversionOptions.h` | `AudioTarget` (Flac/Mp3), MP3 quality, downmix flag |
 | Folder conversion | `src/FolderConvert.cpp`, `include/FolderConvert.h` | `FolderConvert::PrepareConversion` (plan) and `FolderConvert::ExecuteConversion` (run, audit report, markers) |
 | File conversion | `src/MediaConvertionTask.cpp`, `include/MediaConvertionTask.h` | `MediaConvertionTask`: quality gate, FFmpeg child process, output verification, sidecar, audit, installation |
+| FLAC repair | `src/AudioRepair.cpp`, `include/AudioRepair.h` | `AudioRepair::Prepare` plans safe native FLAC metadata edits; `AudioRepair::Execute` stages, verifies and installs repaired copies and `repair-report.json` |
 | Metadata archive | `src/FlacMetadata.cpp`, `include/FlacMetadata.h` | `FlacMetadata::Save` / `FlacMetadata::Verify` byte-exact archive as binary `.flac-metadata` or `.flac-metadata.json` (readable scan-schema metadata + Base64 archive; only the archive is verified); scan optionally writes binary metadata-only archives for native FLAC |
 | Preservation audit | `src/PreservationAudit.cpp`, `include/PreservationAudit.h` | `PreservationAudit::Compare` (tags, pictures, chapters, opaque blocks), `PreservationAudit::VerifyCopy` |
 | FFmpeg library access | `src/ffmpeg.cpp`, `include/ffmpeg.h`, `include/FFmpegWrapper.h` | `FFmpeg::GetFFprobeMetadataAPI` (conversion/duplicate re-probes) and the process-wide log callback |
@@ -57,6 +59,9 @@ flowchart LR
     RWA --> PC
     SRC[(Source library)] --> PC
     EC --> OUT[(OutDirectory/FLAC or MP3/name)]
+    RWA --> AR[AudioRepair::Prepare / Execute]
+    SRC --> AR
+    AR --> FIXED[(OutDirectory/FIXED/name)]
     RWA --> SCAN[ScanFolderAndCreateJSON]
     SRC --> SCAN
     SCAN -->|read-only metadata| TAGLIB[TagLib]
@@ -78,7 +83,8 @@ flowchart LR
 | `scan <library> [--output-dir] [--full-rescan] [--tier catalog\|integrity\|analysis] [--archive-flac-metadata\|--no-archive-flac-metadata]` | `ScanFolderAndCreateJSON` | One library; name = folder name; archive flags override configuration |
 | `duplicates <json dir> [--open] [--report <file>]` | `ScanFolderProcessJSONAndFindDuplicates` | Opens folders only with `--open`; `--report` writes a new JSON report |
 | `db import <json dir> [--output-dir]` | `ImportJsonDirectoryToDatabase` | `<output root>/<JSON folder name>/catalog-v2.sqlite`; output root is `--output-dir`, else `OutDirectory` |
-| No arguments | `RunLegacyMenu` | Options 1 FLAC, 2 scan, 3 duplicates, 4 DB import, 5 not implemented, 6 MP3; all use active `MediaDirectoryList` entries |
+| `repair <input> [--output-dir] [--overwrite]` | `AudioRepair::Prepare` → `AudioRepair::Execute` | `<output root>/FIXED/<input folder name>`; output root is `--output-dir`, else `OutDirectory` |
+| No arguments | `RunLegacyMenu` | Options 1 FLAC, 2 scan, 3 duplicates, 4 DB import, 5 not implemented, 6 MP3, 7 repair; library options use active `MediaDirectoryList` entries |
 
 All commands accept `--config <file>` and `--log-level info\|debug\|trace`. Exit code is 0 on success, non-zero on any failure.
 
@@ -153,6 +159,21 @@ records the effective `metadataSidecars` value.
 `MediaConvertionTask::InstallTemporaryOutput` installs the sidecar first (backing up an existing one when
 overwriting), then the audio; on audio failure it restores or removes the sidecar and leaves the temporary in place
 (K-041).
+
+### FLAC repair (menu 7, `repair`)
+
+`AudioRepair::Prepare` recursively inspects native `.flac` files and classifies only repeated CDTOC Vorbis comments
+with byte-identical values as safely repairable. It leaves differing values, semicolon-joined values and unreadable
+FLACs unchanged and records them for review. A repair is limited to removing repeated CDTOC comment entries; it
+retains the first value and does not decode or re-encode audio.
+
+Output is a separate `FIXED/<library-name>` tree. Only folders containing a safe repair are copied; every regular
+file in those folders is retained, and unrelated files are copied byte-for-byte. The changed FLAC is written to a
+unique temporary, then verified against the source: the audio payload and every non-comment metadata block must be
+byte-identical, and the comment block must contain exactly the planned edit. Only verified output is installed;
+sources are never modified. Existing destinations fail unless overwrite is enabled. An in-progress marker and
+`repair-report.json` record execution state, findings, per-file installation status and audio/metadata impact. The
+CLI returns non-zero when there are findings requiring manual review or when an operation fails.
 
 ### Scan to JSON (menu 2, `scan`)
 
@@ -312,7 +333,7 @@ shorter output directories because generated archive filenames can push their fu
 For mapped drives, validation canonicalizes the deepest existing output ancestor and derives missing descendants from
 that stable path; it does not canonicalize a not-yet-created extended-path descendant. Existing components are still
 resolved individually, and each directory is checked after entry/open so reparse-point redirects remain rejected.
-Conversion, scan installation, and catalog publication use these resolved
+Conversion, repair, scan installation, and catalog publication use these resolved
 paths and check `IsAnchored` before finalizing. Windows working-directory changes and restoration use ordinary
 drive/UNC paths, not the extended prefix: legacy FFmpeg launchers such as Chocolatey's .NET shim reject an inherited
 `\\?\` working directory. File I/O retains extended-path support. `Restore` releases the directory locks before an
@@ -324,10 +345,11 @@ database integration fixtures cover the corresponding output paths.
 
 - **Sources must never be modified.** Every write target must be outside the source tree; overlap is rejected at
   plan time and revalidated against the directory actually opened by the shared output anchor. The anchor prevents
-  the output path or its ancestors from being renamed into a source-library link while conversion, scan installation,
-  or catalog publication is active (K-047 fixed).
+  the output path or its ancestors from being renamed into a source-library link while conversion, repair, scan
+  installation, or catalog publication is active (K-047 fixed).
 - **Install only after success.** Output is written to a unique temporary, verified and audited, then moved into place
-  (`installFile`: `MoveFileExW` on Windows; rename or hard-link/copy elsewhere). Without overwrite an existing
+  (`installFile`: `MoveFileExW` on Windows; rename or hard-link/copy elsewhere). Repair output follows the same
+  temporary/verification/install rule. Without overwrite an existing
   target is never replaced (K-041).
 - **Configured paths for I/O, canonical paths for safety checks only** (K-032). Known exception:
   `ConvertConfiguredLibraries` validates each library with `fs::is_directory` on its canonical path.

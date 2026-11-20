@@ -73,6 +73,7 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
         "Missing implicit config uses built-in defaults (C:\\tmp on Windows, system temporary directory elsewhere); an explicitly requested invalid config is an error.\n\n"
         "Commands:\n"
         "  convert <input-dir>   Convert supported audio into a separate output tree.\n"
+        "  repair <input-dir>    Validate FLAC comments and repair exact duplicate CDTOC tags.\n"
         "  scan <library-dir>    Create split JSON metadata files for a library.\n"
         "  duplicates <json-dir> Find duplicate albums from JSON files.\n"
         "  db import <json-dir>  Import JSON metadata into SQLite.\n\n"
@@ -117,6 +118,28 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
         }
         options.action = CommandAction::Convert;
     });
+
+    auto* repair = app.add_subcommand("repair",
+        "Validate FLAC comments and remove only exact duplicate CDTOC tags without re-encoding audio.");
+    repair->add_option("input-dir", options.inputPath, "Audio library directory to inspect.")
+        ->required()
+        ->check([](const std::string& value) {
+            return value.empty() ? "input directory must not be empty" : std::string{};
+        });
+    repair->add_option("--output-dir", options.outputDirectory,
+        "Base output root. Repaired folders are written under <root>/FIXED/<library-name>; defaults to OutDirectory.")
+        ->check([](const std::string& value) {
+            return value.empty() ? "output directory must not be empty" : std::string{};
+        })
+        ->each([&options](const std::string&) { options.outputDirectorySpecified = true; });
+    repair->add_flag("--overwrite", options.overwrite,
+        "Replace existing repair destinations only after each output is verified.");
+    add_config_option(repair, options);
+    repair->footer(command_footer(
+        "Inspects native FLAC Vorbis comments. It removes repeated CDTOC comments only when all occurrences have the exact same value; conflicting or semicolon-joined values are reported for manual review and left unchanged. Only folders containing a safe repair are copied, with their other files unchanged. Audio bytes are copied without re-encoding. Sources are never modified. The output includes repair-report.json. Existing destinations fail unless --overwrite is supplied.",
+        "  FlacConvert repair \"D:\\Music\"\n"
+        "  FlacConvert repair \"D:\\Music\" --output-dir \"E:\\Repaired\""));
+    repair->callback([&options] { options.action = CommandAction::Repair; });
 
     auto* scan = app.add_subcommand("scan", "Scan a library and write split JSON metadata files.");
     scan->add_option("library-dir", options.inputPath, "Audio library directory to scan.")

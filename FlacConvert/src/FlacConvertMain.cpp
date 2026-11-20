@@ -47,6 +47,7 @@ extern "C" {
 #include "AlbumCollection.h"
 #include "CommandLine.h"
 #include "FolderConvert.h"
+#include "AudioRepair.h"
 #include "FlacMetadata.h"
 #include "DuplicateComparison.h"
 #include "DuplicateMatcher.h"
@@ -78,7 +79,7 @@ extern "C" {
 namespace fs = std::filesystem;
 
 
-enum class ConvertActionEnum { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum, ConvertMp3Enum, ExitEnum };
+enum class ConvertActionEnum { NullEnum, ConverEnum, CreateJSONEnum, CreateDBFromFolderEnum, ProcessJSONEnum, PopulateJsonToDBEnum, ConvertMp3Enum, RepairEnum, ExitEnum };
 
 
 namespace
@@ -1514,6 +1515,108 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& libraries, const 
     return ConvertConfiguredLibraries(libraries, outputRoot, summary, options, overwrite);
 }
 
+int RepairConfiguredLibraries(const std::vector<MediaDirectoryElement>& libraries,
+    const fs::path& outputRoot, ManualOperationSummary& summary)
+{
+    summary.unit = "audio files repaired";
+    if (libraries.empty()) {
+        spdlog::error("No active media libraries configured for repair.");
+        return 1;
+    }
+
+    bool overwrite = false;
+    for (;;) {
+        std::string response;
+        const auto choice = ReadManualSetting("Overwrite existing repair output [NO] (YES/NO): ", response);
+        if (choice != MenuConfirmation::Run) return cancelledMenuResult(choice);
+        if (response.empty() || response == "NO") break;
+        if (response == "YES") {
+            overwrite = true;
+            break;
+        }
+        std::cout << "Invalid selection. Enter YES or NO.\n";
+    }
+
+    std::vector<AudioRepair::Plan> plans;
+    plans.reserve(libraries.size());
+    for (const auto& library : libraries) {
+        const fs::path source = pathFromUtf8(library.mediaPath);
+        const fs::path name = pathFromUtf8(library.mediaName && !library.mediaName->empty()
+            ? *library.mediaName : directoryNameUtf8(source));
+        if (name.empty() || name == "." || name == ".." || name.has_root_path() || name.has_parent_path()) {
+            spdlog::error("Library name must be a single directory name: '{}'.", pathToUtf8(name));
+            return 1;
+        }
+        AudioRepair::Plan plan;
+        const auto target = outputRoot / "FIXED" / name;
+        if (AudioRepair::Prepare(source, target, overwrite, plan) != 0) return 1;
+        summary.outputs.push_back(absoluteDisplayPath(target));
+        std::cout << "\nOperation preview: validate and repair FLAC metadata\n"
+            << "  Input: " << pathToUtf8(plan.input) << '\n'
+            << "  Output: " << pathToUtf8(plan.output) << '\n'
+            << "  Native FLAC files inspected: " << plan.inspectedFiles << '\n'
+            << "  Files to repair: " << std::count_if(plan.files.begin(), plan.files.end(),
+                [](const AudioRepair::PlannedFile& file) { return file.repair; }) << '\n'
+            << "  Files copied unchanged in affected folders: " << std::count_if(plan.files.begin(), plan.files.end(),
+                [](const AudioRepair::PlannedFile& file) { return !file.repair; }) << '\n'
+            << "  Affected folders: " << plan.repairedFolders.size()
+            << "; unresolved findings: " << std::count_if(plan.findings.begin(), plan.findings.end(),
+                [](const AudioRepair::Finding& finding) {
+                    return finding.status == "manual-review" || finding.status == "unreadable";
+                }) << '\n'
+            << "  Overwrite: " << (overwrite ? "enabled" : "disabled") << '\n';
+        for (const auto& finding : plan.findings) {
+            std::cout << "    " << finding.status << ": "
+                << pathToUtf8(finding.source.lexically_relative(plan.input))
+                << " - " << finding.detail << '\n';
+        }
+        for (const auto& conflict : plan.conflicts) {
+            std::cout << "    COLLISION: " << pathToUtf8(conflict) << '\n';
+        }
+        plans.push_back(std::move(plan));
+    }
+
+    for (std::size_t i = 0; i < plans.size(); ++i) {
+        for (std::size_t j = 0; j < plans.size(); ++j) {
+            if (i == j) continue;
+            std::error_code leftError, rightError;
+            const auto target = fs::weakly_canonical(plans[i].output, leftError);
+            const auto otherSource = fs::weakly_canonical(plans[j].input, rightError);
+            if (leftError || rightError ||
+                isSameOrChildPath(target, otherSource) || isSameOrChildPath(otherSource, target)) {
+                spdlog::error("Repair output overlaps an active source library: '{}'.",
+                    pathToUtf8(plans[i].output));
+                return 1;
+            }
+        }
+    }
+    if (std::any_of(plans.begin(), plans.end(),
+            [](const AudioRepair::Plan& plan) { return !plan.conflicts.empty(); })) {
+        spdlog::error("Repair destination conflicts; no repair was started.");
+        return 1;
+    }
+
+    std::cout << "  Sources are unchanged. Only folders with safe repairs are copied; other files in those folders "
+        "are copied byte-for-byte.\n"
+        "  Exact duplicate CDTOC comments are removed. Conflicting, joined or unreadable metadata is left unchanged "
+        "and reported.\n"
+        "  Audio is not decoded or re-encoded. repair-report.json records findings and installed files.\n";
+    const auto confirmation = ConfirmPreview();
+    if (confirmation != MenuConfirmation::Run) return cancelledMenuResult(confirmation);
+
+    summary.Start();
+    bool needsReview = false;
+    for (std::size_t index = 0; index < plans.size(); ++index) {
+        std::size_t repaired = 0, copied = 0;
+        const int result = AudioRepair::Execute(plans[index], &repaired, &copied);
+        summary.completed += repaired;
+        summary.conversion.copied += copied;
+        if (result < 0) return 1;
+        needsReview = needsReview || result > 0;
+    }
+    return needsReview ? 1 : 0;
+}
+
 int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryList, bool bIncludeMetadata,
     const fs::path& outputRoot, bool archiveFlacMetadata, bool preview = false,
     ManualOperationSummary* summary = nullptr, bool fullRescan = false)
@@ -2760,7 +2863,7 @@ struct MenuEntry {
     const char* details;
 };
 
-constexpr std::array<MenuEntry, 6> MenuEntries{ {
+constexpr std::array<MenuEntry, 7> MenuEntries{ {
     { '1', ConvertActionEnum::ConverEnum,
         "Convert to FLAC [sources unchanged]",
         "      Input: all regular files and directories in the active source libraries, recursively.\n"
@@ -2813,7 +2916,16 @@ constexpr std::array<MenuEntry, 6> MenuEntries{ {
         "      Audit: conversion-audit.json lists preservation differences and installation states.\n"
         "             Newly created failed library folders receive an error prefix; existing folders stay.\n"
         "      Prompts configure quality (0-9), stereo downmix and overwrite before preview.\n"
-        "      Defaults: VBR 0, no downmix, no overwrite. RUN confirms the selected settings.\n" }
+        "      Defaults: VBR 0, no downmix, no overwrite. RUN confirms the selected settings.\n" },
+    { '7', ConvertActionEnum::RepairEnum, "Validate and repair FLAC metadata [sources unchanged]",
+        "      Input: native FLAC files in active libraries, recursively.\n"
+        "      Output: OutDirectory/FIXED/<mediaName>; only folders containing a safe repair\n"
+        "              are copied, with all files in those folders retained unchanged otherwise.\n"
+        "      Fix: remove exact duplicate CDTOC comments, keeping the first. Audio is not re-encoded.\n"
+        "      Conflicting, joined or unreadable metadata is left unchanged for manual review.\n"
+        "      repair-report.json records findings, verification and installation states.\n"
+        "      Sources are never modified. Existing destinations fail unless overwrite is enabled.\n"
+        "      RUN confirms execution; read/write/verification failures retain the marker and report.\n" }
 } };
 
 void ShowActionDetails(const MenuEntry& entry)
@@ -2832,7 +2944,7 @@ ConvertActionEnum GetUserAction()
     std::cout << "  0 - Exit without running an action\n"
         "  ? - Help: input, output and changes for all options\n\n";
     for (;;) {
-        std::cout << "Enter option [0-6 or ?], then press Enter: " << std::flush;
+        std::cout << "Enter option [0-7 or ?], then press Enter: " << std::flush;
         std::string input;
         if (!std::getline(std::cin, input)) {
             if (std::cin.eof()) {
@@ -2859,7 +2971,7 @@ ConvertActionEnum GetUserAction()
         const auto entry = std::find_if(MenuEntries.begin(), MenuEntries.end(),
             [&](const MenuEntry& option) { return option.number == input[0]; });
         if (entry == MenuEntries.end()) {
-            std::cout << "Invalid selection. Enter a number from 0 to 6, or ? for help.\n";
+            std::cout << "Invalid selection. Enter a number from 0 to 7, or ? for help.\n";
             continue;
         }
         ShowActionDetails(*entry);
@@ -3002,6 +3114,9 @@ int RunLegacyMenu()
         case ConvertActionEnum::ConvertMp3Enum: //6
             return ConvertFLACToMP3(mediaList, pathFromUtf8(appSettingPtr->OutDirectory), summary);
 
+        case ConvertActionEnum::RepairEnum: //7
+            return RepairConfiguredLibraries(mediaList, pathFromUtf8(appSettingPtr->OutDirectory), summary);
+
         default:
             spdlog::error("Action not found: {}", static_cast<int>(action));
             return 2;
@@ -3099,6 +3214,34 @@ int RunWithArgumentsImpl(const std::vector<const char*>& arguments)
             return FolderConvert::ConvertAudioFolderToOutput(
                 inputPath, outputDirectory / (options.conversion.target == AudioTarget::Mp3 ? "MP3" : "FLAC") / name,
                 options.overwrite, options.conversion) == 0 ? 0 : 1;
+        }
+
+        case CommandAction::Repair: {
+            std::error_code ec;
+            const auto absoluteInput = fs::absolute(inputPath, ec).lexically_normal();
+            const auto name = absoluteInput.filename().empty()
+                ? absoluteInput.parent_path().filename() : absoluteInput.filename();
+            if (ec || name.empty() || name == "." || name == "..") {
+                spdlog::error("Repair input must have a library folder name.");
+                return 1;
+            }
+            AudioRepair::Plan plan;
+            if (AudioRepair::Prepare(inputPath, outputDirectory / "FIXED" / name,
+                    options.overwrite, plan) != 0) {
+                return 1;
+            }
+            std::cout << "Repair preview: " << pathToUtf8(plan.input) << '\n'
+                << "  Output: " << pathToUtf8(plan.output) << '\n'
+                << "  Native FLAC files inspected: " << plan.inspectedFiles << '\n'
+                << "  Files to repair: " << std::count_if(plan.files.begin(), plan.files.end(),
+                    [](const AudioRepair::PlannedFile& file) { return file.repair; }) << '\n'
+                << "  Unresolved findings: " << std::count_if(plan.findings.begin(), plan.findings.end(),
+                    [](const AudioRepair::Finding& finding) {
+                        return finding.status == "manual-review" || finding.status == "unreadable";
+                    }) << '\n'
+                << "  Existing destination conflicts: " << plan.conflicts.size() << '\n';
+            const int result = AudioRepair::Execute(plan);
+            return result == 0 ? 0 : 1;
         }
 
         case CommandAction::Scan: {

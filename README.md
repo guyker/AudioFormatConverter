@@ -73,9 +73,9 @@ that report. Folder names and relative paths stay intact. Existing outputs are r
 use explicit `convert --overwrite` to replace outputs.
 No active libraries is an error. `<mediaName>` defaults to the source folder name.
 Selected actions show an operation preview with absolute configured input/output paths, input counts,
-conversion quality/overwrite policies, and existing or duplicate destinations. Options `1`, `2`, `3`, `4`
-and `6` require `RUN` after the preview (Enter/EOF cancels).
-No catalog or conversion output files/directories are written during preview. A scan preflight or discovery
+conversion quality/overwrite policies, and existing or duplicate destinations. Options `1`, `2`, `3`, `4`,
+`6` and `7` require `RUN` after the preview (Enter/EOF cancels).
+No catalog, conversion or repair output files/directories are written during preview. A scan preflight or discovery
 failure attempts a diagnostic report in a safe system temporary directory. All active conversion libraries are planned
 before execution, so a conflict in a later library prevents earlier libraries from being converted.
 The prepared audio/companion lists, scan album batches and JSON input lists are reused for execution.
@@ -100,6 +100,10 @@ default; invalid values are retried, and `BACK`/`EXIT` or EOF cancels without co
 The final preview shows the selected settings and still requires `RUN`. Overwrite applies to MP3,
 metadata sidecars and copied companions, never to source files. Settings are per operation and reset
 to safe defaults when selecting option `6` again; they do not modify config.json.
+Option `7` scans native FLAC files and removes only repeated CDTOC comments whose values are identical. It writes
+repaired copies to `OutDirectory\FIXED\<mediaName>`, copying only affected folders and keeping other files unchanged;
+audio is not decoded or re-encoded and sources are never modified. Conflicting or semicolon-joined CDTOC values and
+unreadable files are left for manual review and listed in `repair-report.json`.
 
 The console menu options are:
 
@@ -112,6 +116,8 @@ The console menu options are:
    `OutDirectory\MP3\<mediaName>` (defaults to the source folder name). It defaults to VBR quality 0,
    preserves metadata/companions, never changes sources, and rejects existing destinations or
    multichannel input unless overwrite or stereo downmix is explicitly enabled.
+- `7` validates and repairs recognized FLAC metadata defects into `OutDirectory\FIXED\<mediaName>` without
+   changing sources; it requires `RUN` after preview.
 
 ## Build
 
@@ -178,6 +184,7 @@ FlacConvert scan "D:\Music" --archive-flac-metadata
 FlacConvert duplicates "E:\Catalog\Music"
 FlacConvert duplicates "E:\Catalog\Music" --report "E:\Reports\duplicates.json"
 FlacConvert db import "E:\Catalog\Music" --output-dir "E:\Databases"
+FlacConvert repair "D:\Music" --output-dir "E:\Repaired"
 ```
 
 `convert` writes FLAC files to a separate output tree and preserves source files. Sources below 16-bit or 44.1 kHz, or
@@ -201,7 +208,9 @@ even when archiving is disabled; a failed scan preserves the previous set. Conve
 separately by `MetadataSidecars`. Duplicate detection, database import, and incremental cache reuse validate the
 manifest before using marked batches. `DecodeWorkers` caps the independent full-decode stage. `duplicates` reports matches without
 opening folders; pass `--open` to open matched folders in Explorer. `db import` creates or updates a library-named
-`catalog-v2.sqlite` database and leaves legacy `.db` files untouched.
+`catalog-v2.sqlite` database and leaves legacy `.db` files untouched. `repair` writes safe native FLAC metadata fixes to
+`<output-root>\FIXED\<input-folder-name>`; it removes exact duplicate CDTOC comments, verifies unchanged audio and
+non-target metadata before installation, and reports unresolved findings rather than guessing.
 
 ### FLAC output preservation
 

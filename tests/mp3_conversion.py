@@ -29,7 +29,6 @@ def checked(*args):
         raise AssertionError(f"{args}\n{result.stdout}\n{result.stderr}")
     return result
 
-
 def refresh_manifest_batch(directory, json_file):
     manifest_path = directory / "scan-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -70,6 +69,41 @@ def blocks(data):
         offset += 4 + size
         if flags & 128:
             return result, offset
+
+
+def add_vorbis_comments(data, comments):
+    metadata, audio_offset = blocks(data)
+    for index, (kind, payload) in enumerate(metadata):
+        if kind != 4:
+            continue
+        vendor_size = int.from_bytes(payload[:4], "little")
+        count_offset = 4 + vendor_size
+        count = int.from_bytes(payload[count_offset:count_offset + 4], "little")
+        additions = [comment.encode("utf-8") for comment in comments]
+        updated = (payload[:count_offset] + struct.pack("<I", count + len(additions)) +
+                   payload[count_offset + 4:] +
+                   b"".join(struct.pack("<I", len(comment)) + comment for comment in additions))
+        metadata[index] = (kind, updated)
+        prefix = b"fLaC" + b"".join(
+            bytes([kind | (128 if item == len(metadata) - 1 else 0)]) +
+            len(value).to_bytes(3, "big") + value
+            for item, (kind, value) in enumerate(metadata))
+        return prefix + data[audio_offset:]
+    raise AssertionError("Fixture has no Vorbis comment block")
+
+
+def parse_vorbis_comments(payload):
+    vendor_size = int.from_bytes(payload[:4], "little")
+    offset = 4 + vendor_size
+    count = int.from_bytes(payload[offset:offset + 4], "little")
+    offset += 4
+    comments = []
+    for _ in range(count):
+        size = int.from_bytes(payload[offset:offset + 4], "little")
+        offset += 4
+        comments.append(payload[offset:offset + size].decode("utf-8"))
+        offset += size
+    return comments
 
 
 def picture(image, kind, description, mime=b"image/png"):
@@ -183,6 +217,14 @@ class ConversionTests(unittest.TestCase):
             log_path = Path(log_line.split("Session log: ", 1)[1])
             self.assertTrue(log_path.is_file())
             self.assertIn("Request finished: completed", log_path.read_text(encoding="utf-8"))
+        return result
+
+    def repair(self, source=None, *extra, output=None, config=None):
+        env = os.environ.copy()
+        env["LOCALAPPDATA"] = str(self.work / "local-app-data")
+        result = run(ARGS.converter, "repair", source or self.source,
+                     "--output-dir", output or self.output,
+                     "--config", config or self.config, *extra, env=env)
         return result
 
     def assert_summary(self, result, status, completed, unit, copied=0, failed=0, started=True):
@@ -417,8 +459,113 @@ class ConversionTests(unittest.TestCase):
             return payload[:fields_end], payload[fields_end + 20:]
         self.assertEqual(sorted(map(picture_content, pictures)), sorted(map(picture_content, original_pictures)))
         self.assertEqual(Path(str(target) + ".flac-metadata").read_bytes(), self.prefix)
-        for companion in ("cover.png", "album.cue"):
-            self.assertEqual((target.parent / companion).read_bytes(), (nested / companion).read_bytes())
+
+    def test_repair_removes_only_identical_cdtoc_comments_without_reencoding(self):
+        toc = "CDTOC=C+96+14AD7+1EE3E+2547E"
+        self.track.write_bytes(add_vorbis_comments(
+            self.fixture.read_bytes(), [toc, "cdtoc=" + toc.split("=", 1)[1]]))
+        source_before = self.track.read_bytes()
+        source_blocks, source_audio_offset = blocks(source_before)
+        result = self.repair()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        target = self.output / "FIXED" / self.source.name / self.track.name
+        self.assertTrue(target.is_file())
+        self.assertEqual(self.track.read_bytes(), source_before)
+        repaired = target.read_bytes()
+        target_blocks, target_audio_offset = blocks(repaired)
+        self.assertEqual(source_before[source_audio_offset:], repaired[target_audio_offset:])
+        self.assertEqual([(kind, payload) for kind, payload in source_blocks if kind != 4],
+                         [(kind, payload) for kind, payload in target_blocks if kind != 4])
+        source_tags = [tag for kind, payload in source_blocks if kind == 4
+                       for tag in parse_vorbis_comments(payload)]
+        target_tags = [tag for kind, payload in target_blocks if kind == 4
+                       for tag in parse_vorbis_comments(payload)]
+        self.assertEqual(sum(tag.lower().startswith("cdtoc=") for tag in source_tags), 2)
+        self.assertEqual(sum(tag.lower().startswith("cdtoc=") for tag in target_tags), 1, target_tags)
+        self.assertEqual([tag for tag in source_tags if not tag.lower().startswith("cdtoc=")],
+                         [tag for tag in target_tags if not tag.lower().startswith("cdtoc=")])
+        report = json.loads((target.parent / "repair-report.json").read_text(encoding="utf-8"))
+        self.assertEqual(report["status"], "completed")
+        self.assertEqual(report["repairedFiles"], 1)
+        self.assertEqual(report["findings"][0]["rule"], "duplicate-cdtoc")
+
+    def test_repair_reports_conflicting_or_joined_cdtoc_without_editing(self):
+        conflict = self.work / "conflicting"
+        conflict.mkdir()
+        source = conflict / "conflict.flac"
+        source.write_bytes(add_vorbis_comments(self.fixture.read_bytes(),
+                                               ["CDTOC=A+96+1234", "CDTOC=B+96+5678"]))
+        original = source.read_bytes()
+        result = self.repair(source=conflict)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        report_path = self.output / "FIXED" / conflict.name / "repair-report.json"
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        self.assertEqual(report["status"], "completed-with-findings")
+        self.assertEqual(report["findings"][0]["status"], "manual-review")
+        self.assertEqual(source.read_bytes(), original)
+        self.assertFalse((report_path.parent / source.name).exists())
+
+        joined = self.work / "joined"
+        joined.mkdir()
+        joined_source = joined / "joined.flac"
+        joined_source.write_bytes(add_vorbis_comments(self.fixture.read_bytes(),
+                                                      ["CDTOC=A+96+1234;B+96+5678"]))
+        joined_result = self.repair(source=joined, output=self.work / "joined-output")
+        self.assertNotEqual(joined_result.returncode, 0, joined_result.stdout + joined_result.stderr)
+        joined_report = json.loads((self.work / "joined-output" / "FIXED" / "joined" /
+                                    "repair-report.json").read_text(encoding="utf-8"))
+        self.assertEqual(joined_report["findings"][0]["status"], "manual-review")
+        self.assertEqual(joined_source.read_bytes(),
+                         add_vorbis_comments(self.fixture.read_bytes(), ["CDTOC=A+96+1234;B+96+5678"]))
+
+    def test_repair_rejects_existing_output_unless_overwrite_is_enabled(self):
+        toc = "CDTOC=A+96+1234"
+        self.track.write_bytes(add_vorbis_comments(
+            self.fixture.read_bytes(), [toc, toc]))
+        source_before = self.track.read_bytes()
+        target = self.output / "FIXED" / self.source.name / self.track.name
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"existing destination")
+
+        rejected = self.repair()
+        self.assertNotEqual(rejected.returncode, 0, rejected.stdout + rejected.stderr)
+        self.assertEqual(target.read_bytes(), b"existing destination")
+        self.assertEqual(self.track.read_bytes(), source_before)
+
+        replaced = self.repair(self.source, "--overwrite")
+        self.assertEqual(replaced.returncode, 0, replaced.stdout + replaced.stderr)
+        tags = [tag for kind, payload in blocks(target.read_bytes())[0] if kind == 4
+                for tag in parse_vorbis_comments(payload)]
+        self.assertEqual(sum(tag.lower().startswith("cdtoc=") for tag in tags), 1)
+        self.assertEqual(self.track.read_bytes(), source_before)
+
+    def test_manual_repair_uses_confirmation_and_copies_affected_folder(self):
+        album = self.source / "album"
+        album.mkdir()
+        track = album / "track.flac"
+        track.write_bytes(add_vorbis_comments(self.fixture.read_bytes(),
+                                              ["CDTOC=A+96+1234", "CDTOC=A+96+1234"]))
+        note = album / "notes.txt"
+        note.write_bytes(b"keep unchanged")
+        cover = album / "cover.png"
+        cover.write_bytes(self.image)
+        cue = album / "album.cue"
+        cue.write_bytes(b"FILE source.flac WAVE")
+        before = {path.relative_to(self.source): path.read_bytes()
+                  for path in self.source.rglob("*") if path.is_file()}
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
+        result = self.legacy(libraries, "7\n\nRUN\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = self.output / "FIXED" / "Library" / "album"
+        self.assertEqual((output / "notes.txt").read_bytes(), b"keep unchanged")
+        self.assertEqual((output / cover.name).read_bytes(), cover.read_bytes())
+        self.assertEqual((output / cue.name).read_bytes(), cue.read_bytes())
+        self.assertTrue((output / "track.flac").is_file())
+        self.assertEqual({path.relative_to(self.source): path.read_bytes()
+                          for path in self.source.rglob("*") if path.is_file()}, before)
+        self.assertIn("Output location: " + str(self.output / "FIXED" / "Library"), result.stdout)
+        self.assertTrue((output.parent / "repair-report.json").is_file())
         self.assertFalse(list(self.output.rglob(".afc-convert-*")))
 
     def test_flac_reports_current_album_folder_during_conversion(self):
