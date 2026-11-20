@@ -1,5 +1,6 @@
 #pragma once
 
+#include <set>
 #include <string>
 #include "ConversionOptions.h"
 
@@ -21,6 +22,7 @@ struct CommandLineOptions
     std::string configPath;
     std::string logLevel;
     std::string reportPath;
+    std::set<std::string> repairRules;
     bool outputDirectorySpecified{ false };
     bool configPathSpecified{ false };
     bool overwrite{ false };

@@ -21,6 +21,7 @@ target_include_directories(rapidjson_headers SYSTEM INTERFACE
 add_library(FlacConvertCore STATIC
     src/AlbumCollection.cpp
     src/AudioRepair.cpp
+    src/RepairRules.cpp
     src/AppSettings.cpp
     src/CatalogDatabase.cpp
     src/CommonUtils.cpp

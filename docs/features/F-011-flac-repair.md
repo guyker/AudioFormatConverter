@@ -1,13 +1,16 @@
-# F-011: Repair recognized FLAC metadata defects
+# F-011: Repair recognized FLAC/MP3 metadata defects
 
 Status: active
 
 ## Behaviour
-The `repair` command and menu option 7 inspect native FLAC files and safely remove repeated CDTOC Vorbis comments
-only when every occurrence has the same value. The first occurrence is retained. Conflicting values, semicolon-joined
-values and unreadable FLACs are left unchanged and reported for manual review.
+The `repair` command and menu option 7 inspect `.flac` and `.mp3` files against a catalog of metadata rules (see
+DESIGN → Metadata repair). Fixable defects include redundant ID3/APE/Lyrics3 tags, duplicate or empty tags/frames,
+multiple FLAC comment blocks, wrong picture MIME types or FLAC picture dimensions/depth, invalid FLAC seek tables and ID3v2.3 frames using
+v2.4-only text encodings. Tags are removed only when empty, exact duplicates, or fully redundant; conflicting values
+(including conflicting or semicolon-joined CDTOC), invalid comments, missing FLAC MD5, MP3 stream garbage and
+unreadable files are reported for manual review. `--rules <id,...>` limits the CLI to selected rules.
 
-Sources are never modified and audio is not decoded or re-encoded. Repaired files are written to
+Sources are never modified and audio bytes are copied unchanged, never decoded or re-encoded. Repaired files are written to
 `<output-root>/FIXED/<library-name>` (`--output-dir`, else `OutDirectory` for the CLI); only folders with a repair are
 copied, retaining all other files unchanged.
 `repair-report.json` records findings, file installation status, and whether audio or metadata changed. Existing
@@ -15,22 +18,24 @@ destinations are rejected unless `--overwrite` is specified. The CLI returns non
 operation failures.
 
 ## Entry points
-- `repair <input> [--output-dir <directory>] [--overwrite]` → `FlacConvert/src/FlacConvertMain.cpp#RunWithArgumentsImpl`
+- `repair <input> [--output-dir <directory>] [--overwrite] [--rules <ids>]` → `FlacConvert/src/FlacConvertMain.cpp#RunWithArgumentsImpl`
   → `FlacConvert/src/AudioRepair.cpp#AudioRepair::Prepare`, `FlacConvert/src/AudioRepair.cpp#AudioRepair::Execute`
 - Menu option 7 → `FlacConvert/src/FlacConvertMain.cpp#RepairConfiguredLibraries`
 
 ## Design and knowledge
-- DESIGN: `FlacConvert/DESIGN.md` → FLAC repair
+- DESIGN: `FlacConvert/DESIGN.md` → Metadata repair; rules in `FlacConvert/src/RepairRules.cpp#RepairRules::Analyze`
 - Knowledge: no separate entry; the stable repair and verification contract is documented in DESIGN.
 
 ## Acceptance checks
 - [ ] Identical duplicate CDTOC comments are reduced to one in the output; source bytes remain unchanged.
-- [ ] Audio payload and all non-comment metadata blocks remain byte-identical.
-- [ ] Conflicting, joined and unreadable CDTOC findings are reported without changing source files.
+- [ ] FLAC leading/trailing ID3, empty comments, picture MIME/width/height/depth and invalid seek table are fixed; audio bytes unchanged.
+- [ ] MP3 duplicate/empty frames, v2.3 text encoding, APIC MIME and redundant ID3v1 are fixed; audio bytes unchanged.
+- [ ] Conflicting, joined CDTOC, non-redundant tags and unreadable files are reported without changing source files.
+- [ ] Re-running repair on repaired output finds nothing to repair; unknown `--rules` ids are rejected.
 - [ ] Only affected folders are copied and companion files remain byte-identical.
 - [ ] Menu option 7 requires `RUN` and reports the output and completed repair count.
 - [ ] Existing output is rejected by default; `--overwrite` allows eligible destinations to be replaced.
 
 ## Known limitations
-- This repair currently handles only duplicate CDTOC comments in native FLAC Vorbis-comment blocks.
-- Different values or semicolon-joined values are not automatically reconciled.
+- Only FLAC and MP3 are supported; only the first leading ID3v2 tag of an MP3 is rewritten.
+- Different values are never reconciled automatically; audio-stream problems (missing MD5, MP3 garbage) are report-only.

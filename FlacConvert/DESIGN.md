@@ -9,7 +9,7 @@ tracked in `docs/features/`. Code is cited as `path#Symbol`.
 `FlacConvert` is a console utility for a local music library. It:
 
 - converts audio to a separate output tree (16-bit / 44.1 kHz FLAC, or FLAC to MP3) without touching sources;
-- repairs a narrowly recognized native FLAC metadata defect into a separate output tree;
+- repairs recognized FLAC/MP3 metadata defects, without touching audio bytes, into a separate output tree;
 - scans libraries into JSON metadata batches;
 - finds probable duplicate albums from those batches;
 - imports the batches into a per-library SQLite database.
@@ -27,7 +27,7 @@ It runs either as explicit CLI commands or, with no arguments, as a legacy inter
 | Conversion options | `include/ConversionOptions.h` | `AudioTarget` (Flac/Mp3), MP3 quality, downmix flag |
 | Folder conversion | `src/FolderConvert.cpp`, `include/FolderConvert.h` | `FolderConvert::PrepareConversion` (plan) and `FolderConvert::ExecuteConversion` (run, audit report, markers) |
 | File conversion | `src/MediaConvertionTask.cpp`, `include/MediaConvertionTask.h` | `MediaConvertionTask`: quality gate, FFmpeg child process, output verification, sidecar, audit, installation |
-| FLAC repair | `src/AudioRepair.cpp`, `include/AudioRepair.h` | `AudioRepair::Prepare` plans safe native FLAC metadata edits; `AudioRepair::Execute` stages, verifies and installs repaired copies and `repair-report.json` |
+| Metadata repair | `src/AudioRepair.cpp`, `include/AudioRepair.h`, `src/RepairRules.cpp`, `include/RepairRules.h` | `RepairRules::Analyze` detects FLAC/MP3 metadata defects and plans byte-range edits; `AudioRepair::Prepare` plans repairs; `AudioRepair::Execute` stages, verifies and installs repaired copies and `repair-report.json` |
 | Metadata archive | `src/FlacMetadata.cpp`, `include/FlacMetadata.h` | `FlacMetadata::Save` / `FlacMetadata::Verify` byte-exact archive as binary `.flac-metadata` or `.flac-metadata.json` (readable scan-schema metadata + Base64 archive; only the archive is verified); scan optionally writes binary metadata-only archives for native FLAC |
 | Preservation audit | `src/PreservationAudit.cpp`, `include/PreservationAudit.h` | `PreservationAudit::Compare` (tags, pictures, chapters, opaque blocks), `PreservationAudit::VerifyCopy` |
 | FFmpeg library access | `src/ffmpeg.cpp`, `include/ffmpeg.h`, `include/FFmpegWrapper.h` | `FFmpeg::GetFFprobeMetadataAPI` (conversion/duplicate re-probes) and the process-wide log callback |
@@ -83,7 +83,7 @@ flowchart LR
 | `scan <library> [--output-dir] [--full-rescan] [--tier catalog\|integrity\|analysis] [--archive-flac-metadata\|--no-archive-flac-metadata]` | `ScanFolderAndCreateJSON` | One library; name = folder name; archive flags override configuration |
 | `duplicates <json dir> [--open] [--report <file>]` | `ScanFolderProcessJSONAndFindDuplicates` | Opens folders only with `--open`; `--report` writes a new JSON report |
 | `db import <json dir> [--output-dir]` | `ImportJsonDirectoryToDatabase` | `<output root>/<JSON folder name>/catalog-v2.sqlite`; output root is `--output-dir`, else `OutDirectory` |
-| `repair <input> [--output-dir] [--overwrite]` | `AudioRepair::Prepare` → `AudioRepair::Execute` | `<output root>/FIXED/<input folder name>`; output root is `--output-dir`, else `OutDirectory` |
+| `repair <input> [--output-dir] [--overwrite] [--rules <ids>]` | `AudioRepair::Prepare` → `AudioRepair::Execute` | `<output root>/FIXED/<input folder name>`; output root is `--output-dir`, else `OutDirectory` |
 | No arguments | `RunLegacyMenu` | Options 1 FLAC, 2 scan, 3 duplicates, 4 DB import, 5 not implemented, 6 MP3, 7 repair; library options use active `MediaDirectoryList` entries |
 
 All commands accept `--config <file>` and `--log-level info\|debug\|trace`. Exit code is 0 on success, non-zero on any failure.
@@ -160,19 +160,42 @@ records the effective `metadataSidecars` value.
 overwriting), then the audio; on audio failure it restores or removes the sidecar and leaves the temporary in place
 (K-041).
 
-### FLAC repair (menu 7, `repair`)
+### Metadata repair (menu 7, `repair`)
 
-`AudioRepair::Prepare` recursively inspects native `.flac` files and classifies only repeated CDTOC Vorbis comments
-with byte-identical values as safely repairable. It leaves differing values, semicolon-joined values and unreadable
-FLACs unchanged and records them for review. A repair is limited to removing repeated CDTOC comment entries; it
-retains the first value and does not decode or re-encode audio.
+`AudioRepair::Prepare` recursively inspects `.flac` and `.mp3` files with `RepairRules::Analyze`, a rule catalog
+(`RepairRules::Catalog`; `--rules` limits the CLI to listed ids, the menu enables all). Each rule yields findings that
+are either automatically fixable or review-only. Fixes only rewrite metadata: an edit is
+`head + source[audioOffset, audioOffset + audioSize) + tail`, so the audio/frame range is copied byte-for-byte and
+never decoded. A tag is removed only when it is empty, a byte-identical duplicate, or fully redundant with another
+tag; anything else that differs is reported for review rather than guessed. "Redundant" means every mapped value
+exists in the kept tag (track/disc totals included) and every embedded picture's image bytes are present there.
 
-Output is a separate `FIXED/<library-name>` tree. Only folders containing a safe repair are copied; every regular
+| Rule | Fix |
+|---|---|
+| `flac.leading-id3`, `flac.trailing-tags` | Remove ID3v2 before `fLaC`, or ID3v1/APE after the frames, when every value is already in the Vorbis comments; otherwise review |
+| `flac.multiple-comment-blocks` | Merge extra VORBIS_COMMENT blocks into the first |
+| `flac.duplicate-comments`, `flac.empty-comments` | Remove exact duplicate (case-insensitive key, identical value) or empty comments; conflicting or semicolon-joined CDTOC is review-only |
+| `flac.picture-descriptor` | Correct PICTURE MIME from image magic bytes, and width/height/depth/colors from the PNG/JPEG/GIF header (libFLAC conventions); image data unchanged |
+| `flac.invalid-seektable` | Replace an invalid SEEKTABLE with same-size PADDING |
+| `flac.invalid-comments`, `flac.missing-md5` | Review only |
+| `mp3.duplicate-id3v2` | Remove a repeated leading ID3v2 tag when redundant with the first |
+| `mp3.duplicate-frames`, `mp3.empty-frames` | Remove byte-identical repeated or empty ID3v2 text frames |
+| `mp3.text-encoding` | Re-encode ID3v2.3 frames using v2.4-only encodings (UTF-16BE/UTF-8) as UTF-16 with BOM |
+| `mp3.picture-mime` | Correct APIC MIME from image magic bytes |
+| `mp3.redundant-id3v1`, `mp3.ape-lyrics3` | Remove ID3v1/APE/Lyrics3 when every value is in ID3v2; otherwise review |
+| `mp3.stream-garbage` | Review only |
+
+Rewritten ID3v2 tags keep their original size (padding absorbs shrinkage), so MP3 frame offsets do not move.
+Unreadable files are reported as `unreadable`.
+
+Output is a separate `FIXED/<library-name>` tree. Only folders containing a safe repair are copied, each with its
+subfolders (a nested repaired folder is copied once, as part of its nearest repaired ancestor); every regular
 file in those folders is retained, and unrelated files are copied byte-for-byte. The changed FLAC is written to a
-unique temporary, then verified against the source: the audio payload and every non-comment metadata block must be
-byte-identical, and the comment block must contain exactly the planned edit. Only verified output is installed;
+unique temporary, then verified (`RepairRules::Verify`) against the plan: exact size, head and tail bytes equal to
+the planned edit, audio range byte-identical to the source, and re-analysis finds no remaining fixable defect. Execute
+re-analyzes each source first and fails if its fixes no longer match the preview. Only verified output is installed;
 sources are never modified. Existing destinations fail unless overwrite is enabled. An in-progress marker and
-`repair-report.json` record execution state, findings, per-file installation status and audio/metadata impact. The
+`repair-report.json` (schema 2) record execution state, enabled rules, findings with rule/count/status, per-file applied rules, installation status and audio/metadata impact. The
 CLI returns non-zero when there are findings requiring manual review or when an operation fails.
 
 ### Scan to JSON (menu 2, `scan`)

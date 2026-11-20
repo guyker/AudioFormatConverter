@@ -106,11 +106,17 @@ def parse_vorbis_comments(payload):
     return comments
 
 
-def picture(image, kind, description, mime=b"image/png"):
+def png_descriptor(image):
+    width, height, bits, color_type = struct.unpack(">IIBB", image[16:26])
+    return width, height, bits * {0: 1, 2: 3, 4: 2, 6: 4}[color_type]
+
+
+def picture(image, kind, description, mime=b"image/png", descriptor=(1, 1, 24)):
     description = description.encode("utf-8")
+    width, height, depth = descriptor or png_descriptor(image)
     return (struct.pack(">II", kind, len(mime)) + mime +
             struct.pack(">I", len(description)) + description +
-            struct.pack(">IIIII", 1, 1, 24, 0, len(image)) + image)
+            struct.pack(">IIIII", width, height, depth, 0, len(image)) + image)
 
 
 def id3_frames(data):
@@ -124,6 +130,28 @@ def id3_frames(data):
         result.append((data[offset:offset + 4], data[offset + 10:offset + 10 + size]))
         offset += 10 + size
     return result
+
+
+def id3v23(frames):
+    body = b"".join(frame_id + struct.pack(">IH", len(data), 0) + data for frame_id, data in frames)
+    size = len(body)
+    return b"ID3\x03\x00\x00" + bytes((size >> shift) & 127 for shift in (21, 14, 7, 0)) + body
+
+
+def parse_id3v23(data):
+    assert data[:4] == b"ID3\x03"
+    end = 10 + sum(byte << shift for byte, shift in zip(data[6:10], (21, 14, 7, 0)))
+    offset, frames = 10, []
+    while offset + 10 <= end and data[offset] != 0:
+        size = int.from_bytes(data[offset + 4:offset + 8], "big")
+        frames.append((data[offset:offset + 4], data[offset + 10:offset + 10 + size]))
+        offset += 10 + size
+    return frames, end
+
+
+def id3v1(title=b"", artist=b"", album=b""):
+    field = lambda value, size: value.ljust(size, b"\0")
+    return b"TAG" + field(title, 30) + field(artist, 30) + field(album, 30) + bytes(34) + b"\xff"
 
 
 class ConversionTests(unittest.TestCase):
@@ -180,6 +208,13 @@ class ConversionTests(unittest.TestCase):
         cls.fixture.write_bytes(prefix + original[audio_offset:])
         cls.prefix = prefix
         cls.plain = original
+        # Repair tests need artwork descriptors that match the image, or flac.picture-descriptor would fire.
+        accurate = [(kind, picture(cls.image, payload[3], "Front \u97f3" if payload[3] == 3 else "Back",
+                                   descriptor=None) if kind == 6 else payload) for kind, payload in metadata]
+        cls.repair_fixture = cls.root / "repair-fixture.flac"
+        cls.repair_fixture.write_bytes(b"fLaC" + b"".join(
+            bytes([kind | (128 if index == len(accurate) - 1 else 0)]) + len(payload).to_bytes(3, "big") + payload
+            for index, (kind, payload) in enumerate(accurate)) + original[audio_offset:])
 
     @classmethod
     def tearDownClass(cls):
@@ -463,7 +498,7 @@ class ConversionTests(unittest.TestCase):
     def test_repair_removes_only_identical_cdtoc_comments_without_reencoding(self):
         toc = "CDTOC=C+96+14AD7+1EE3E+2547E"
         self.track.write_bytes(add_vorbis_comments(
-            self.fixture.read_bytes(), [toc, "cdtoc=" + toc.split("=", 1)[1]]))
+            self.repair_fixture.read_bytes(), [toc, "cdtoc=" + toc.split("=", 1)[1]]))
         source_before = self.track.read_bytes()
         source_blocks, source_audio_offset = blocks(source_before)
         result = self.repair()
@@ -488,13 +523,15 @@ class ConversionTests(unittest.TestCase):
         report = json.loads((target.parent / "repair-report.json").read_text(encoding="utf-8"))
         self.assertEqual(report["status"], "completed")
         self.assertEqual(report["repairedFiles"], 1)
-        self.assertEqual(report["findings"][0]["rule"], "duplicate-cdtoc")
+        self.assertEqual(report["schemaVersion"], 2)
+        self.assertEqual([(item["rule"], item["status"], item["count"]) for item in report["findings"]],
+                         [("flac.duplicate-comments", "repaired", 1)])
 
     def test_repair_reports_conflicting_or_joined_cdtoc_without_editing(self):
         conflict = self.work / "conflicting"
         conflict.mkdir()
         source = conflict / "conflict.flac"
-        source.write_bytes(add_vorbis_comments(self.fixture.read_bytes(),
+        source.write_bytes(add_vorbis_comments(self.repair_fixture.read_bytes(),
                                                ["CDTOC=A+96+1234", "CDTOC=B+96+5678"]))
         original = source.read_bytes()
         result = self.repair(source=conflict)
@@ -502,14 +539,15 @@ class ConversionTests(unittest.TestCase):
         report_path = self.output / "FIXED" / conflict.name / "repair-report.json"
         report = json.loads(report_path.read_text(encoding="utf-8"))
         self.assertEqual(report["status"], "completed-with-findings")
-        self.assertEqual(report["findings"][0]["status"], "manual-review")
+        self.assertEqual([(item["rule"], item["status"]) for item in report["findings"]],
+                         [("flac.duplicate-comments", "manual-review")])
         self.assertEqual(source.read_bytes(), original)
         self.assertFalse((report_path.parent / source.name).exists())
 
         joined = self.work / "joined"
         joined.mkdir()
         joined_source = joined / "joined.flac"
-        joined_source.write_bytes(add_vorbis_comments(self.fixture.read_bytes(),
+        joined_source.write_bytes(add_vorbis_comments(self.repair_fixture.read_bytes(),
                                                       ["CDTOC=A+96+1234;B+96+5678"]))
         joined_result = self.repair(source=joined, output=self.work / "joined-output")
         self.assertNotEqual(joined_result.returncode, 0, joined_result.stdout + joined_result.stderr)
@@ -517,12 +555,141 @@ class ConversionTests(unittest.TestCase):
                                     "repair-report.json").read_text(encoding="utf-8"))
         self.assertEqual(joined_report["findings"][0]["status"], "manual-review")
         self.assertEqual(joined_source.read_bytes(),
-                         add_vorbis_comments(self.fixture.read_bytes(), ["CDTOC=A+96+1234;B+96+5678"]))
+                         add_vorbis_comments(self.repair_fixture.read_bytes(), ["CDTOC=A+96+1234;B+96+5678"]))
+
+    def test_repair_rules_fix_flac_metadata_and_keep_audio_bytes(self):
+        metadata, audio_offset = blocks(add_vorbis_comments(self.repair_fixture.read_bytes(), ["EMPTYTAG="]))
+        data = add_vorbis_comments(self.repair_fixture.read_bytes(), ["EMPTYTAG="])
+        seek = struct.pack(">QQH", 0, 0, 1024)
+        bad_seek = struct.pack(">QQH", 4096, 0, 1024) + struct.pack(">QQH", 1024, 0, 1024)
+        jpeg_path = self.work / "cover.jpg"
+        checked(ARGS.ffmpeg, "-v", "error", "-f", "lavfi", "-i", "color=blue:size=20x12", "-frames:v", "1",
+                "-pix_fmt", "yuvj420p", jpeg_path)
+        jpeg = jpeg_path.read_bytes()
+        updated = []
+        for kind, payload in metadata:
+            if kind == 3 and payload == seek:
+                payload = bad_seek
+            elif kind == 6 and b"Back" in payload:
+                payload = picture(self.image, 4, "Back", mime=b"image/jpeg", descriptor=(1, 1, 8))
+            elif kind == 6:
+                payload = picture(jpeg, 3, "Front", mime=b"image/jpeg", descriptor=(0, 0, 0))
+            updated.append((kind, payload))
+        flac = b"fLaC" + b"".join(bytes([kind | (128 if index == len(updated) - 1 else 0)]) +
+                                  len(payload).to_bytes(3, "big") + payload
+                                  for index, (kind, payload) in enumerate(updated))
+        audio = data[audio_offset:]
+        leading = id3v23([(b"TALB", b"\x00Album"), (b"TRCK", b"\x002")])
+        self.track.write_bytes(leading + flac + audio + id3v1(album=b"Album"))
+        source_before = self.track.read_bytes()
+
+        review = self.source / "review"
+        review.mkdir()
+        unrelated = review / "different.flac"
+        unrelated.write_bytes(self.repair_fixture.read_bytes() + id3v1(title=b"Different title"))
+        unrelated_before = unrelated.read_bytes()
+
+        result = self.repair()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(self.track.read_bytes(), source_before)
+        self.assertEqual(unrelated.read_bytes(), unrelated_before)
+        target = self.output / "FIXED" / self.source.name / self.track.name
+        repaired = target.read_bytes()
+        target_blocks, target_audio_offset = blocks(repaired)
+        self.assertEqual(repaired[target_audio_offset:], audio)
+        self.assertNotIn(bad_seek, [payload for _, payload in target_blocks])
+        self.assertIn((1, bytes(len(bad_seek))), target_blocks)
+        self.assertNotIn(b"image/jpeg", b"".join(payload for kind, payload in target_blocks
+                                                 if kind == 6 and b"Back" in payload))
+        self.assertIn(picture(self.image, 4, "Back", descriptor=None),
+                      [payload for kind, payload in target_blocks if kind == 6])
+        self.assertIn(picture(jpeg, 3, "Front", mime=b"image/jpeg", descriptor=(20, 12, 24)),
+                      [payload for kind, payload in target_blocks if kind == 6])
+        tags = [tag for kind, payload in target_blocks if kind == 4 for tag in parse_vorbis_comments(payload)]
+        self.assertNotIn("EMPTYTAG=", tags)
+        self.assertEqual((self.output / "FIXED" / self.source.name / "review" / unrelated.name).read_bytes(),
+                         unrelated_before)
+
+        report = json.loads((target.parent / "repair-report.json").read_text(encoding="utf-8"))
+        findings = {(item["source"].replace("\\", "/"), item["rule"], item["status"]) for item in report["findings"]}
+        for rule in ("flac.leading-id3", "flac.trailing-tags", "flac.empty-comments",
+                     "flac.picture-descriptor", "flac.invalid-seektable"):
+            self.assertIn((self.track.name, rule, "repaired"), findings)
+        self.assertIn(("review/different.flac", "flac.trailing-tags", "manual-review"), findings)
+
+        again = self.repair(target.parent, output=self.work / "second")
+        self.assertEqual(again.returncode, 1, again.stdout + again.stderr)
+        second = json.loads((self.work / "second" / "FIXED" / target.parent.name /
+                             "repair-report.json").read_text(encoding="utf-8"))
+        self.assertEqual(second["repairedFiles"], 0)
+
+    def test_repair_keeps_leading_id3_with_track_total_or_different_artwork(self):
+        flac = self.repair_fixture.read_bytes()
+        other_image = self.image + b"extra"
+        cases = {
+            "total.flac": [(b"TALB", b"\x00Album"), (b"TRCK", b"\x002/13")],
+            "artwork.flac": [(b"TALB", b"\x00Album"), (b"APIC", b"\x00image/png\x00\x03\x00" + other_image)],
+            "same.flac": [(b"TALB", b"\x00Album"), (b"APIC", b"\x00image/png\x00\x03\x00" + self.image)],
+        }
+        self.track.unlink()
+        for name, frames in cases.items():
+            (self.source / name).write_bytes(id3v23(frames) + flac)
+
+        result = self.repair(self.source, "--rules", "flac.leading-id3")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        report = json.loads((self.output / "FIXED" / self.source.name / "repair-report.json")
+                            .read_text(encoding="utf-8"))
+        findings = {(item["source"], item["status"]) for item in report["findings"]
+                    if item["rule"] == "flac.leading-id3"}
+        self.assertEqual(findings, {("total.flac", "manual-review"), ("artwork.flac", "manual-review"),
+                                    ("same.flac", "repaired")})
+        self.assertEqual((self.output / "FIXED" / self.source.name / "same.flac").read_bytes(), flac)
+
+    def test_repair_rules_fix_mp3_tags_and_keep_audio_bytes(self):
+        audio_path = self.work / "plain.mp3"
+        checked(ARGS.ffmpeg, "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=1",
+                "-c:a", "libmp3lame", "-b:a", "128k", "-map_metadata", "-1", "-id3v2_version", "0",
+                "-write_xing", "0", audio_path)
+        audio = audio_path.read_bytes()
+        apic = b"\x00image/jpeg\x00\x03\x00" + self.image
+        frames = [(b"TIT2", b"\x00Song"), (b"TPE1", b"\x03Art\xc3\xa9"), (b"TALB", b"\x00Album"),
+                  (b"TALB", b"\x00Album"), (b"TCOM", b"\x00"), (b"APIC", apic)]
+        album = self.source / "album"
+        album.mkdir()
+        track = album / "song.mp3"
+        track.write_bytes(id3v23(frames) + audio + id3v1(b"Song", b"Art\xe9", b"Album"))
+        other = album / "other.mp3"
+        other.write_bytes(audio + id3v1(b"Only in ID3v1"))
+        before = {path: path.read_bytes() for path in (track, other)}
+
+        result = self.repair(self.source, "--rules",
+                             "mp3.duplicate-frames,mp3.empty-frames,mp3.text-encoding,mp3.picture-mime,"
+                             "mp3.redundant-id3v1")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual({path: path.read_bytes() for path in (track, other)}, before)
+        output = self.output / "FIXED" / self.source.name / "album"
+        self.assertEqual((output / "other.mp3").read_bytes(), before[other])
+        repaired = (output / "song.mp3").read_bytes()
+        repaired_frames, end = parse_id3v23(repaired)
+        self.assertEqual(end, len(id3v23(frames)))
+        self.assertEqual(repaired[end:], audio)
+        self.assertEqual(repaired_frames, [
+            (b"TIT2", b"\x00Song"), (b"TPE1", b"\x01\xff\xfe" + "Art\u00e9".encode("utf-16-le")),
+            (b"TALB", b"\x00Album"), (b"APIC", b"\x00image/png\x00\x03\x00" + self.image)])
+        report = json.loads((output.parent / "repair-report.json").read_text(encoding="utf-8"))
+        self.assertEqual(report["repairedFiles"], 1)
+        self.assertEqual({rule["rule"] for item in report["files"] for rule in item.get("appliedRules", [])},
+                         {"mp3.duplicate-frames", "mp3.empty-frames", "mp3.text-encoding",
+                          "mp3.picture-mime", "mp3.redundant-id3v1"})
+
+        rejected = self.repair(self.source, "--rules", "mp3.unknown")
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("unknown repair rule", rejected.stdout + rejected.stderr)
 
     def test_repair_rejects_existing_output_unless_overwrite_is_enabled(self):
         toc = "CDTOC=A+96+1234"
         self.track.write_bytes(add_vorbis_comments(
-            self.fixture.read_bytes(), [toc, toc]))
+            self.repair_fixture.read_bytes(), [toc, toc]))
         source_before = self.track.read_bytes()
         target = self.output / "FIXED" / self.source.name / self.track.name
         target.parent.mkdir(parents=True)
@@ -541,10 +708,11 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(self.track.read_bytes(), source_before)
 
     def test_manual_repair_uses_confirmation_and_copies_affected_folder(self):
+        self.track.write_bytes(self.repair_fixture.read_bytes())
         album = self.source / "album"
         album.mkdir()
         track = album / "track.flac"
-        track.write_bytes(add_vorbis_comments(self.fixture.read_bytes(),
+        track.write_bytes(add_vorbis_comments(self.repair_fixture.read_bytes(),
                                               ["CDTOC=A+96+1234", "CDTOC=A+96+1234"]))
         note = album / "notes.txt"
         note.write_bytes(b"keep unchanged")
@@ -567,6 +735,22 @@ class ConversionTests(unittest.TestCase):
         self.assertIn("Output location: " + str(self.output / "FIXED" / "Library"), result.stdout)
         self.assertTrue((output.parent / "repair-report.json").is_file())
         self.assertFalse(list(self.output.rglob(".afc-convert-*")))
+        self.assertFalse((output.parent / self.track.name).exists())
+
+    def test_repair_root_and_subfolder_are_copied_once(self):
+        album = self.source / "album"
+        album.mkdir()
+        (album / "notes.txt").write_bytes(b"keep")
+        (album / "track.flac").write_bytes(add_vorbis_comments(self.repair_fixture.read_bytes(),
+                                                               ["CDTOC=A+96+1234", "CDTOC=A+96+1234"]))
+        result = self.repair()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = self.output / "FIXED" / self.source.name
+        self.assertTrue((output / self.track.name).is_file())
+        self.assertTrue((output / "album" / "track.flac").is_file())
+        self.assertEqual((output / "album" / "notes.txt").read_bytes(), b"keep")
+        report = json.loads((output / "repair-report.json").read_text(encoding="utf-8"))
+        self.assertEqual(report["repairedFiles"], 2)
 
     def test_flac_reports_current_album_folder_during_conversion(self):
         first = self.source / "Artist A" / "Album \u97f3"

@@ -1,18 +1,23 @@
 #pragma once
 
-#include <filesystem>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
+// Plans and executes metadata-only repairs (RepairRules) into a separate output tree; sources are never modified.
 namespace AudioRepair
 {
 struct Finding
 {
     std::filesystem::path source;
-    std::size_t duplicateComments{ 0 };
+    std::string rule;
+    // repairable, repaired, manual-review or unreadable.
     std::string status;
+    std::size_t count{ 0 };
     std::string detail;
 };
 
@@ -24,7 +29,8 @@ struct PlannedFile
     std::uintmax_t size{ 0 };
     std::filesystem::file_time_type modified;
     bool repair{ false };
-    std::size_t duplicateComments{ 0 };
+    // Fix rule ids with their counts, re-checked against the source before writing.
+    std::vector<std::pair<std::string, std::size_t>> fixes;
     std::string status{ "not-attempted" };
 };
 
@@ -33,6 +39,8 @@ struct Plan
     std::filesystem::path input;
     std::filesystem::path output;
     bool overwrite{ false };
+    // Empty enables every rule.
+    std::set<std::string> rules;
     std::size_t inspectedFiles{ 0 };
     std::vector<std::filesystem::path> repairedFolders;
     std::vector<PlannedFile> files;
@@ -41,6 +49,6 @@ struct Plan
 };
 
 int Prepare(const std::filesystem::path& input, const std::filesystem::path& output,
-    bool overwrite, Plan& plan);
+    bool overwrite, const std::set<std::string>& rules, Plan& plan);
 int Execute(Plan& plan, std::size_t* repaired = nullptr, std::size_t* copied = nullptr);
 }

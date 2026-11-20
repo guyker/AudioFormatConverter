@@ -1515,6 +1515,29 @@ int ConvertFLACToMP3(const std::vector<MediaDirectoryElement>& libraries, const 
     return ConvertConfiguredLibraries(libraries, outputRoot, summary, options, overwrite);
 }
 
+void PrintRepairFindings(const AudioRepair::Plan& plan)
+{
+    std::map<std::string, std::pair<std::size_t, std::size_t>> rules;
+    for (const auto& finding : plan.findings) {
+        auto& counts = rules[finding.rule];
+        ++(finding.status == "repairable" ? counts.first : counts.second);
+    }
+    for (const auto& [rule, counts] : rules) {
+        std::cout << "    " << rule << ": " << counts.first << " file(s) to repair, "
+            << counts.second << " file(s) for review\n";
+    }
+    constexpr std::size_t kListed = 25;
+    for (std::size_t index = 0; index < plan.findings.size() && index < kListed; ++index) {
+        const auto& finding = plan.findings[index];
+        std::cout << "      " << finding.status << " [" << finding.rule << "] "
+            << pathToUtf8(finding.source.lexically_relative(plan.input)) << " - " << finding.detail << '\n';
+    }
+    if (plan.findings.size() > kListed) {
+        std::cout << "      ... " << plan.findings.size() - kListed
+            << " more finding(s); repair-report.json lists all of them.\n";
+    }
+}
+
 int RepairConfiguredLibraries(const std::vector<MediaDirectoryElement>& libraries,
     const fs::path& outputRoot, ManualOperationSummary& summary)
 {
@@ -1549,12 +1572,12 @@ int RepairConfiguredLibraries(const std::vector<MediaDirectoryElement>& librarie
         }
         AudioRepair::Plan plan;
         const auto target = outputRoot / "FIXED" / name;
-        if (AudioRepair::Prepare(source, target, overwrite, plan) != 0) return 1;
+        if (AudioRepair::Prepare(source, target, overwrite, {}, plan) != 0) return 1;
         summary.outputs.push_back(absoluteDisplayPath(target));
-        std::cout << "\nOperation preview: validate and repair FLAC metadata\n"
+        std::cout << "\nOperation preview: validate and repair FLAC/MP3 metadata\n"
             << "  Input: " << pathToUtf8(plan.input) << '\n'
             << "  Output: " << pathToUtf8(plan.output) << '\n'
-            << "  Native FLAC files inspected: " << plan.inspectedFiles << '\n'
+            << "  FLAC/MP3 files inspected: " << plan.inspectedFiles << '\n'
             << "  Files to repair: " << std::count_if(plan.files.begin(), plan.files.end(),
                 [](const AudioRepair::PlannedFile& file) { return file.repair; }) << '\n'
             << "  Files copied unchanged in affected folders: " << std::count_if(plan.files.begin(), plan.files.end(),
@@ -1565,11 +1588,7 @@ int RepairConfiguredLibraries(const std::vector<MediaDirectoryElement>& librarie
                     return finding.status == "manual-review" || finding.status == "unreadable";
                 }) << '\n'
             << "  Overwrite: " << (overwrite ? "enabled" : "disabled") << '\n';
-        for (const auto& finding : plan.findings) {
-            std::cout << "    " << finding.status << ": "
-                << pathToUtf8(finding.source.lexically_relative(plan.input))
-                << " - " << finding.detail << '\n';
-        }
+        PrintRepairFindings(plan);
         for (const auto& conflict : plan.conflicts) {
             std::cout << "    COLLISION: " << pathToUtf8(conflict) << '\n';
         }
@@ -1598,9 +1617,10 @@ int RepairConfiguredLibraries(const std::vector<MediaDirectoryElement>& librarie
 
     std::cout << "  Sources are unchanged. Only folders with safe repairs are copied; other files in those folders "
         "are copied byte-for-byte.\n"
-        "  Exact duplicate CDTOC comments are removed. Conflicting, joined or unreadable metadata is left unchanged "
-        "and reported.\n"
-        "  Audio is not decoded or re-encoded. repair-report.json records findings and installed files.\n";
+        "  Fix rules change metadata only (redundant tags, duplicate/empty comments, picture descriptors,\n"
+        "  invalid seek tables, ID3v2.3 text encodings). Non-redundant, conflicting or unreadable metadata is left\n"
+        "  unchanged and reported. The audio byte range is copied and verified; never decoded or re-encoded.\n"
+        "  repair-report.json records findings, applied rules and installed files.\n";
     const auto confirmation = ConfirmPreview();
     if (confirmation != MenuConfirmation::Run) return cancelledMenuResult(confirmation);
 
@@ -2917,13 +2937,15 @@ constexpr std::array<MenuEntry, 7> MenuEntries{ {
         "             Newly created failed library folders receive an error prefix; existing folders stay.\n"
         "      Prompts configure quality (0-9), stereo downmix and overwrite before preview.\n"
         "      Defaults: VBR 0, no downmix, no overwrite. RUN confirms the selected settings.\n" },
-    { '7', ConvertActionEnum::RepairEnum, "Validate and repair FLAC metadata [sources unchanged]",
-        "      Input: native FLAC files in active libraries, recursively.\n"
+    { '7', ConvertActionEnum::RepairEnum, "Validate and repair FLAC/MP3 metadata [sources unchanged]",
+        "      Input: native FLAC and MP3 files in active libraries, recursively.\n"
         "      Output: OutDirectory/FIXED/<mediaName>; only folders containing a safe repair\n"
         "              are copied, with all files in those folders retained unchanged otherwise.\n"
-        "      Fix: remove exact duplicate CDTOC comments, keeping the first. Audio is not re-encoded.\n"
-        "      Conflicting, joined or unreadable metadata is left unchanged for manual review.\n"
-        "      repair-report.json records findings, verification and installation states.\n"
+        "      Fix (metadata only): redundant ID3/APE tags, duplicate or empty comments and frames,\n"
+        "           wrong picture MIME/size/depth, invalid seek tables, ID3v2.3 text encodings.\n"
+        "      Audio bytes are copied and verified unchanged; never decoded or re-encoded.\n"
+        "      Non-redundant, conflicting or unreadable metadata is left unchanged for manual review.\n"
+        "      repair-report.json records findings, applied rules and installation states.\n"
         "      Sources are never modified. Existing destinations fail unless overwrite is enabled.\n"
         "      RUN confirms execution; read/write/verification failures retain the marker and report.\n" }
 } };
@@ -3227,12 +3249,12 @@ int RunWithArgumentsImpl(const std::vector<const char*>& arguments)
             }
             AudioRepair::Plan plan;
             if (AudioRepair::Prepare(inputPath, outputDirectory / "FIXED" / name,
-                    options.overwrite, plan) != 0) {
+                    options.overwrite, options.repairRules, plan) != 0) {
                 return 1;
             }
             std::cout << "Repair preview: " << pathToUtf8(plan.input) << '\n'
                 << "  Output: " << pathToUtf8(plan.output) << '\n'
-                << "  Native FLAC files inspected: " << plan.inspectedFiles << '\n'
+                << "  FLAC/MP3 files inspected: " << plan.inspectedFiles << '\n'
                 << "  Files to repair: " << std::count_if(plan.files.begin(), plan.files.end(),
                     [](const AudioRepair::PlannedFile& file) { return file.repair; }) << '\n'
                 << "  Unresolved findings: " << std::count_if(plan.findings.begin(), plan.findings.end(),
@@ -3240,6 +3262,7 @@ int RunWithArgumentsImpl(const std::vector<const char*>& arguments)
                         return finding.status == "manual-review" || finding.status == "unreadable";
                     }) << '\n'
                 << "  Existing destination conflicts: " << plan.conflicts.size() << '\n';
+            PrintRepairFindings(plan);
             const int result = AudioRepair::Execute(plan);
             return result == 0 ? 0 : 1;
         }

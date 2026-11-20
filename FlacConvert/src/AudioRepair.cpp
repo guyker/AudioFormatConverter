@@ -4,6 +4,7 @@
 #include "MediaConvertionTask.h"
 #include "PlatformUtils.h"
 #include "PreservationAudit.h"
+#include "RepairRules.h"
 
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
@@ -17,6 +18,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <optional>
 #include <set>
 #include <system_error>
 
@@ -31,321 +33,30 @@ namespace
 {
 namespace fs = std::filesystem;
 
-struct MetadataBlock
-{
-    std::uint8_t flags{ 0 };
-    std::uint8_t type{ 0 };
-    std::vector<std::uint8_t> data;
-};
-
-struct ParsedFlac
-{
-    std::vector<MetadataBlock> blocks;
-    std::uint64_t audioOffset{ 0 };
-    std::size_t commentBlock{ 0 };
-    std::vector<std::uint8_t> vendor;
-    std::vector<std::vector<std::uint8_t>> comments;
-};
-
-struct CommentResult
-{
-    bool repairable{ false };
-    bool manualReview{ false };
-    std::size_t removed{ 0 };
-    std::string detail;
-};
+using FixList = std::vector<std::pair<std::string, std::size_t>>;
 
 std::string utf8(const fs::path& path)
 {
     return CommonUtils::path_to_utf8(path);
 }
 
-std::string asciiLower(std::string value)
+FixList fixesOf(const RepairRules::Analysis& analysis)
 {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
-        return ch >= 'A' && ch <= 'Z' ? static_cast<char>(ch + ('a' - 'A')) :
-            static_cast<char>(ch);
-    });
-    return value;
+    FixList fixes;
+    for (const auto& finding : analysis.findings) {
+        if (finding.fix) fixes.emplace_back(finding.rule, finding.count);
+    }
+    return fixes;
 }
 
-std::uint32_t readLittle32(const std::vector<std::uint8_t>& data, std::size_t& offset)
+std::string describeFixes(const FixList& fixes)
 {
-    if (offset > data.size() || data.size() - offset < 4) {
-        throw std::runtime_error("Truncated FLAC Vorbis comment.");
-    }
-    const auto value = static_cast<std::uint32_t>(data[offset]) |
-        (static_cast<std::uint32_t>(data[offset + 1]) << 8) |
-        (static_cast<std::uint32_t>(data[offset + 2]) << 16) |
-        (static_cast<std::uint32_t>(data[offset + 3]) << 24);
-    offset += 4;
-    return value;
-}
-
-void appendLittle32(std::vector<std::uint8_t>& data, std::uint32_t value)
-{
-    for (unsigned int shift = 0; shift < 32; shift += 8) {
-        data.push_back(static_cast<std::uint8_t>(value >> shift));
-    }
-}
-
-std::vector<std::uint8_t> readSized(const std::vector<std::uint8_t>& data, std::size_t& offset)
-{
-    const auto size = readLittle32(data, offset);
-    if (size > data.size() - offset) {
-        throw std::runtime_error("Vorbis comment field exceeds its metadata block.");
-    }
-    std::vector<std::uint8_t> value(data.begin() + static_cast<std::ptrdiff_t>(offset),
-        data.begin() + static_cast<std::ptrdiff_t>(offset + size));
-    offset += size;
-    return value;
-}
-
-std::vector<std::uint8_t> serializeComments(const ParsedFlac& flac,
-    const std::vector<std::vector<std::uint8_t>>& comments)
-{
-    std::vector<std::uint8_t> result;
-    if (flac.vendor.size() > UINT32_MAX || comments.size() > UINT32_MAX) {
-        throw std::runtime_error("Vorbis comment count or vendor string exceeds FLAC limits.");
-    }
-    appendLittle32(result, static_cast<std::uint32_t>(flac.vendor.size()));
-    result.insert(result.end(), flac.vendor.begin(), flac.vendor.end());
-    appendLittle32(result, static_cast<std::uint32_t>(comments.size()));
-    for (const auto& comment : comments) {
-        if (comment.size() > UINT32_MAX) {
-            throw std::runtime_error("Vorbis comment exceeds FLAC size limits.");
-        }
-        appendLittle32(result, static_cast<std::uint32_t>(comment.size()));
-        result.insert(result.end(), comment.begin(), comment.end());
-    }
-    if (result.size() > 0x00ffffffU) {
-        throw std::runtime_error("Rewritten Vorbis comment block exceeds the FLAC block size limit.");
+    std::string result;
+    for (const auto& [rule, count] : fixes) {
+        if (!result.empty()) result += ", ";
+        result += rule + " x" + std::to_string(count);
     }
     return result;
-}
-
-ParsedFlac readFlac(const fs::path& path)
-{
-    std::ifstream input(path, std::ios::binary);
-    std::array<char, 4> marker{};
-    if (!input.read(marker.data(), static_cast<std::streamsize>(marker.size())) ||
-        std::string(marker.data(), marker.size()) != "fLaC") {
-        throw std::runtime_error("Not a native FLAC stream.");
-    }
-
-    ParsedFlac result;
-    bool last = false;
-    while (!last) {
-        std::array<std::uint8_t, 4> header{};
-        if (!input.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()))) {
-            throw std::runtime_error("Truncated FLAC metadata header.");
-        }
-        const auto size = (static_cast<std::uint32_t>(header[1]) << 16) |
-            (static_cast<std::uint32_t>(header[2]) << 8) | header[3];
-        MetadataBlock block;
-        block.flags = header[0];
-        block.type = header[0] & 0x7f;
-        if (block.type == 127 || (result.blocks.empty() &&
-                (block.type != 0 || size != 34)) || (block.type == 0 && !result.blocks.empty())) {
-            throw std::runtime_error("Invalid FLAC metadata block sequence.");
-        }
-        block.data.resize(size);
-        if (size != 0 && !input.read(reinterpret_cast<char*>(block.data.data()),
-                static_cast<std::streamsize>(size))) {
-            throw std::runtime_error("Truncated FLAC metadata block.");
-        }
-        if (block.type == 4) {
-            if (std::any_of(result.blocks.begin(), result.blocks.end(),
-                        [](const MetadataBlock& item) { return item.type == 4; })) {
-                throw std::runtime_error("Multiple FLAC Vorbis comment blocks are not supported.");
-            }
-            result.commentBlock = result.blocks.size() + 1;
-            std::size_t offset = 0;
-            result.vendor = readSized(block.data, offset);
-            const auto count = readLittle32(block.data, offset);
-            if (count > (block.data.size() - offset) / 4) {
-                throw std::runtime_error("Invalid Vorbis comment count.");
-            }
-            result.comments.reserve(count);
-            for (std::uint32_t index = 0; index < count; ++index) {
-                result.comments.push_back(readSized(block.data, offset));
-            }
-            if (offset != block.data.size()) {
-                throw std::runtime_error("Unexpected trailing bytes in FLAC Vorbis comments.");
-            }
-        }
-        result.blocks.push_back(std::move(block));
-        last = (header[0] & 0x80) != 0;
-    }
-    const auto offset = input.tellg();
-    if (offset < 0) {
-        throw std::runtime_error("Cannot locate FLAC audio data.");
-    }
-    result.audioOffset = static_cast<std::uint64_t>(offset);
-    return result;
-}
-
-CommentResult removeDuplicateCdToc(ParsedFlac& flac)
-{
-    CommentResult result;
-    if (flac.commentBlock == 0) {
-        return result;
-    }
-    std::map<std::string, std::vector<std::uint8_t>> values;
-    std::size_t occurrences = 0;
-    for (const auto& comment : flac.comments) {
-        const auto separator = std::find(comment.begin(), comment.end(), static_cast<std::uint8_t>('='));
-        if (separator == comment.end()) continue;
-        const std::string key(comment.begin(), separator);
-        if (asciiLower(key) != "cdtoc") continue;
-        ++occurrences;
-        const std::vector<std::uint8_t> value(separator + 1, comment.end());
-        const auto [found, inserted] = values.emplace("cdtoc", value);
-        if (!inserted && found->second != value) {
-            result.manualReview = true;
-            result.detail = "CDTOC comments contain different values; no value was selected or changed.";
-            return result;
-        }
-        if (std::find(value.begin(), value.end(), static_cast<std::uint8_t>(';')) != value.end()) {
-            result.manualReview = true;
-            result.detail = "CDTOC contains a semicolon-joined value; its original occurrences cannot be inferred safely.";
-            return result;
-        }
-    }
-    if (occurrences < 2) {
-        return result;
-    }
-
-    bool retained = false;
-    std::vector<std::vector<std::uint8_t>> kept;
-    kept.reserve(flac.comments.size());
-    for (const auto& comment : flac.comments) {
-        const auto separator = std::find(comment.begin(), comment.end(), static_cast<std::uint8_t>('='));
-        const auto key = separator == comment.end() ? std::string{} : std::string(comment.begin(), separator);
-        if (separator != comment.end() && asciiLower(key) == "cdtoc") {
-            if (retained) {
-                ++result.removed;
-                continue;
-            }
-            retained = true;
-        }
-        kept.push_back(comment);
-    }
-    if (result.removed != 0) {
-        flac.comments = std::move(kept);
-        flac.blocks[flac.commentBlock - 1].data = serializeComments(flac, flac.comments);
-        result.repairable = true;
-        result.detail = "Removed exact duplicate CDTOC comments, retaining the first occurrence.";
-    }
-    return result;
-}
-
-bool copyStream(std::istream& source, std::ostream& destination)
-{
-    std::array<char, 64 * 1024> buffer{};
-    while (source) {
-        source.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-        const auto count = source.gcount();
-        if (count > 0 && !destination.write(buffer.data(), count)) {
-            return false;
-        }
-    }
-    return source.eof() && static_cast<bool>(destination);
-}
-
-void writeFlac(const fs::path& sourcePath, const fs::path& targetPath, ParsedFlac flac)
-{
-    std::ifstream source(sourcePath, std::ios::binary);
-    std::ofstream target(targetPath, std::ios::binary | std::ios::trunc);
-    if (!source || !target) {
-        throw std::runtime_error("Cannot open source or temporary repair output.");
-    }
-    target.write("fLaC", 4);
-    for (const auto& block : flac.blocks) {
-        const std::uint32_t size = static_cast<std::uint32_t>(block.data.size());
-        const std::array<char, 4> header{
-            static_cast<char>(block.flags),
-            static_cast<char>(size >> 16),
-            static_cast<char>(size >> 8),
-            static_cast<char>(size)
-        };
-        target.write(header.data(), static_cast<std::streamsize>(header.size()));
-        if (!block.data.empty()) {
-            target.write(reinterpret_cast<const char*>(block.data.data()),
-                static_cast<std::streamsize>(block.data.size()));
-        }
-    }
-    source.seekg(static_cast<std::streamoff>(flac.audioOffset));
-    if (!source || !copyStream(source, target)) {
-        throw std::runtime_error("Cannot write complete repaired FLAC output.");
-    }
-    target.flush();
-    if (!target) {
-        throw std::runtime_error("Cannot flush repaired FLAC output.");
-    }
-}
-
-bool sameFileBytes(const fs::path& left, std::uint64_t leftOffset,
-    const fs::path& right, std::uint64_t rightOffset)
-{
-    std::ifstream a(left, std::ios::binary);
-    std::ifstream b(right, std::ios::binary);
-    if (!a || !b) return false;
-    a.seekg(static_cast<std::streamoff>(leftOffset));
-    b.seekg(static_cast<std::streamoff>(rightOffset));
-    if (!a || !b) return false;
-    std::array<char, 64 * 1024> leftBuffer{}, rightBuffer{};
-    for (;;) {
-        a.read(leftBuffer.data(), static_cast<std::streamsize>(leftBuffer.size()));
-        b.read(rightBuffer.data(), static_cast<std::streamsize>(rightBuffer.size()));
-        const auto leftCount = a.gcount();
-        const auto rightCount = b.gcount();
-        if (leftCount != rightCount || !std::equal(leftBuffer.begin(),
-                leftBuffer.begin() + leftCount, rightBuffer.begin())) {
-            return false;
-        }
-        if (leftCount == 0) return a.eof() && b.eof();
-    }
-}
-
-bool verifyRepair(const fs::path& sourcePath, const fs::path& outputPath,
-    std::size_t expectedRemoved, std::string& error)
-{
-    try {
-        auto source = readFlac(sourcePath);
-        auto output = readFlac(outputPath);
-        if (source.commentBlock == 0 || output.commentBlock == 0 ||
-            source.blocks.size() != output.blocks.size()) {
-            error = "FLAC metadata block layout changed.";
-            return false;
-        }
-        auto expected = source;
-        const auto classified = removeDuplicateCdToc(expected);
-        if (!classified.repairable || classified.removed != expectedRemoved) {
-            error = "Source no longer has the planned duplicate CDTOC comments.";
-            return false;
-        }
-        for (std::size_t index = 0; index < source.blocks.size(); ++index) {
-            const auto& original = source.blocks[index];
-            const auto& actual = output.blocks[index];
-            if (original.flags != actual.flags || original.type != actual.type ||
-                (index == source.commentBlock - 1
-                    ? expected.blocks[index].data != actual.data
-                    : original.data != actual.data)) {
-                error = "A non-target metadata block or unexpected comment changed.";
-                return false;
-            }
-        }
-        if (!sameFileBytes(sourcePath, source.audioOffset, outputPath, output.audioOffset)) {
-            error = "FLAC audio bytes changed.";
-            return false;
-        }
-        return true;
-    }
-    catch (const std::exception& exception) {
-        error = exception.what();
-        return false;
-    }
 }
 
 std::atomic_uint64_t temporarySequence{ 0 };
@@ -402,11 +113,16 @@ bool writeReport(const AudioRepair::Plan& plan, const fs::path& reportPath,
     rapidjson::StringBuffer buffer;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
     writer.StartObject();
-    writer.Key("schemaVersion"); writer.Int(1);
+    writer.Key("schemaVersion"); writer.Int(2);
     writer.Key("source"); writer.String(utf8(plan.input).c_str());
     writer.Key("output"); writer.String(utf8(plan.output).c_str());
     writer.Key("status"); writer.String(status.c_str());
     writer.Key("error"); writer.String(error.c_str());
+    writer.Key("rules"); writer.StartArray();
+    for (const auto& rule : RepairRules::Catalog()) {
+        if (plan.rules.empty() || plan.rules.contains(rule.id)) writer.String(rule.id.c_str());
+    }
+    writer.EndArray();
     writer.Key("inspectedFiles"); writer.Uint64(plan.inspectedFiles);
     writer.Key("repairedFiles");
     writer.Uint64(static_cast<std::uint64_t>(std::count_if(plan.files.begin(), plan.files.end(),
@@ -418,9 +134,9 @@ bool writeReport(const AudioRepair::Plan& plan, const fs::path& reportPath,
     for (const auto& finding : plan.findings) {
         writer.StartObject();
         writer.Key("source"); writer.String(utf8(finding.source.lexically_relative(plan.input)).c_str());
-        writer.Key("rule"); writer.String("duplicate-cdtoc");
+        writer.Key("rule"); writer.String(finding.rule.c_str());
         writer.Key("status"); writer.String(finding.status.c_str());
-        writer.Key("duplicateComments"); writer.Uint64(finding.duplicateComments);
+        writer.Key("count"); writer.Uint64(finding.count);
         writer.Key("detail"); writer.String(finding.detail.c_str());
         writer.EndObject();
     }
@@ -433,12 +149,18 @@ bool writeReport(const AudioRepair::Plan& plan, const fs::path& reportPath,
         writer.Key("action"); writer.String(file.repair ? "repair" : "copy");
         writer.Key("status"); writer.String(file.status.c_str());
         if (file.repair) {
-            writer.Key("removedDuplicateComments"); writer.Uint64(file.duplicateComments);
+            writer.Key("appliedRules"); writer.StartArray();
+            for (const auto& [rule, count] : file.fixes) {
+                writer.StartObject();
+                writer.Key("rule"); writer.String(rule.c_str());
+                writer.Key("count"); writer.Uint64(count);
+                writer.EndObject();
+            }
+            writer.EndArray();
             writer.Key("impact"); writer.StartObject();
-            writer.Key("audio"); writer.String("Byte-identical; not decoded or re-encoded.");
+            writer.Key("audio"); writer.String("Byte-identical audio data range; not decoded or re-encoded.");
             writer.Key("metadata");
-            writer.String("Only repeated CDTOC comments with identical values were removed; the first occurrence remains.");
-            writer.Key("otherMetadata"); writer.String("All other tags and metadata blocks are byte-identical.");
+            writer.String("Only the metadata named by the applied rules changed; see the matching findings.");
             writer.EndObject();
         }
         else {
@@ -472,19 +194,15 @@ bool writeReport(const AudioRepair::Plan& plan, const fs::path& reportPath,
     }
     return true;
 }
-
-bool isFlac(const fs::path& path)
-{
-    auto extension = path.extension().string();
-    return asciiLower(extension) == ".flac";
-}
 }
 
 namespace AudioRepair
 {
-int Prepare(const fs::path& input, const fs::path& output, bool overwrite, Plan& plan)
+int Prepare(const fs::path& input, const fs::path& output, bool overwrite,
+    const std::set<std::string>& rules, Plan& plan)
 {
     plan = {};
+    plan.rules = rules;
     std::error_code ec;
     plan.input = fs::absolute(input, ec).lexically_normal();
     if (ec || !fs::is_directory(plan.input, ec) || ec) {
@@ -510,6 +228,7 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite, Plan&
     }
 
     std::set<fs::path> affected;
+    std::map<fs::path, FixList> repairSources;
     try {
         for (const auto& entry : fs::recursive_directory_iterator(plan.input)) {
             const auto status = entry.symlink_status();
@@ -520,23 +239,23 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite, Plan&
                 }
                 continue;
             }
-            if (!fs::is_regular_file(status) || !isFlac(entry.path())) continue;
+            if (!fs::is_regular_file(status) || !RepairRules::IsSupportedFile(entry.path())) continue;
             ++plan.inspectedFiles;
             try {
-                auto flac = readFlac(entry.path());
-                const auto result = removeDuplicateCdToc(flac);
-                if (result.repairable) {
+                const auto analysis = RepairRules::Analyze(entry.path(), plan.rules);
+                for (const auto& finding : analysis.findings) {
+                    plan.findings.push_back({ entry.path(), finding.rule,
+                        finding.fix ? "repairable" : "manual-review", finding.count, finding.detail });
+                }
+                if (analysis.edit) {
                     auto folder = entry.path().parent_path().lexically_relative(plan.input);
                     if (folder == ".") folder.clear();
                     affected.insert(std::move(folder));
-                    plan.findings.push_back({ entry.path(), result.removed, "repairable", result.detail });
-                }
-                else if (result.manualReview) {
-                    plan.findings.push_back({ entry.path(), 0, "manual-review", result.detail });
+                    repairSources.emplace(entry.path(), fixesOf(analysis));
                 }
             }
             catch (const std::exception& exception) {
-                plan.findings.push_back({ entry.path(), 0, "unreadable", exception.what() });
+                plan.findings.push_back({ entry.path(), "unreadable", "unreadable", 1, exception.what() });
             }
         }
     }
@@ -545,9 +264,10 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite, Plan&
         return -1;
     }
 
+    const bool rootAffected = affected.contains(fs::path{});
     for (auto it = affected.begin(); it != affected.end();) {
-        bool covered = false;
-        for (auto parent = it->parent_path(); !parent.empty(); parent = parent.parent_path()) {
+        bool covered = rootAffected && !it->empty();
+        for (auto parent = it->parent_path(); !covered && !parent.empty(); parent = parent.parent_path()) {
             if (affected.contains(parent)) {
                 covered = true;
                 break;
@@ -558,10 +278,6 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite, Plan&
     }
     plan.repairedFolders.assign(affected.begin(), affected.end());
 
-    std::set<fs::path> repairSources;
-    for (const auto& finding : plan.findings) {
-        if (finding.status == "repairable") repairSources.insert(finding.source);
-    }
     std::set<fs::path> directories;
     try {
         for (const auto& folder : plan.repairedFolders) {
@@ -608,11 +324,10 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite, Plan&
                         return -1;
                     }
                 }
-                const bool repair = repairSources.contains(entry.path());
-                const auto finding = std::find_if(plan.findings.begin(), plan.findings.end(),
-                    [&](const Finding& item) { return item.source == entry.path() && item.status == "repairable"; });
+                const auto fixes = repairSources.find(entry.path());
+                const bool repair = fixes != repairSources.end();
                 plan.files.push_back({ entry.path(), target, {}, size, modified, repair,
-                    finding == plan.findings.end() ? 0 : finding->duplicateComments, "not-attempted" });
+                    repair ? fixes->second : FixList{}, "not-attempted" });
                 plan.files.back().temporary = temporaryPath(target);
             }
         }
@@ -718,30 +433,25 @@ int Execute(Plan& plan, std::size_t* repaired, std::size_t* copied)
             error = "repair temporary already exists or cannot be inspected: " + utf8(temporaryPathname);
             break;
         }
+        std::optional<RepairRules::Edit> edit;
         if (file.repair) {
             try {
-                auto flac = readFlac(sourcePath);
-                spdlog::info("Read FLAC metadata for '{}'.",
-                    utf8(file.source.lexically_relative(plan.input)));
-                const auto result = removeDuplicateCdToc(flac);
-                if (!result.repairable || result.removed != file.duplicateComments) {
+                const auto relativeSource = utf8(file.source.lexically_relative(plan.input));
+                auto analysis = RepairRules::Analyze(sourcePath, plan.rules);
+                if (!analysis.edit || fixesOf(analysis) != file.fixes) {
                     file.status = "failed";
                     error = "repair finding changed after preview: " + utf8(sourcePath);
                     break;
                 }
-                spdlog::info("Prepared CDTOC metadata edit for '{}'.",
-                    utf8(file.source.lexically_relative(plan.input)));
-                writeFlac(sourcePath, temporaryPathname, std::move(flac));
-                spdlog::info("Wrote staged FLAC repair for '{}'.",
-                    utf8(file.source.lexically_relative(plan.input)));
-                spdlog::info("Verifying audio and metadata preservation for '{}'.",
-                    utf8(file.source.lexically_relative(plan.input)));
+                edit = std::move(analysis.edit);
+                spdlog::info("Prepared metadata edit for '{}': {}.", relativeSource, describeFixes(file.fixes));
+                RepairRules::Write(sourcePath, temporaryPathname, *edit);
+                spdlog::info("Verifying audio and metadata preservation for '{}'.", relativeSource);
                 std::string verificationError;
-                verified = verifyRepair(sourcePath, temporaryPathname,
-                    file.duplicateComments, verificationError);
+                verified = RepairRules::Verify(sourcePath, temporaryPathname, *edit, plan.rules, verificationError);
                 if (!verified) {
                     file.status = "failed";
-                    error = "repair verification failed: " + verificationError;
+                    error = "repair verification failed for '" + relativeSource + "': " + verificationError;
                 }
             }
             catch (const std::exception& exception) {
@@ -774,20 +484,19 @@ int Execute(Plan& plan, std::size_t* repaired, std::size_t* copied)
         }
         if (file.repair) {
             std::string verificationError;
-            if (!verifyRepair(sourcePath, resolve(relative), file.duplicateComments, verificationError)) {
+            if (!RepairRules::Verify(sourcePath, resolve(relative), *edit, plan.rules, verificationError)) {
                 file.status = "failed";
                 error = "installed repair verification failed: " + verificationError;
                 break;
             }
             file.status = "installed";
-            const auto finding = std::find_if(plan.findings.begin(), plan.findings.end(),
-                [&](const Finding& item) { return item.source == file.source && item.status == "repairable"; });
-            if (finding != plan.findings.end()) finding->status = "repaired";
+            for (auto& finding : plan.findings) {
+                if (finding.source == file.source && finding.status == "repairable") finding.status = "repaired";
+            }
             if (repaired) ++*repaired;
-            spdlog::info("Repaired '{}': duplicate-cdtoc removed {} exact duplicate comment(s); "
-                "audio bytes are unchanged (no decode/re-encode); only duplicate CDTOC metadata was removed, "
-                "with all other tags and metadata blocks unchanged.",
-                utf8(file.source.lexically_relative(plan.input)), file.duplicateComments);
+            spdlog::info("Repaired '{}' ({}); audio bytes are unchanged (no decode/re-encode) and only the "
+                "metadata named by these rules changed.",
+                utf8(file.source.lexically_relative(plan.input)), describeFixes(file.fixes));
         }
         else {
             file.status = "installed";
@@ -801,8 +510,8 @@ int Execute(Plan& plan, std::size_t* repaired, std::size_t* copied)
         [](const Finding& finding) { return finding.status == "manual-review" || finding.status == "unreadable"; });
     for (const auto& finding : plan.findings) {
         if (finding.status == "manual-review" || finding.status == "unreadable") {
-            spdlog::warn("Repair finding [{}] '{}': {}",
-                finding.status, utf8(finding.source.lexically_relative(plan.input)), finding.detail);
+            spdlog::warn("Repair finding [{}] {} '{}': {}", finding.status, finding.rule,
+                utf8(finding.source.lexically_relative(plan.input)), finding.detail);
         }
     }
     const auto report = resolve("repair-report.json");

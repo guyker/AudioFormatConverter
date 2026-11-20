@@ -100,10 +100,11 @@ default; invalid values are retried, and `BACK`/`EXIT` or EOF cancels without co
 The final preview shows the selected settings and still requires `RUN`. Overwrite applies to MP3,
 metadata sidecars and copied companions, never to source files. Settings are per operation and reset
 to safe defaults when selecting option `6` again; they do not modify config.json.
-Option `7` scans native FLAC files and removes only repeated CDTOC comments whose values are identical. It writes
-repaired copies to `OutDirectory\FIXED\<mediaName>`, copying only affected folders and keeping other files unchanged;
-audio is not decoded or re-encoded and sources are never modified. Conflicting or semicolon-joined CDTOC values and
-unreadable files are left for manual review and listed in `repair-report.json`.
+Option `7` checks FLAC and MP3 files for common metadata defects (redundant ID3/APE tags, duplicate or empty tags,
+wrong picture MIME types or FLAC picture dimensions/depth, invalid FLAC seek tables, ID3v2.3 encoding errors, and more). It writes repaired copies to
+`OutDirectory\FIXED\<mediaName>`, copying only affected folders and keeping other files unchanged; audio bytes are
+copied unchanged and sources are never modified. Conflicting values and unreadable files are left for manual review
+and listed in `repair-report.json`.
 
 The console menu options are:
 
@@ -116,7 +117,7 @@ The console menu options are:
    `OutDirectory\MP3\<mediaName>` (defaults to the source folder name). It defaults to VBR quality 0,
    preserves metadata/companions, never changes sources, and rejects existing destinations or
    multichannel input unless overwrite or stereo downmix is explicitly enabled.
-- `7` validates and repairs recognized FLAC metadata defects into `OutDirectory\FIXED\<mediaName>` without
+- `7` validates and repairs recognized FLAC/MP3 metadata defects into `OutDirectory\FIXED\<mediaName>` without
    changing sources; it requires `RUN` after preview.
 
 ## Build
@@ -185,6 +186,7 @@ FlacConvert duplicates "E:\Catalog\Music"
 FlacConvert duplicates "E:\Catalog\Music" --report "E:\Reports\duplicates.json"
 FlacConvert db import "E:\Catalog\Music" --output-dir "E:\Databases"
 FlacConvert repair "D:\Music" --output-dir "E:\Repaired"
+FlacConvert repair "D:\Music" --rules flac.duplicate-comments,mp3.redundant-id3v1
 ```
 
 `convert` writes FLAC files to a separate output tree and preserves source files. Sources below 16-bit or 44.1 kHz, or
@@ -208,9 +210,9 @@ even when archiving is disabled; a failed scan preserves the previous set. Conve
 separately by `MetadataSidecars`. Duplicate detection, database import, and incremental cache reuse validate the
 manifest before using marked batches. `DecodeWorkers` caps the independent full-decode stage. `duplicates` reports matches without
 opening folders; pass `--open` to open matched folders in Explorer. `db import` creates or updates a library-named
-`catalog-v2.sqlite` database and leaves legacy `.db` files untouched. `repair` writes safe native FLAC metadata fixes to
-`<output-root>\FIXED\<input-folder-name>`; it removes exact duplicate CDTOC comments, verifies unchanged audio and
-non-target metadata before installation, and reports unresolved findings rather than guessing.
+`catalog-v2.sqlite` database and leaves legacy `.db` files untouched. `repair` writes metadata-only FLAC/MP3 fixes to
+`<output-root>\FIXED\<input-folder-name>`; `--rules` limits it to listed rule ids (see `FlacConvert repair --help`).
+It verifies byte-identical audio before installation and reports unresolved findings rather than guessing.
 
 ### FLAC output preservation
 

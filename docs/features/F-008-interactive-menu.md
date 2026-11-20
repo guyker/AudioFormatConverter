@@ -9,7 +9,7 @@ an operation preview (inputs, outputs, counts, overwrite effects) and runs only 
 Conflicts block the run before installing output. After a started or failed operation a summary reports Completed, Partially
 completed or Failed with confirmed counts, and the program exits. Duplicate review also reports `Stopped by user`
 when ended early. `0` or EOF at the menu exits; `?` shows help.
-Option 7 validates and repairs recognized native FLAC metadata issues into `OutDirectory/FIXED/<mediaName>` without
+Option 7 validates and repairs recognized FLAC/MP3 metadata issues into `OutDirectory/FIXED/<mediaName>` without
 modifying sources; it copies only folders with safe repairs and requires `RUN` after preview. See F-011 for the
 supported repair and manual-review cases.
 After the initial `RUN`, option 3 pauses per duplicate group, with a numbered evidence/metadata recap beside the
@@ -34,7 +34,7 @@ system temporary directory and logs its location; it does not install a catalog.
 - [ ] Canceling at the confirmation writes nothing; a scan preview failure may write a temporary diagnostic report.
 - [ ] `BACK` returns to the menu; EOF on stdin exits cleanly.
 - [ ] Option 2 can enable or disable FLAC archives before the preview without changing the saved configuration.
-- [ ] Option 7 previews FLAC repair findings and requires `RUN` before writing repaired copies.
+- [ ] Option 7 previews FLAC/MP3 repair findings and requires `RUN` before writing repaired copies.
 - [ ] A conflict in one library blocks all libraries.
 - [ ] Summary counts match files actually installed.
 

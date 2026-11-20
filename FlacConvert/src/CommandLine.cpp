@@ -1,4 +1,5 @@
 #include "CommandLine.h"
+#include "RepairRules.h"
 #include "RunLogging.h"
 
 #include <CLI/CLI.hpp>
@@ -73,7 +74,7 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
         "Missing implicit config uses built-in defaults (C:\\tmp on Windows, system temporary directory elsewhere); an explicitly requested invalid config is an error.\n\n"
         "Commands:\n"
         "  convert <input-dir>   Convert supported audio into a separate output tree.\n"
-        "  repair <input-dir>    Validate FLAC comments and repair exact duplicate CDTOC tags.\n"
+        "  repair <input-dir>    Validate FLAC/MP3 metadata and repair safe problems without touching audio.\n"
         "  scan <library-dir>    Create split JSON metadata files for a library.\n"
         "  duplicates <json-dir> Find duplicate albums from JSON files.\n"
         "  db import <json-dir>  Import JSON metadata into SQLite.\n\n"
@@ -120,7 +121,7 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
     });
 
     auto* repair = app.add_subcommand("repair",
-        "Validate FLAC comments and remove only exact duplicate CDTOC tags without re-encoding audio.");
+        "Validate FLAC and MP3 metadata and apply safe metadata-only repairs; audio bytes are never changed.");
     repair->add_option("input-dir", options.inputPath, "Audio library directory to inspect.")
         ->required()
         ->check([](const std::string& value) {
@@ -134,11 +135,21 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
         ->each([&options](const std::string&) { options.outputDirectorySpecified = true; });
     repair->add_flag("--overwrite", options.overwrite,
         "Replace existing repair destinations only after each output is verified.");
+    std::string ruleHelp = "Comma-separated rule ids to run (default: all). Rules:";
+    for (const auto& rule : RepairRules::Catalog()) {
+        ruleHelp += "\n    " + rule.id + (rule.canFix ? " [fix]: " : " [report]: ") + rule.description;
+    }
+    repair->add_option("--rules", options.repairRules, ruleHelp)
+        ->delimiter(',')
+        ->check([](const std::string& value) {
+            return RepairRules::IsKnownRule(value) ? std::string{} : "unknown repair rule: " + value;
+        });
     add_config_option(repair, options);
     repair->footer(command_footer(
-        "Inspects native FLAC Vorbis comments. It removes repeated CDTOC comments only when all occurrences have the exact same value; conflicting or semicolon-joined values are reported for manual review and left unchanged. Only folders containing a safe repair are copied, with their other files unchanged. Audio bytes are copied without re-encoding. Sources are never modified. The output includes repair-report.json. Existing destinations fail unless --overwrite is supplied.",
+        "Inspects native FLAC and MP3 files with metadata-only rules (see --rules). Fix rules rebuild only metadata: tags, comments, picture descriptors or padding; the audio data range is copied byte-for-byte and verified, never decoded or re-encoded. Tags are removed only when every field is already present in the primary tag (Vorbis comments for FLAC, the first ID3v2 tag for MP3); anything else is reported for manual review and left unchanged. Report-only rules never change files. Only folders containing a repair are copied, with their other files unchanged. Sources are never modified. The output includes repair-report.json; findings needing review exit with code 1. Existing destinations fail unless --overwrite is supplied.",
         "  FlacConvert repair \"D:\\Music\"\n"
-        "  FlacConvert repair \"D:\\Music\" --output-dir \"E:\\Repaired\""));
+        "  FlacConvert repair \"D:\\Music\" --output-dir \"E:\\Repaired\"\n"
+        "  FlacConvert repair \"D:\\Music\" --rules flac.duplicate-comments,mp3.redundant-id3v1"));
     repair->callback([&options] { options.action = CommandAction::Repair; });
 
     auto* scan = app.add_subcommand("scan", "Scan a library and write split JSON metadata files.");
