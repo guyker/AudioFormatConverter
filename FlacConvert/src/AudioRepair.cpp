@@ -6,6 +6,7 @@
 #include "PlatformUtils.h"
 #include "PreservationAudit.h"
 #include "RepairRules.h"
+#include "RunLogging.h"
 
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
@@ -15,14 +16,17 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <fstream>
 #include <iterator>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <system_error>
+#include <thread>
 
 #ifdef _WIN32
 #include <process.h>
@@ -36,6 +40,76 @@ namespace
 namespace fs = std::filesystem;
 
 using FixList = std::vector<std::pair<std::string, std::size_t>>;
+
+class RepairProgress
+{
+public:
+    RepairProgress(std::string phase, std::optional<std::size_t> total = std::nullopt,
+        std::string unit = "files")
+        : _phase(std::move(phase)), _total(total), _unit(std::move(unit))
+    {
+        spdlog::info("{}", Message());
+        _worker = std::jthread([this](std::stop_token stop) {
+            std::unique_lock lock(_mutex);
+            unsigned ticks = 0;
+            while (!_wake.wait_for(lock, stop, std::chrono::seconds(1), [] { return false; })) {
+                if (stop.stop_requested()) break;
+                if (PlatformUtils::IsStdoutInteractive()) {
+                    RunLogging::ShowProgress(Message());
+                }
+                else if (++ticks % 5 == 0) {
+                    spdlog::info("{}", Message());
+                }
+            }
+        });
+    }
+
+    ~RepairProgress() { Stop(); }
+
+    void Advance() { _completed.fetch_add(1, std::memory_order_relaxed); }
+
+    void Finish(bool success = true)
+    {
+        Stop();
+        spdlog::info("{} [{}].", Message(), success ? "done" : "stopped");
+    }
+
+private:
+    std::string Message() const
+    {
+        const auto count = _completed.load(std::memory_order_relaxed);
+        std::string message = "Repair " + _phase + ": " + std::to_string(count);
+        if (_total) message += "/" + std::to_string(*_total);
+        message += " " + _unit;
+        if (_total) {
+            const auto percent = *_total == 0 ? 100 :
+                static_cast<unsigned>(static_cast<long double>(count) * 100 / *_total);
+            message += " (" + std::to_string(percent) + "%)";
+        }
+        else message += " (total unknown)";
+        const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - _started).count();
+        return message + ", " + std::to_string(elapsed) + "s";
+    }
+
+    void Stop()
+    {
+        if (_worker.joinable()) {
+            _worker.request_stop();
+            _worker.join();
+        }
+        RunLogging::ClearProgress();
+    }
+
+    std::string _phase;
+    std::optional<std::size_t> _total;
+    std::string _unit;
+    std::atomic_size_t _completed{ 0 };
+    std::chrono::steady_clock::time_point _started{ std::chrono::steady_clock::now() };
+    std::mutex _mutex;
+    std::condition_variable_any _wake;
+    std::jthread _worker;
+};
 
 std::string utf8(const fs::path& path)
 {
@@ -212,6 +286,7 @@ namespace AudioRepair
 int Prepare(const fs::path& input, const fs::path& output, bool overwrite,
     const std::set<std::string>& rules, Plan& plan, std::size_t workers, bool dryRun)
 {
+    spdlog::info("Repair source folder: '{}'.", utf8(input));
     plan = {};
     plan.rules = rules;
     plan.workers = workers;
@@ -247,8 +322,10 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite,
     std::set<fs::path> affected;
     std::map<fs::path, FixList> repairSources;
     std::vector<fs::path> candidates;
+    RepairProgress discovery("discovery", std::nullopt, "entries");
     try {
         for (const auto& entry : fs::recursive_directory_iterator(plan.input)) {
+            discovery.Advance();
             const auto status = entry.symlink_status();
             if (fs::is_symlink(status)) {
                 if (entry.is_directory(ec) && !ec) {
@@ -266,12 +343,14 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite,
         return -1;
     }
     std::sort(candidates.begin(), candidates.end());
+    discovery.Finish();
     struct Inspection {
         std::vector<Finding> findings;
         FixList fixes;
         bool repair{ false };
     };
     std::vector<Inspection> inspections(candidates.size());
+    RepairProgress inspectionProgress("inspection", candidates.size());
     try {
         BoundedTaskRunner::ForEach(candidates.size(), workers, [&](std::size_t index) {
             const auto& path = candidates[index];
@@ -290,12 +369,15 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite,
             catch (const std::exception& exception) {
                 inspection.findings.push_back({ path, "unreadable", "unreadable", 1, exception.what() });
             }
+            inspectionProgress.Advance();
         });
     }
     catch (const std::exception& exception) {
         spdlog::error("Cannot run repair inspections: {}", exception.what());
         return -1;
     }
+    inspectionProgress.Finish();
+    RepairProgress planning("planning", std::nullopt, "entries");
     plan.inspectedFiles = candidates.size();
     for (std::size_t index = 0; index < candidates.size(); ++index) {
         auto& inspection = inspections[index];
@@ -329,6 +411,7 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite,
             const auto root = folder.empty() ? plan.input : plan.input / folder;
             directories.insert(folder);
             for (const auto& entry : fs::recursive_directory_iterator(root)) {
+                planning.Advance();
                 const auto status = entry.symlink_status();
                 if (fs::is_symlink(status)) {
                     spdlog::error("Affected repair folder contains a link: '{}'.", utf8(entry.path()));
@@ -410,6 +493,7 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite,
         spdlog::error("Repair output has an existing in-progress marker or cannot be inspected.");
         return -1;
     }
+    planning.Finish();
     return 0;
 }
 
@@ -457,6 +541,7 @@ int Execute(Plan& plan, std::size_t* repaired, std::size_t* copied)
         return -1;
     }
 
+    spdlog::info("Repair source folder: '{}'.", utf8(plan.input));
     std::string error;
     struct StagedFile {
         std::optional<RepairRules::Edit> edit;
@@ -464,6 +549,7 @@ int Execute(Plan& plan, std::size_t* repaired, std::size_t* copied)
         bool temporaryCreated{ false };
     };
     fs::path currentAlbum;
+    RepairProgress execution("installation", plan.files.size(), "verified files installed");
     for (std::size_t first = 0; first < plan.files.size() && error.empty(); first += plan.workers) {
         const auto count = (std::min)(plan.workers, plan.files.size() - first);
         std::vector<StagedFile> staged(count);
@@ -575,6 +661,7 @@ int Execute(Plan& plan, std::size_t* repaired, std::size_t* copied)
                 ++*copied;
             }
             file.status = "installed";
+            execution.Advance();
         }
         for (std::size_t index = 0; index < count; ++index) {
             auto& file = plan.files[first + index];
@@ -587,6 +674,7 @@ int Execute(Plan& plan, std::size_t* repaired, std::size_t* copied)
             if (file.status == "processing") file.status = "not-attempted";
         }
     }
+    execution.Finish(error.empty());
 
     const bool attention = std::any_of(plan.findings.begin(), plan.findings.end(),
         [](const Finding& finding) { return finding.status == "manual-review" || finding.status == "unreadable"; });

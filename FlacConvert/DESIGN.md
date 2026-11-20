@@ -101,6 +101,10 @@ context. Redirected output suppresses animated progress sequences. Logs older th
 above 1 GiB are pruned; active logs are protected. If log-file creation fails, an explicit console error is emitted
 and the request proceeds using console logging only. The session log supplements, and does not replace,
 `conversion-audit.json` or `scan-report.json`.
+Menu actions log every active source library before preparation, and CLI commands log their source directory
+(identified as catalog JSON for duplicate detection and database import). Conversion and scan transitions identify
+the current source library. `RunLogging` serializes transient progress with console log messages so warnings/errors
+end the progress line cleanly; transient redraws are not written to session logs or redirected output.
 
 ## Key flows
 
@@ -190,6 +194,12 @@ exists in the kept tag (track/disc totals included) and every embedded picture's
 Rewritten ID3v2 tags keep their original size (padding absorbs shrinkage), so MP3 frame offsets do not move.
 Existing FLAC padding is retained and expanded, or a new padding block is added when possible, to absorb shrinkage
 of the FLAC metadata section. Unreadable files are reported as `unreadable`.
+Repair preparation announces its source before discovery and reports discovery, inspection and planning progress,
+including elapsed time while work is pending. Discovery/planning totals are unknown; inspection shows completed
+files and a percentage once discovery establishes the total. Execution progress counts only verified installed
+files, including unchanged companions, not merely staged files. Progress is per library and per phase, not a
+time-based estimate of the entire operation. Interactive progress updates one line every second; redirected output
+receives periodic five-second snapshots instead. Phase boundaries are logged in both modes. Preparation remains read-only.
 
 Output is a separate `FIXED/<library-name>` tree. Only folders containing a safe repair are copied, each with its
 subfolders (a nested repaired folder is copied once, as part of its nearest repaired ancestor); every regular

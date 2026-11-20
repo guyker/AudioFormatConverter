@@ -1449,6 +1449,7 @@ int ConvertConfiguredLibraries(const std::vector<MediaDirectoryElement>& mediaDi
     std::vector<FolderConversionPlan> plans;
     bool blocked = false;
     for (const auto& conversion : conversions) {
+        spdlog::info("Preparing conversion source folder: '{}'.", pathToUtf8(conversion.source));
         FolderConversionPlan plan;
         if (FolderConvert::PrepareConversion(conversion.source, conversion.target, overwrite, options, plan) != 0) {
             return 1;
@@ -1480,6 +1481,7 @@ int ConvertConfiguredLibraries(const std::vector<MediaDirectoryElement>& mediaDi
     }
     summary.Start();
     for (std::size_t index = 0; index < plans.size(); ++index) {
+        spdlog::info("Conversion source folder: '{}'.", pathToUtf8(plans[index].input));
         const int result = FolderConvert::ExecuteConversion(plans[index], &summary.conversion);
         if (!summary.conversion.actualOutput.empty())
             summary.outputs[index] = summary.conversion.actualOutput;
@@ -1689,6 +1691,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         std::vector<fs::path> targets;
         for (auto& library : mediaDirectoryList) {
             const auto source = absoluteDisplayPath(pathFromUtf8(library.mediaPath));
+            spdlog::info("Preparing scan source folder: '{}'.", pathToUtf8(source));
             if (!library.mediaName || library.mediaName->empty()) {
                 library.mediaName = directoryNameUtf8(source);
             }
@@ -1801,6 +1804,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
     {
         auto startTime = std::chrono::steady_clock::now();
         const fs::path libraryPath = pathFromUtf8(mediaEntry.mediaPath);
+        spdlog::info("Scan source folder: '{}'.", pathToUtf8(libraryPath));
         if (!mediaEntry.mediaName.has_value() || mediaEntry.mediaName->empty()) {
             mediaEntry.mediaName = directoryNameUtf8(libraryPath);
         }
@@ -3084,6 +3088,10 @@ int RunLegacyMenu()
     const auto executeAction = [&](ConvertActionEnum action, ManualOperationSummary& summary) {
         if (action != ConvertActionEnum::ExitEnum) {
             spdlog::info("Starting menu option {}.", static_cast<int>(action));
+            for (std::size_t index = 0; index < mediaList.size(); ++index) {
+                spdlog::info("Source library [{}/{}]: '{}' ({}).", index + 1, mediaList.size(),
+                    mediaList[index].mediaPath, mediaList[index].mediaName.value_or(""));
+            }
         }
         switch (action)
         {
@@ -3232,6 +3240,11 @@ int RunWithArgumentsImpl(const std::vector<const char*>& arguments)
         const fs::path outputDirectory = options.outputDirectorySpecified
             ? pathFromUtf8(options.outputDirectory)
             : pathFromUtf8(settings->OutDirectory);
+
+        const bool catalogInput = options.action == CommandAction::Duplicates ||
+            options.action == CommandAction::DatabaseImport;
+        spdlog::info("Source folder{}: '{}'.", catalogInput ? " (catalog JSON)" : "",
+            pathToUtf8(absoluteDisplayPath(inputPath)));
 
         switch (options.action) {
         case CommandAction::Convert: {

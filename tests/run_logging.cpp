@@ -67,7 +67,11 @@ int main()
         RunLogging::SetFileLevel(spdlog::level::info);
         spdlog::debug("debug detail excluded");
         spdlog::info("session info retained");
+        RunLogging::ShowProgress("transient progress 1/100");
+        RunLogging::ShowProgress("transient progress 100/100");
         spdlog::warn("session warning retained");
+        RunLogging::ShowProgress("transient progress after warning");
+        RunLogging::ClearProgress();
         RunLogging::Finish(0);
         auto activeMarker = *infoLog;
         activeMarker += ".active";
@@ -83,6 +87,9 @@ int main()
             "Configured session details or warning were not recorded.");
         require(infoContent.find("debug detail excluded") == std::string::npos,
             "The detailed file-log threshold was not applied.");
+        require(infoContent.find("transient progress") == std::string::npos &&
+            infoContent.find('\x1b') == std::string::npos,
+            "Transient progress or terminal control characters leaked into the session log.");
 
         require(RunLogging::Start("trace-test", testDirectory),
             "Could not start a second request logger.");

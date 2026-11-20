@@ -10,6 +10,9 @@ platform-specific location is unavailable. The console remains concise: informat
 source album folder during FLAC conversion), completion, meaningful warnings, and errors; per-file details and
 expected generated-field normalization are reserved for the session log. Redirected output contains no animated
 progress control sequences.
+Before any menu action prepares work, it logs all active source library paths. CLI commands log the input folder,
+explicitly labeled as catalog JSON for duplicates/database import. Conversion and scan library transitions and
+repair preparation identify the current source folder, including before long preprocessing begins.
 
 The config `LogLevel` (integer spdlog level 0–6) controls the detailed file log; CLI commands can override it with
 `--log-level info|debug|trace`. Start and finish entries are always written when the log is available. The file

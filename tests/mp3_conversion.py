@@ -798,6 +798,10 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(report["status"], "dry-run")
         self.assertEqual(len(report["findings"]), 30)
         self.assertTrue(all(f["status"] == "repairable" for f in report["findings"]))
+        self.assertIn("Repair inspection: 30/30 files (100%)", result.stdout)
+        self.assertLess(result.stdout.index("Repair discovery:"), result.stdout.index("Repair inspection:"))
+        self.assertNotIn("Repair installation:", result.stdout)
+        self.assertNotIn("\x1b", result.stdout)
         self.assertFalse(self.output.exists())
         self.assertEqual({path.name: path.read_bytes() for path in self.source.iterdir()}, before)
         rejected = self.repair(self.source, "--jobs", "0", "--dry-run")
@@ -850,6 +854,8 @@ class ConversionTests(unittest.TestCase):
         self.assertTrue((target / ".repair-in-progress").exists())
         self.assertEqual((self.source / "a.flac").read_bytes(), data)
         self.assertEqual((self.source / "b.flac").read_bytes(), data)
+        self.assertRegex(result.stdout, r"Repair installation: 0/2 verified files installed \(0%\).*\[stopped\]")
+        self.assertNotIn("2/2 verified files installed (100%)", result.stdout)
 
     def test_repair_rejects_existing_output_unless_overwrite_is_enabled(self):
         toc = "CDTOC=A+96+1234"
@@ -901,6 +907,24 @@ class ConversionTests(unittest.TestCase):
         self.assertTrue((output.parent / "repair-report.json").is_file())
         self.assertFalse(list(self.output.rglob(".afc-convert-*")))
         self.assertFalse((output.parent / self.track.name).exists())
+        self.assertLess(result.stdout.index("Repair discovery:"),
+                        result.stdout.index("Operation preview: validate and repair"))
+        self.assertIn("Repair inspection: 2/2 files (100%)", result.stdout)
+        self.assertIn("Repair planning:", result.stdout)
+        self.assertIn("Repair installation: 4/4 verified files installed (100%)", result.stdout)
+        self.assertNotIn("\x1b", result.stdout)
+
+    def test_manual_repair_preparation_progress_before_cancellation(self):
+        self.track.write_bytes(add_vorbis_comments(
+            self.repair_fixture.read_bytes(), ["CDTOC=A", "CDTOC=A"]))
+        before = self.track.read_bytes()
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]
+        result = self.legacy(libraries, "7\n\n\n\n")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Repair inspection: 1/1 files (100%)", result.stdout)
+        self.assertNotIn("Repair installation:", result.stdout)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.track.read_bytes(), before)
 
     def test_manual_repair_can_opt_in_to_redundant_id3v1_removal(self):
         self.track.unlink()
@@ -1318,6 +1342,24 @@ class ConversionTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(target.read_bytes(), before)
         self.assertEqual(hashlib.sha256(self.track.read_bytes()).digest(), self.original_hash)
+
+    def test_menu_logs_active_source_libraries_before_preparation(self):
+        second = self.work / "second"
+        second.mkdir()
+        inactive = self.work / "inactive-source"
+        libraries = [
+            {"isActive": True, "mediaPath": str(self.source), "mediaName": "First"},
+            {"isActive": True, "mediaPath": str(second), "mediaName": "Second"},
+            {"isActive": False, "mediaPath": str(inactive), "mediaName": "Inactive"}]
+        for option in (1, 2, 3, 4, 6, 7):
+            with self.subTest(option=option):
+                result = self.legacy(libraries, f"{option}\nBACK\n0\n")
+                lines = [line for line in result.stdout.splitlines() if "Source library [" in line]
+                self.assertEqual(len(lines), 2, result.stdout + result.stderr)
+                self.assertIn(str(self.source), lines[0])
+                self.assertIn(str(second), lines[1])
+                self.assertNotIn(str(inactive), result.stdout)
+                self.assertFalse(self.output.exists())
 
     def test_menu_descriptions_exit_eof_and_invalid_selections(self):
         libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Library"}]

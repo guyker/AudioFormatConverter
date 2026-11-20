@@ -9,6 +9,8 @@
 #include <fstream>
 #include <iomanip>
 #include <memory>
+#include <iostream>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -30,6 +32,7 @@
 #include <spdlog/spdlog.h>
 
 #include "CommonUtils.h"
+#include "PlatformUtils.h"
 
 namespace
 {
@@ -41,6 +44,63 @@ std::shared_ptr<spdlog::sinks::sink> fileSink;
 std::optional<fs::path> runLogPath;
 fs::path activeMarkerPath;
 std::chrono::steady_clock::time_point runStartedAt;
+
+class ProgressConsoleSink final : public spdlog::sinks::sink
+{
+public:
+    ProgressConsoleSink() : _sink(std::make_shared<spdlog::sinks::stdout_color_sink_mt>())
+    {
+        _sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%t] [%^%l%$] %v");
+    }
+
+    void log(const spdlog::details::log_msg& message) override
+    {
+        std::lock_guard lock(_mutex);
+        ClearLine();
+        _sink->log(message);
+    }
+    void flush() override
+    {
+        std::lock_guard lock(_mutex);
+        _sink->flush();
+    }
+    void set_pattern(const std::string& pattern) override
+    {
+        std::lock_guard lock(_mutex);
+        _sink->set_pattern(pattern);
+    }
+    void set_formatter(std::unique_ptr<spdlog::formatter> formatter) override
+    {
+        std::lock_guard lock(_mutex);
+        _sink->set_formatter(std::move(formatter));
+    }
+    void Show(const std::string& message)
+    {
+        std::lock_guard lock(_mutex);
+        if (!PlatformUtils::IsStdoutInteractive()) return;
+        const auto padding = _lineLength > message.size() ? _lineLength - message.size() : 0;
+        std::cout << '\r' << message << std::string(padding, ' ') << std::flush;
+        _lineLength = message.size();
+    }
+    void Clear()
+    {
+        std::lock_guard lock(_mutex);
+        ClearLine();
+    }
+
+private:
+    void ClearLine()
+    {
+        if (_lineLength == 0) return;
+        std::cout << '\r' << std::string(_lineLength, ' ') << '\r' << std::flush;
+        _lineLength = 0;
+    }
+    std::shared_ptr<spdlog::sinks::sink> _sink;
+    std::mutex _mutex;
+    std::size_t _lineLength{ 0 };
+};
+
+std::shared_ptr<ProgressConsoleSink> consoleSink;
 
 unsigned long currentProcessId()
 {
@@ -126,10 +186,9 @@ spdlog::filename_t toFilename(const fs::path& path)
 
 std::shared_ptr<spdlog::sinks::sink> createConsoleSink()
 {
-    auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    sink->set_level(spdlog::level::info);
-    sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%t] [%^%l%$] %v");
-    return sink;
+    consoleSink = std::make_shared<ProgressConsoleSink>();
+    consoleSink->set_level(spdlog::level::info);
+    return consoleSink;
 }
 
 bool isActiveLog(const fs::path& path)
@@ -286,6 +345,16 @@ void RunLogging::RecordError(const std::string& message)
     }
 }
 
+void RunLogging::ShowProgress(const std::string& message)
+{
+    if (consoleSink) consoleSink->Show(message);
+}
+
+void RunLogging::ClearProgress()
+{
+    if (consoleSink) consoleSink->Clear();
+}
+
 std::optional<std::filesystem::path> RunLogging::CurrentLogPath()
 {
     return runLogPath;
@@ -293,6 +362,7 @@ std::optional<std::filesystem::path> RunLogging::CurrentLogPath()
 
 void RunLogging::Finish(int exitCode)
 {
+    ClearProgress();
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - runStartedAt).count();
     if (runLogPath) {

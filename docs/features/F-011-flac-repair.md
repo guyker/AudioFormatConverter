@@ -21,6 +21,12 @@ destinations are rejected unless `--overwrite` is specified. The CLI returns non
 operation failures.
 `--dry-run` prints the full JSON findings and planned actions without writing repair output; normal session logging
 still applies. Inspection and staging use four workers by default; CLI `--jobs <1-16>` changes the limit.
+Before the preview, progress identifies the source folder and the discovery, inspection and planning phases.
+Inspection shows completed/total files and a percentage; discovery/planning show counts without an invented total.
+During execution, progress shows verified files installed out of all planned repairs and unchanged copies.
+Each phase shows elapsed time and remains visibly active during long files. Progress is per library, not a
+whole-run time estimate. Interactive updates reuse one line; redirected output uses periodic snapshots instead
+of terminal control sequences. Phase boundaries are retained in the session log in both modes.
 
 ## Entry points
 - `repair <input> [--output-dir <directory>] [--overwrite] [--rules <ids>] [--remove-id3v1] [--dry-run] [--jobs <1-16>]` → `FlacConvert/src/FlacConvertMain.cpp#RunWithArgumentsImpl`
@@ -43,6 +49,8 @@ still applies. Inspection and staging use four workers by default; CLI `--jobs <
 - [ ] Only affected folders are copied and companion files remain byte-identical.
 - [ ] Menu option 7 requires `RUN` and reports the output and completed repair count.
 - [ ] Existing output is rejected by default; `--overwrite` allows eligible destinations to be replaced.
+- [ ] Preparation displays progress before confirmation without writing repair output; cancellation keeps sources unchanged.
+- [ ] Installation progress advances only after verification/installation and stops short of 100% on failure.
 
 ## Known limitations
 - Only FLAC and MP3 are supported; only the first leading ID3v2 tag of an MP3 is rewritten.

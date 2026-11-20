@@ -1119,6 +1119,31 @@ bool AlbumCollection::SaveAlbumsToJSON(std::shared_ptr<DirectoryContentEntryList
 
 
 
+namespace {
+// Rewrites a single console line in place; ends the line on destruction so later output starts cleanly.
+class InlineConsoleProgress {
+public:
+    InlineConsoleProgress() : enabled_(PlatformUtils::IsStdoutInteractive()) {}
+    ~InlineConsoleProgress() { Finish(); }
+    void Finish() {
+        if (enabled_ && shown_) std::cout << '\n' << std::flush;
+        shown_ = false;
+        lastLength_ = 0;
+    }
+    void Update(std::string_view text) {
+        if (!enabled_) return;
+        const auto padding = lastLength_ > text.size() ? lastLength_ - text.size() : 0;
+        std::cout << '\r' << text << std::string(padding, ' ') << std::flush;
+        lastLength_ = text.size();
+        shown_ = true;
+    }
+private:
+    bool enabled_;
+    bool shown_ = false;
+    std::size_t lastLength_ = 0;
+};
+}
+
 //ststic function that loads album list from a Json file and returns a DirectoryContentEntryList object
 std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(std::filesystem::path path)
 {
@@ -1169,29 +1194,34 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
 
     //Albums
     int iAlbumCount = 0;
-    spdlog::info("");
-	auto albumListSize = doc.GetArray().Capacity();
+    const auto albumListSize = doc.Size();
+    InlineConsoleProgress progress;
     for (const auto& albumVal : doc.GetArray()) {
         TrackInfoList trackList;
 
         // Validate that albumVal is an object with required fields
         if (!albumVal.IsObject()) {
+            progress.Finish();
             spdlog::error("Album entry {} is not an object", iAlbumCount);
             return nullptr;
         }
         if (!albumVal.HasMember("Album Path") || !albumVal["Album Path"].IsString()) {
+            progress.Finish();
             spdlog::error("Album entry {} missing or invalid Album Path", iAlbumCount);
             return nullptr;
         }
         if (!albumVal.HasMember("Folder") || !albumVal["Folder"].IsString()) {
+            progress.Finish();
             spdlog::error("Album entry {} missing or invalid Folder", iAlbumCount);
             return nullptr;
         }
         if (!albumVal.HasMember("Tracks") || !albumVal["Tracks"].IsArray()) {
+            progress.Finish();
             spdlog::error("Album entry {} missing or invalid Tracks array", iAlbumCount);
             return nullptr;
         }
         if (albumVal["Tracks"].Empty()) {
+            progress.Finish();
             spdlog::error("Album entry {} has no tracks", iAlbumCount);
             return nullptr;
         }
@@ -1202,6 +1232,7 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
         if (albumVal.HasMember("Scan Manifest ID")) {
             if (!albumVal["Scan Manifest ID"].IsString() ||
                 albumVal["Scan Manifest ID"].GetStringLength() == 0) {
+                progress.Finish();
                 spdlog::error("Album entry {} has invalid scan manifest identity.", iAlbumCount);
                 return nullptr;
             }
@@ -1219,6 +1250,7 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
                 fragment["index"].GetUint64() >= fragment["count"].GetUint64() ||
                 albumVal["Tracks"].Size() != 1 ||
                 !albumVal.HasMember("Library Root") || !albumVal["Library Root"].IsString()) {
+                progress.Finish();
                 spdlog::error("Album entry {} has invalid fragment metadata.", iAlbumCount);
                 return nullptr;
             }
@@ -1235,22 +1267,20 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
         }
 
 
-        // Updated logging to reflect new album name source
-        std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
-        std::cout << "\33[A\33[2K\r";  // Move up 1 line, clear it, and return to start
-        //auto albumLogStr = std::format(L"Album [{}]: {}", ++iAlbumCount, albumpath);
-        spdlog::info("Loading albums... Album {}/{}", ++iAlbumCount, albumListSize);
+        progress.Update(std::format("Loading albums... Album {}/{}", ++iAlbumCount, albumListSize));
 
 
         const auto& mediaTrackList = albumVal["Tracks"].GetArray();
         for (SizeType i = 0; i < mediaTrackList.Size(); i++) {
             if (!mediaTrackList[i].IsObject()) {
+                progress.Finish();
                 spdlog::error("Track {} in album '{}' has invalid metadata structure",
                     i, albumPathStr);
                 return nullptr;
             }
             if (mediaTrackList[i].HasMember("schemaVersion")) {
                 if (!libraryRoot) {
+                    progress.Finish();
                     spdlog::error("Schema-v2 album '{}' is missing Library Root; rescan is required.",
                         albumPathStr);
                     return nullptr;
@@ -1258,6 +1288,7 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
                 std::string parseError;
                 auto record = ParseMediaRecord(mediaTrackList[i], &parseError);
                 if (!record) {
+                    progress.Finish();
                     spdlog::error("Track {} in album '{}' has invalid catalog metadata: {}",
                         i, albumPathStr, parseError);
                     return nullptr;
@@ -1277,6 +1308,7 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
             }
             if (!mediaTrackList[i].HasMember("format") ||
                 !mediaTrackList[i]["format"].IsObject()) {
+                progress.Finish();
                 spdlog::error("Track {} in album '{}' has invalid metadata structure",
                     i, albumPathStr);
                 return nullptr;
@@ -1285,6 +1317,7 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
             if (!std::ranges::any_of(mi.streams, [](const Stream& stream) {
                     return stream.codec_type == "audio";
                 })) {
+                progress.Finish();
                 spdlog::error("Track {} in album '{}' has no audio stream metadata", i, albumPathStr);
                 return nullptr;
             }
@@ -1310,6 +1343,8 @@ std::shared_ptr<DirectoryContentEntryList> AlbumCollection::LoadAlbumsFromJSON(s
 
     }
 
+    progress.Finish();
+    spdlog::info("Loaded {} album record(s) from '{}'.", iAlbumCount, CommonUtils::path_to_utf8(path));
     return albumListPtr;
 }
 
