@@ -48,6 +48,7 @@ extern "C" {
 #include "CommandLine.h"
 #include "FolderConvert.h"
 #include "AudioRepair.h"
+#include "RepairRules.h"
 #include "FlacMetadata.h"
 #include "DuplicateComparison.h"
 #include "DuplicateMatcher.h"
@@ -1559,6 +1560,20 @@ int RepairConfiguredLibraries(const std::vector<MediaDirectoryElement>& librarie
         }
         std::cout << "Invalid selection. Enter YES or NO.\n";
     }
+    bool removeId3v1 = false;
+    for (;;) {
+        std::string response;
+        const auto choice = ReadManualSetting("Remove redundant MP3 ID3v1 tags [NO] (YES/NO): ", response);
+        if (choice != MenuConfirmation::Run) return cancelledMenuResult(choice);
+        if (response.empty() || response == "NO") break;
+        if (response == "YES") {
+            removeId3v1 = true;
+            break;
+        }
+        std::cout << "Invalid selection. Enter YES or NO.\n";
+    }
+    auto rules = RepairRules::DefaultRules();
+    if (removeId3v1) rules.insert("mp3.redundant-id3v1");
 
     std::vector<AudioRepair::Plan> plans;
     plans.reserve(libraries.size());
@@ -1572,7 +1587,7 @@ int RepairConfiguredLibraries(const std::vector<MediaDirectoryElement>& librarie
         }
         AudioRepair::Plan plan;
         const auto target = outputRoot / "FIXED" / name;
-        if (AudioRepair::Prepare(source, target, overwrite, {}, plan) != 0) return 1;
+        if (AudioRepair::Prepare(source, target, overwrite, rules, plan) != 0) return 1;
         summary.outputs.push_back(absoluteDisplayPath(target));
         std::cout << "\nOperation preview: validate and repair FLAC/MP3 metadata\n"
             << "  Input: " << pathToUtf8(plan.input) << '\n'
@@ -1587,7 +1602,9 @@ int RepairConfiguredLibraries(const std::vector<MediaDirectoryElement>& librarie
                 [](const AudioRepair::Finding& finding) {
                     return finding.status == "manual-review" || finding.status == "unreadable";
                 }) << '\n'
-            << "  Overwrite: " << (overwrite ? "enabled" : "disabled") << '\n';
+            << "  Overwrite: " << (overwrite ? "enabled" : "disabled") << '\n'
+            << "  Remove redundant MP3 ID3v1: " << (removeId3v1 ? "enabled" : "disabled") << '\n'
+            << "  Parallel workers: " << plan.workers << '\n';
         PrintRepairFindings(plan);
         for (const auto& conflict : plan.conflicts) {
             std::cout << "    COLLISION: " << pathToUtf8(conflict) << '\n';
@@ -1620,6 +1637,7 @@ int RepairConfiguredLibraries(const std::vector<MediaDirectoryElement>& librarie
         "  Fix rules change metadata only (redundant tags, duplicate/empty comments, picture descriptors,\n"
         "  invalid seek tables, ID3v2.3 text encodings). Non-redundant, conflicting or unreadable metadata is left\n"
         "  unchanged and reported. The audio byte range is copied and verified; never decoded or re-encoded.\n"
+        "  MP3 ID3v1 tags are kept unless removal was explicitly enabled.\n"
         "  repair-report.json records findings, applied rules and installed files.\n";
     const auto confirmation = ConfirmPreview();
     if (confirmation != MenuConfirmation::Run) return cancelledMenuResult(confirmation);
@@ -2946,6 +2964,7 @@ constexpr std::array<MenuEntry, 7> MenuEntries{ {
         "      Audio bytes are copied and verified unchanged; never decoded or re-encoded.\n"
         "      Non-redundant, conflicting or unreadable metadata is left unchanged for manual review.\n"
         "      repair-report.json records findings, applied rules and installation states.\n"
+        "      Redundant MP3 ID3v1 removal is opt-in; four workers process files in parallel.\n"
         "      Sources are never modified. Existing destinations fail unless overwrite is enabled.\n"
         "      RUN confirms execution; read/write/verification failures retain the marker and report.\n" }
 } };
@@ -3248,9 +3267,14 @@ int RunWithArgumentsImpl(const std::vector<const char*>& arguments)
                 return 1;
             }
             AudioRepair::Plan plan;
+            auto rules = options.repairRules.empty() ? RepairRules::DefaultRules() : options.repairRules;
+            if (options.repairRemoveId3v1) rules.insert("mp3.redundant-id3v1");
             if (AudioRepair::Prepare(inputPath, outputDirectory / "FIXED" / name,
-                    options.overwrite, options.repairRules, plan) != 0) {
+                    options.overwrite, rules, plan, options.repairJobs, options.repairDryRun) != 0) {
                 return 1;
+            }
+            if (options.repairDryRun) {
+                return AudioRepair::PrintDryRunReport(plan);
             }
             std::cout << "Repair preview: " << pathToUtf8(plan.input) << '\n'
                 << "  Output: " << pathToUtf8(plan.output) << '\n'

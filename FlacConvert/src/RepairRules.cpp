@@ -37,11 +37,11 @@ const std::vector<RuleInfo> kCatalog{
     { "mp3.duplicate-frames", "mp3", true, "Byte-identical repeated ID3v2 frames are removed." },
     { "mp3.empty-frames", "mp3", true, "ID3v2 text frames without text are removed." },
     { "mp3.text-encoding", "mp3", true,
-        "ID3v2.3 text frames using UTF-8/UTF-16BE (2.4-only encodings) are rewritten as UTF-16 with BOM." },
+        "ID3v2.3 text, comment and lyrics frames using UTF-8/UTF-16BE are rewritten as UTF-16 with BOM." },
     { "mp3.picture-mime", "mp3", true,
         "APIC MIME type corrected to match the image bytes; empty or unrecognized images are reported." },
     { "mp3.redundant-id3v1", "mp3", true,
-        "ID3v1 tag removed when the ID3v2 tag already holds its fields, else reported." },
+        "Opt-in: ID3v1 tag removed when the ID3v2 tag already holds its fields, else reported." },
     { "mp3.ape-lyrics3", "mp3", true,
         "APEv2 tag removed when redundant with ID3v2; other APEv2 and Lyrics3 tags are reported." },
     { "mp3.stream-garbage", "mp3", false, "Non-audio bytes before the first MPEG frame are reported." },
@@ -929,6 +929,7 @@ Analysis analyzeFlac(Reader& reader, const std::set<std::string>& enabled)
     Context context(enabled);
     std::uint64_t offset = 0;
     const auto leading = readLeadingId3(reader, offset);
+    const auto metadataStart = offset;
     if (!reader.Matches(offset, "fLaC")) throw std::runtime_error("Not a native FLAC stream.");
     offset += 4;
 
@@ -1188,6 +1189,26 @@ Analysis analyzeFlac(Reader& reader, const std::set<std::string>& enabled)
 
     Analysis analysis{ std::move(context.findings), std::nullopt };
     if (!context.changed) return analysis;
+    const auto originalMetadataSize = audioOffset - metadataStart;
+    std::uint64_t updatedMetadataSize = 4;
+    for (std::size_t index = 0; index < blocks.size(); ++index) {
+        if (!removed.contains(index)) updatedMetadataSize += 4 + blocks[index].data.size();
+    }
+    if (updatedMetadataSize < originalMetadataSize) {
+        auto remaining = originalMetadataSize - updatedMetadataSize;
+        for (std::size_t index = 0; index < blocks.size() && remaining > 0; ++index) {
+            if (removed.contains(index) || blocks[index].type != 1) continue;
+            const auto capacity = 0x00ffffffU - blocks[index].data.size();
+            const auto extra = static_cast<std::size_t>(std::min<std::uint64_t>(remaining, capacity));
+            blocks[index].data.resize(blocks[index].data.size() + extra, 0);
+            remaining -= extra;
+        }
+        while (remaining >= 4) {
+            const auto size = static_cast<std::size_t>(std::min<std::uint64_t>(remaining - 4, 0x00ffffffU));
+            blocks.push_back({ 1, Bytes(size, 0) });
+            remaining -= size + 4;
+        }
+    }
     head.insert(head.end(), { 'f', 'L', 'a', 'C' });
     std::vector<const FlacBlock*> kept;
     for (std::size_t index = 0; index < blocks.size(); ++index) {
@@ -1321,17 +1342,25 @@ Analysis analyzeMp3(Reader& reader, const std::set<std::string>& enabled)
             std::size_t fixed = 0, review = 0;
             std::set<std::string> ids;
             for (auto& frame : tag.frames) {
-                if (!textFrame(frame) || !plainFrame(tag, frame) || frame.data.empty()) continue;
+                const bool described = frame.id == "TXXX" || frame.id == "COMM" || frame.id == "USLT";
+                if ((!textFrame(frame) && !described) || !plainFrame(tag, frame) || frame.data.empty()) continue;
                 const auto encoding = frame.data[0];
                 if (encoding <= 1 || (tag.major == 4 && encoding <= 3)) continue;
+                const std::size_t textOffset = frame.id == "COMM" || frame.id == "USLT" ? 4 : 1;
+                if (frame.data.size() < textOffset) {
+                    ++review;
+                    continue;
+                }
                 bool terminated = false;
                 const auto strings = encoding <= 3 ?
-                    id3Strings(encoding, frame.data.data() + 1, frame.data.size() - 1, &terminated) : std::nullopt;
-                if (!strings) {
+                    id3Strings(encoding, frame.data.data() + textOffset, frame.data.size() - textOffset, &terminated) : std::nullopt;
+                if (!strings || (described && strings->size() < 2 && !(strings->size() == 1 && terminated))) {
                     ++review;
                     continue;
                 }
                 Bytes data{ 1 };
+                data.insert(data.end(), frame.data.begin() + 1,
+                    frame.data.begin() + static_cast<std::ptrdiff_t>(textOffset));
                 for (std::size_t index = 0; index < strings->size(); ++index) {
                     if (index != 0) data.insert(data.end(), { 0, 0 });
                     const auto encoded = utf16LeWithBom((*strings)[index]);
@@ -1491,6 +1520,15 @@ bool compareBytes(std::ifstream& stream, std::uint64_t offset, const Bytes& expe
 const std::vector<RuleInfo>& Catalog()
 {
     return kCatalog;
+}
+
+std::set<std::string> DefaultRules()
+{
+    std::set<std::string> rules;
+    for (const auto& rule : kCatalog) {
+        if (rule.id != "mp3.redundant-id3v1") rules.insert(rule.id);
+    }
+    return rules;
 }
 
 bool IsKnownRule(const std::string& id)

@@ -163,7 +163,9 @@ overwriting), then the audio; on audio failure it restores or removes the sideca
 ### Metadata repair (menu 7, `repair`)
 
 `AudioRepair::Prepare` recursively inspects `.flac` and `.mp3` files with `RepairRules::Analyze`, a rule catalog
-(`RepairRules::Catalog`; `--rules` limits the CLI to listed ids, the menu enables all). Each rule yields findings that
+(`RepairRules::Catalog`; `--rules` limits the CLI to listed ids). The default rule set retains MP3 ID3v1 for older
+players; the CLI `--remove-id3v1`, explicit `--rules mp3.redundant-id3v1`, or the per-run menu prompt opts in to its
+removal when redundant. Each rule yields findings that
 are either automatically fixable or review-only. Fixes only rewrite metadata: an edit is
 `head + source[audioOffset, audioOffset + audioSize) + tail`, so the audio/frame range is copied byte-for-byte and
 never decoded. A tag is removed only when it is empty, a byte-identical duplicate, or fully redundant with another
@@ -180,13 +182,14 @@ exists in the kept tag (track/disc totals included) and every embedded picture's
 | `flac.invalid-comments`, `flac.missing-md5` | Review only |
 | `mp3.duplicate-id3v2` | Remove a repeated leading ID3v2 tag when redundant with the first |
 | `mp3.duplicate-frames`, `mp3.empty-frames` | Remove byte-identical repeated or empty ID3v2 text frames |
-| `mp3.text-encoding` | Re-encode ID3v2.3 frames using v2.4-only encodings (UTF-16BE/UTF-8) as UTF-16 with BOM |
+| `mp3.text-encoding` | Re-encode ID3v2.3 text, TXXX, COMM and USLT frames using v2.4-only encodings (UTF-16BE/UTF-8) as UTF-16 with BOM; malformed fields are review-only |
 | `mp3.picture-mime` | Correct APIC MIME from image magic bytes |
-| `mp3.redundant-id3v1`, `mp3.ape-lyrics3` | Remove ID3v1/APE/Lyrics3 when every value is in ID3v2; otherwise review |
+| `mp3.redundant-id3v1`, `mp3.ape-lyrics3` | Remove redundant ID3v1 (opt-in) or APE when every value is in ID3v2; otherwise review; Lyrics3 is review-only |
 | `mp3.stream-garbage` | Review only |
 
 Rewritten ID3v2 tags keep their original size (padding absorbs shrinkage), so MP3 frame offsets do not move.
-Unreadable files are reported as `unreadable`.
+Existing FLAC padding is retained and expanded, or a new padding block is added when possible, to absorb shrinkage
+of the FLAC metadata section. Unreadable files are reported as `unreadable`.
 
 Output is a separate `FIXED/<library-name>` tree. Only folders containing a safe repair are copied, each with its
 subfolders (a nested repaired folder is copied once, as part of its nearest repaired ancestor); every regular
@@ -194,7 +197,11 @@ file in those folders is retained, and unrelated files are copied byte-for-byte.
 unique temporary, then verified (`RepairRules::Verify`) against the plan: exact size, head and tail bytes equal to
 the planned edit, audio range byte-identical to the source, and re-analysis finds no remaining fixable defect. Execute
 re-analyzes each source first and fails if its fixes no longer match the preview. Only verified output is installed;
-sources are never modified. Existing destinations fail unless overwrite is enabled. An in-progress marker and
+sources are never modified. Inspection and verified staging use bounded parallel workers (four by default;
+CLI `--jobs` accepts 1–16); installation and report updates are ordered, and after the first failure uninstalled
+staged files are cleaned up. Existing destinations fail unless overwrite is enabled. CLI `--dry-run` prints a complete
+schema-2 JSON report with `status: dry-run` and `plannedRules`, without creating repair output; usual session logs
+still apply. An in-progress marker and
 `repair-report.json` (schema 2) record execution state, enabled rules, findings with rule/count/status, per-file applied rules, installation status and audio/metadata impact. The
 CLI returns non-zero when there are findings requiring manual review or when an operation fails.
 

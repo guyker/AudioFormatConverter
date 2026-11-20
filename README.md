@@ -104,7 +104,8 @@ Option `7` checks FLAC and MP3 files for common metadata defects (redundant ID3/
 wrong picture MIME types or FLAC picture dimensions/depth, invalid FLAC seek tables, ID3v2.3 encoding errors, and more). It writes repaired copies to
 `OutDirectory\FIXED\<mediaName>`, copying only affected folders and keeping other files unchanged; audio bytes are
 copied unchanged and sources are never modified. Conflicting values and unreadable files are left for manual review
-and listed in `repair-report.json`.
+and listed in `repair-report.json`. Redundant MP3 ID3v1 tags are kept unless removal is explicitly enabled, to
+preserve compatibility with older players. Four workers inspect and stage files concurrently.
 
 The console menu options are:
 
@@ -187,6 +188,8 @@ FlacConvert duplicates "E:\Catalog\Music" --report "E:\Reports\duplicates.json"
 FlacConvert db import "E:\Catalog\Music" --output-dir "E:\Databases"
 FlacConvert repair "D:\Music" --output-dir "E:\Repaired"
 FlacConvert repair "D:\Music" --rules flac.duplicate-comments,mp3.redundant-id3v1
+FlacConvert repair "D:\Music" --dry-run --jobs 2
+FlacConvert repair "D:\Music" --remove-id3v1
 ```
 
 `convert` writes FLAC files to a separate output tree and preserves source files. Sources below 16-bit or 44.1 kHz, or
@@ -212,7 +215,9 @@ manifest before using marked batches. `DecodeWorkers` caps the independent full-
 opening folders; pass `--open` to open matched folders in Explorer. `db import` creates or updates a library-named
 `catalog-v2.sqlite` database and leaves legacy `.db` files untouched. `repair` writes metadata-only FLAC/MP3 fixes to
 `<output-root>\FIXED\<input-folder-name>`; `--rules` limits it to listed rule ids (see `FlacConvert repair --help`).
-It verifies byte-identical audio before installation and reports unresolved findings rather than guessing.
+`--dry-run` prints a complete JSON report without writing repair output, and `--jobs` selects 1–16 workers
+(default 4). Normal session logs still apply. It verifies byte-identical audio before installation and reports
+unresolved findings rather than guessing.
 
 ### FLAC output preservation
 

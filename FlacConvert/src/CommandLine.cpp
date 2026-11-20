@@ -135,7 +135,13 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
         ->each([&options](const std::string&) { options.outputDirectorySpecified = true; });
     repair->add_flag("--overwrite", options.overwrite,
         "Replace existing repair destinations only after each output is verified.");
-    std::string ruleHelp = "Comma-separated rule ids to run (default: all). Rules:";
+    repair->add_flag("--dry-run", options.repairDryRun,
+        "Inspect and print a complete JSON report without writing repair output.");
+    repair->add_flag("--remove-id3v1", options.repairRemoveId3v1,
+        "Allow removal of redundant MP3 ID3v1 tags (kept by default for older players).");
+    repair->add_option("--jobs", options.repairJobs, "Maximum parallel repair workers (1-16; default 4).")
+        ->check(CLI::Range(1, 16));
+    std::string ruleHelp = "Comma-separated rule ids to run (default: all except mp3.redundant-id3v1). Rules:";
     for (const auto& rule : RepairRules::Catalog()) {
         ruleHelp += "\n    " + rule.id + (rule.canFix ? " [fix]: " : " [report]: ") + rule.description;
     }
@@ -146,7 +152,7 @@ int ParseCommandLine(int argc, const char* const argv[], CommandLineOptions& opt
         });
     add_config_option(repair, options);
     repair->footer(command_footer(
-        "Inspects native FLAC and MP3 files with metadata-only rules (see --rules). Fix rules rebuild only metadata: tags, comments, picture descriptors or padding; the audio data range is copied byte-for-byte and verified, never decoded or re-encoded. Tags are removed only when every field is already present in the primary tag (Vorbis comments for FLAC, the first ID3v2 tag for MP3); anything else is reported for manual review and left unchanged. Report-only rules never change files. Only folders containing a repair are copied, with their other files unchanged. Sources are never modified. The output includes repair-report.json; findings needing review exit with code 1. Existing destinations fail unless --overwrite is supplied.",
+        "Inspects native FLAC and MP3 files with metadata-only rules (see --rules). Audio bytes are copied and verified unchanged. Redundant MP3 ID3v1 tags are kept by default; --remove-id3v1 or explicitly selecting mp3.redundant-id3v1 opts in. --dry-run prints a complete JSON report and writes no repair output. --jobs limits parallel workers (default 4). Only affected folders are copied; sources are never modified. Findings needing review exit with code 1. Existing destinations fail unless --overwrite is supplied.",
         "  FlacConvert repair \"D:\\Music\"\n"
         "  FlacConvert repair \"D:\\Music\" --output-dir \"E:\\Repaired\"\n"
         "  FlacConvert repair \"D:\\Music\" --rules flac.duplicate-comments,mp3.redundant-id3v1"));

@@ -39,6 +39,8 @@ struct Plan
     std::filesystem::path input;
     std::filesystem::path output;
     bool overwrite{ false };
+    bool dryRun{ false };
+    std::size_t workers{ 4 };
     // Empty enables every rule.
     std::set<std::string> rules;
     std::size_t inspectedFiles{ 0 };
@@ -49,6 +51,8 @@ struct Plan
 };
 
 int Prepare(const std::filesystem::path& input, const std::filesystem::path& output,
-    bool overwrite, const std::set<std::string>& rules, Plan& plan);
+    bool overwrite, const std::set<std::string>& rules, Plan& plan,
+    std::size_t workers = 4, bool dryRun = false);
 int Execute(Plan& plan, std::size_t* repaired = nullptr, std::size_t* copied = nullptr);
+int PrintDryRunReport(const Plan& plan);
 }

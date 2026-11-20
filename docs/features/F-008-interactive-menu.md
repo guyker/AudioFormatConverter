@@ -10,7 +10,8 @@ Conflicts block the run before installing output. After a started or failed oper
 completed or Failed with confirmed counts, and the program exits. Duplicate review also reports `Stopped by user`
 when ended early. `0` or EOF at the menu exits; `?` shows help.
 Option 7 validates and repairs recognized FLAC/MP3 metadata issues into `OutDirectory/FIXED/<mediaName>` without
-modifying sources; it copies only folders with safe repairs and requires `RUN` after preview. See F-011 for the
+modifying sources; it copies only folders with safe repairs and requires `RUN` after preview. Redundant MP3 ID3v1
+removal is offered per run and defaults to NO. See F-011 for the
 supported repair and manual-review cases.
 After the initial `RUN`, option 3 pauses per duplicate group, with a numbered evidence/metadata recap beside the
 choice prompt; an optional whole-folder move to `deleted` requires

@@ -1,5 +1,6 @@
 #include "AudioRepair.h"
 
+#include "BoundedTaskRunner.h"
 #include "CommonUtils.h"
 #include "MediaConvertionTask.h"
 #include "PlatformUtils.h"
@@ -17,6 +18,7 @@
 #include <cstdint>
 #include <fstream>
 #include <iterator>
+#include <iostream>
 #include <map>
 #include <optional>
 #include <set>
@@ -107,8 +109,7 @@ bool isSameOrChildPath(const fs::path& candidate, const fs::path& base)
     return true;
 }
 
-bool writeReport(const AudioRepair::Plan& plan, const fs::path& reportPath,
-    const std::string& status, const std::string& error)
+std::string reportJson(const AudioRepair::Plan& plan, const std::string& status, const std::string& error)
 {
     rapidjson::StringBuffer buffer;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
@@ -130,6 +131,9 @@ bool writeReport(const AudioRepair::Plan& plan, const fs::path& reportPath,
     writer.Key("copiedFiles");
     writer.Uint64(static_cast<std::uint64_t>(std::count_if(plan.files.begin(), plan.files.end(),
         [](const AudioRepair::PlannedFile& file) { return !file.repair && file.status == "installed"; })));
+    writer.Key("conflicts"); writer.StartArray();
+    for (const auto& conflict : plan.conflicts) writer.String(utf8(conflict).c_str());
+    writer.EndArray();
     writer.Key("findings"); writer.StartArray();
     for (const auto& finding : plan.findings) {
         writer.StartObject();
@@ -149,7 +153,7 @@ bool writeReport(const AudioRepair::Plan& plan, const fs::path& reportPath,
         writer.Key("action"); writer.String(file.repair ? "repair" : "copy");
         writer.Key("status"); writer.String(file.status.c_str());
         if (file.repair) {
-            writer.Key("appliedRules"); writer.StartArray();
+            writer.Key(plan.dryRun ? "plannedRules" : "appliedRules"); writer.StartArray();
             for (const auto& [rule, count] : file.fixes) {
                 writer.StartObject();
                 writer.Key("rule"); writer.String(rule.c_str());
@@ -160,7 +164,9 @@ bool writeReport(const AudioRepair::Plan& plan, const fs::path& reportPath,
             writer.Key("impact"); writer.StartObject();
             writer.Key("audio"); writer.String("Byte-identical audio data range; not decoded or re-encoded.");
             writer.Key("metadata");
-            writer.String("Only the metadata named by the applied rules changed; see the matching findings.");
+            writer.String(plan.dryRun ?
+                "The planned rules would change metadata; FLAC padding may also change." :
+                "Metadata named by the applied rules changed; FLAC padding may also change.");
             writer.EndObject();
         }
         else {
@@ -171,21 +177,26 @@ bool writeReport(const AudioRepair::Plan& plan, const fs::path& reportPath,
     }
     writer.EndArray();
     writer.EndObject();
+    return std::string(buffer.GetString(), buffer.GetSize());
+}
 
+bool writeReport(const AudioRepair::Plan& plan, const fs::path& reportPath,
+    const std::string& status, const std::string& error)
+{
+    const auto content = reportJson(plan, status, error);
     const auto temporary = temporaryPath(reportPath);
     std::error_code ec;
     if (fs::exists(ioPath(temporary, plan.output), ec) || ec) return false;
     std::ofstream output(ioPath(temporary, plan.output), std::ios::binary | std::ios::trunc);
     if (!output) return false;
-    output.write(buffer.GetString(), static_cast<std::streamsize>(buffer.GetSize()));
+    output.write(content.data(), static_cast<std::streamsize>(content.size()));
     output.flush();
     const bool success = static_cast<bool>(output);
     output.close();
     if (!success || output.fail()) return false;
     std::ifstream verify(ioPath(temporary, plan.output), std::ios::binary);
     const std::string actual{ std::istreambuf_iterator<char>(verify), std::istreambuf_iterator<char>() };
-    const bool reportMatches = !verify.bad() &&
-        actual == std::string(buffer.GetString(), buffer.GetSize());
+    const bool reportMatches = !verify.bad() && actual == content;
     verify.close();
     if (!reportMatches) return false;
     if (!MediaConvertionTask::InstallOutputFile(ioPath(temporary, plan.output),
@@ -199,10 +210,16 @@ bool writeReport(const AudioRepair::Plan& plan, const fs::path& reportPath,
 namespace AudioRepair
 {
 int Prepare(const fs::path& input, const fs::path& output, bool overwrite,
-    const std::set<std::string>& rules, Plan& plan)
+    const std::set<std::string>& rules, Plan& plan, std::size_t workers, bool dryRun)
 {
     plan = {};
     plan.rules = rules;
+    plan.workers = workers;
+    plan.dryRun = dryRun;
+    if (workers == 0 || workers > 16) {
+        spdlog::error("Repair workers must be between 1 and 16.");
+        return -1;
+    }
     std::error_code ec;
     plan.input = fs::absolute(input, ec).lexically_normal();
     if (ec || !fs::is_directory(plan.input, ec) || ec) {
@@ -229,6 +246,7 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite,
 
     std::set<fs::path> affected;
     std::map<fs::path, FixList> repairSources;
+    std::vector<fs::path> candidates;
     try {
         for (const auto& entry : fs::recursive_directory_iterator(plan.input)) {
             const auto status = entry.symlink_status();
@@ -240,28 +258,55 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite,
                 continue;
             }
             if (!fs::is_regular_file(status) || !RepairRules::IsSupportedFile(entry.path())) continue;
-            ++plan.inspectedFiles;
-            try {
-                const auto analysis = RepairRules::Analyze(entry.path(), plan.rules);
-                for (const auto& finding : analysis.findings) {
-                    plan.findings.push_back({ entry.path(), finding.rule,
-                        finding.fix ? "repairable" : "manual-review", finding.count, finding.detail });
-                }
-                if (analysis.edit) {
-                    auto folder = entry.path().parent_path().lexically_relative(plan.input);
-                    if (folder == ".") folder.clear();
-                    affected.insert(std::move(folder));
-                    repairSources.emplace(entry.path(), fixesOf(analysis));
-                }
-            }
-            catch (const std::exception& exception) {
-                plan.findings.push_back({ entry.path(), "unreadable", "unreadable", 1, exception.what() });
-            }
+            candidates.push_back(entry.path());
         }
     }
     catch (const fs::filesystem_error& exception) {
         spdlog::error("Cannot inspect repair input: {}", exception.what());
         return -1;
+    }
+    std::sort(candidates.begin(), candidates.end());
+    struct Inspection {
+        std::vector<Finding> findings;
+        FixList fixes;
+        bool repair{ false };
+    };
+    std::vector<Inspection> inspections(candidates.size());
+    try {
+        BoundedTaskRunner::ForEach(candidates.size(), workers, [&](std::size_t index) {
+            const auto& path = candidates[index];
+            auto& inspection = inspections[index];
+            try {
+                const auto analysis = RepairRules::Analyze(path, plan.rules);
+                for (const auto& finding : analysis.findings) {
+                    inspection.findings.push_back({ path, finding.rule,
+                        finding.fix ? "repairable" : "manual-review", finding.count, finding.detail });
+                }
+                if (analysis.edit) {
+                    inspection.repair = true;
+                    inspection.fixes = fixesOf(analysis);
+                }
+            }
+            catch (const std::exception& exception) {
+                inspection.findings.push_back({ path, "unreadable", "unreadable", 1, exception.what() });
+            }
+        });
+    }
+    catch (const std::exception& exception) {
+        spdlog::error("Cannot run repair inspections: {}", exception.what());
+        return -1;
+    }
+    plan.inspectedFiles = candidates.size();
+    for (std::size_t index = 0; index < candidates.size(); ++index) {
+        auto& inspection = inspections[index];
+        plan.findings.insert(plan.findings.end(), std::make_move_iterator(inspection.findings.begin()),
+            std::make_move_iterator(inspection.findings.end()));
+        if (inspection.repair) {
+            auto folder = candidates[index].parent_path().lexically_relative(plan.input);
+            if (folder == ".") folder.clear();
+            affected.insert(std::move(folder));
+            repairSources.emplace(candidates[index], std::move(inspection.fixes));
+        }
     }
 
     const bool rootAffected = affected.contains(fs::path{});
@@ -299,6 +344,10 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite,
                     return -1;
                 }
                 const auto size = entry.file_size(ec);
+                if (ec) {
+                    spdlog::error("Cannot inspect repair source '{}': {}", utf8(entry.path()), ec.message());
+                    return -1;
+                }
                 const auto modified = entry.last_write_time(ec);
                 if (ec) {
                     spdlog::error("Cannot inspect repair source '{}': {}", utf8(entry.path()), ec.message());
@@ -336,6 +385,9 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite,
         spdlog::error("Cannot prepare affected repair folders: {}", exception.what());
         return -1;
     }
+    std::sort(plan.files.begin(), plan.files.end(), [](const PlannedFile& left, const PlannedFile& right) {
+        return left.source < right.source;
+    });
 
     for (const auto& directory : directories) {
         const auto target = plan.output / directory;
@@ -354,15 +406,31 @@ int Prepare(const fs::path& input, const fs::path& output, bool overwrite,
         return -1;
     }
     const auto marker = plan.output / ".repair-in-progress";
-    if (fs::exists(marker, ec) || ec) {
+    if (!dryRun && (fs::exists(marker, ec) || ec)) {
         spdlog::error("Repair output has an existing in-progress marker or cannot be inspected.");
         return -1;
     }
     return 0;
 }
 
+int PrintDryRunReport(const Plan& plan)
+{
+    std::cout << reportJson(plan, "dry-run", {}) << '\n' << std::flush;
+    if (!std::cout) {
+        spdlog::error("Cannot write the dry-run report.");
+        return 1;
+    }
+    const bool attention = std::any_of(plan.findings.begin(), plan.findings.end(),
+        [](const Finding& finding) { return finding.status == "manual-review" || finding.status == "unreadable"; });
+    return attention ? 1 : 0;
+}
+
 int Execute(Plan& plan, std::size_t* repaired, std::size_t* copied)
 {
+    if (plan.dryRun) {
+        spdlog::error("A dry-run plan cannot be executed.");
+        return -1;
+    }
     if (!plan.conflicts.empty()) {
         spdlog::error("Repair plan has {} destination conflicts.", plan.conflicts.size());
         return -1;
@@ -390,119 +458,133 @@ int Execute(Plan& plan, std::size_t* repaired, std::size_t* copied)
     }
 
     std::string error;
-    fs::path currentAlbum;
-    for (auto& file : plan.files) {
-        file.status = "processing";
-        if (file.repair && file.source.parent_path() != currentAlbum) {
-            currentAlbum = file.source.parent_path();
-            spdlog::info("Repairing album folder: {}", utf8(currentAlbum));
-        }
-        if (file.repair) {
-            spdlog::info("Checking repair candidate: {}",
-                utf8(file.source.lexically_relative(plan.input)));
-        }
-        const auto relative = file.target.lexically_relative(plan.output);
-        const auto temporary = file.temporary.lexically_relative(plan.output);
-        if (relative.empty() || temporary.empty() || *relative.begin() == ".." ||
-            *temporary.begin() == "..") {
-            file.status = "failed";
-            error = "repair destination escaped its output directory";
-            break;
-        }
-        const auto sourceSize = fs::file_size(file.source, ec);
-        const auto sourceModified = fs::last_write_time(file.source, ec);
-        if (ec || sourceSize != file.size || sourceModified != file.modified) {
-            file.status = "failed";
-            error = "source changed after repair preview: " + utf8(file.source);
-            break;
-        }
-        fs::create_directories(resolve(relative.parent_path()), ec);
-        if (ec) {
-            file.status = "failed";
-            error = "cannot create repair output directory: " + ec.message();
-            break;
-        }
-        if (file.repair) {
-            spdlog::info("Staging repaired copy for '{}'.", utf8(file.target.lexically_relative(plan.output)));
-        }
-        const auto sourcePath = file.source;
-        const auto temporaryPathname = resolve(temporary);
-        bool verified = false;
-        if (fs::exists(temporaryPathname, ec) || ec) {
-            file.status = "failed";
-            error = "repair temporary already exists or cannot be inspected: " + utf8(temporaryPathname);
-            break;
-        }
+    struct StagedFile {
         std::optional<RepairRules::Edit> edit;
-        if (file.repair) {
-            try {
-                const auto relativeSource = utf8(file.source.lexically_relative(plan.input));
-                auto analysis = RepairRules::Analyze(sourcePath, plan.rules);
-                if (!analysis.edit || fixesOf(analysis) != file.fixes) {
-                    file.status = "failed";
-                    error = "repair finding changed after preview: " + utf8(sourcePath);
-                    break;
+        std::string error;
+        bool temporaryCreated{ false };
+    };
+    fs::path currentAlbum;
+    for (std::size_t first = 0; first < plan.files.size() && error.empty(); first += plan.workers) {
+        const auto count = (std::min)(plan.workers, plan.files.size() - first);
+        std::vector<StagedFile> staged(count);
+        for (std::size_t index = 0; index < count; ++index) {
+            const auto& file = plan.files[first + index];
+            if (file.repair && file.source.parent_path() != currentAlbum) {
+                currentAlbum = file.source.parent_path();
+                spdlog::info("Repairing album folder: {}", utf8(currentAlbum));
+            }
+        }
+        try {
+            BoundedTaskRunner::ForEach(count, plan.workers, [&](std::size_t index) {
+                auto& file = plan.files[first + index];
+                auto& result = staged[index];
+                file.status = "processing";
+                const auto relative = file.target.lexically_relative(plan.output);
+                const auto temporary = file.temporary.lexically_relative(plan.output);
+                if (relative.empty() || temporary.empty() || *relative.begin() == ".." || *temporary.begin() == "..") {
+                    result.error = "repair destination escaped its output directory";
+                    return;
                 }
-                edit = std::move(analysis.edit);
-                spdlog::info("Prepared metadata edit for '{}': {}.", relativeSource, describeFixes(file.fixes));
-                RepairRules::Write(sourcePath, temporaryPathname, *edit);
-                spdlog::info("Verifying audio and metadata preservation for '{}'.", relativeSource);
-                std::string verificationError;
-                verified = RepairRules::Verify(sourcePath, temporaryPathname, *edit, plan.rules, verificationError);
-                if (!verified) {
-                    file.status = "failed";
-                    error = "repair verification failed for '" + relativeSource + "': " + verificationError;
+                std::error_code fileError;
+                const auto sourceSize = fs::file_size(file.source, fileError);
+                if (fileError) {
+                    result.error = "cannot inspect repair source: " + utf8(file.source) + ": " + fileError.message();
+                    return;
                 }
-            }
-            catch (const std::exception& exception) {
-                file.status = "failed";
-                error = "cannot repair '" + utf8(sourcePath) + "': " + exception.what();
-            }
-        }
-        else {
-            fs::copy_file(sourcePath, temporaryPathname, fs::copy_options::none, ec);
-            if (!ec) {
-                verified = PreservationAudit::VerifyCopy(sourcePath, temporaryPathname);
-                if (!verified) {
-                    file.status = "failed";
-                    error = "unchanged file copy verification failed: " + utf8(sourcePath);
+                const auto sourceModified = fs::last_write_time(file.source, fileError);
+                if (fileError || sourceSize != file.size || sourceModified != file.modified) {
+                    result.error = "source changed after repair preview: " + utf8(file.source);
+                    return;
                 }
-            }
-            else {
+                fs::create_directories(resolve(relative.parent_path()), fileError);
+                if (fileError) {
+                    result.error = "cannot create repair output directory: " + fileError.message();
+                    return;
+                }
+                const auto temp = resolve(temporary);
+                if (fs::exists(temp, fileError) || fileError) {
+                    result.error = "repair temporary already exists or cannot be inspected: " + utf8(temp);
+                    return;
+                }
+                try {
+                    if (file.repair) {
+                        spdlog::info("Checking repair candidate: {}", utf8(file.source.lexically_relative(plan.input)));
+                        auto analysis = RepairRules::Analyze(file.source, plan.rules);
+                        if (!analysis.edit || fixesOf(analysis) != file.fixes) {
+                            result.error = "repair finding changed after preview: " + utf8(file.source);
+                            return;
+                        }
+                        result.edit = std::move(analysis.edit);
+                        result.temporaryCreated = true;
+                        RepairRules::Write(file.source, temp, *result.edit);
+                        std::string verificationError;
+                        if (!RepairRules::Verify(file.source, temp, *result.edit, plan.rules, verificationError)) {
+                            result.error = "repair verification failed for '" + utf8(file.source) + "': " + verificationError;
+                        }
+                    }
+                    else {
+                        result.temporaryCreated = true;
+                        if (!fs::copy_file(file.source, temp, fs::copy_options::none, fileError)) {
+                            result.error = "cannot copy '" + utf8(file.source) + "': " + fileError.message();
+                            return;
+                        }
+                        if (!PreservationAudit::VerifyCopy(file.source, temp)) {
+                            result.error = "unchanged file copy verification failed: " + utf8(file.source);
+                        }
+                    }
+                }
+                catch (const std::exception& exception) {
+                    result.error = "cannot stage '" + utf8(file.source) + "': " + exception.what();
+                }
+            });
+        }
+        catch (const std::exception& exception) {
+            error = "cannot run repair workers: " + std::string(exception.what());
+        }
+        for (std::size_t index = 0; index < count && error.empty(); ++index) {
+            auto& file = plan.files[first + index];
+            auto& result = staged[index];
+            if (!result.error.empty()) {
                 file.status = "failed";
-                error = "cannot copy '" + utf8(sourcePath) + "': " + ec.message();
-            }
-        }
-        if (!verified) {
-            fs::remove(temporaryPathname, ec);
-            break;
-        }
-        if (!MediaConvertionTask::InstallOutputFile(temporaryPathname, resolve(relative), plan.overwrite)) {
-            file.status = "failed";
-            error = "cannot install verified repair output: " + utf8(file.target);
-            break;
-        }
-        if (file.repair) {
-            std::string verificationError;
-            if (!RepairRules::Verify(sourcePath, resolve(relative), *edit, plan.rules, verificationError)) {
-                file.status = "failed";
-                error = "installed repair verification failed: " + verificationError;
+                error = result.error;
                 break;
             }
-            file.status = "installed";
-            for (auto& finding : plan.findings) {
-                if (finding.source == file.source && finding.status == "repairable") finding.status = "repaired";
+            const auto temp = resolve(file.temporary.lexically_relative(plan.output));
+            const auto target = resolve(file.target.lexically_relative(plan.output));
+            if (!MediaConvertionTask::InstallOutputFile(temp, target, plan.overwrite)) {
+                file.status = "failed";
+                error = "cannot install verified repair output: " + utf8(file.target);
+                break;
             }
-            if (repaired) ++*repaired;
-            spdlog::info("Repaired '{}' ({}); audio bytes are unchanged (no decode/re-encode) and only the "
-                "metadata named by these rules changed.",
-                utf8(file.source.lexically_relative(plan.input)), describeFixes(file.fixes));
-        }
-        else {
+            result.temporaryCreated = false;
+            if (file.repair) {
+                std::string verificationError;
+                if (!RepairRules::Verify(file.source, target, *result.edit, plan.rules, verificationError)) {
+                    file.status = "failed";
+                    error = "installed repair verification failed: " + verificationError;
+                    break;
+                }
+                for (auto& finding : plan.findings) {
+                    if (finding.source == file.source && finding.status == "repairable") finding.status = "repaired";
+                }
+                if (repaired) ++*repaired;
+                spdlog::info("Repaired '{}' ({}); audio bytes are unchanged (no decode/re-encode).",
+                    utf8(file.source.lexically_relative(plan.input)), describeFixes(file.fixes));
+            }
+            else if (copied) {
+                ++*copied;
+            }
             file.status = "installed";
-            if (copied) ++*copied;
-            spdlog::debug("Copied unchanged repair-folder file: {}",
-                utf8(file.source.lexically_relative(plan.input)));
+        }
+        for (std::size_t index = 0; index < count; ++index) {
+            auto& file = plan.files[first + index];
+            if (staged[index].temporaryCreated) {
+                std::error_code cleanupError;
+                fs::remove(resolve(file.temporary.lexically_relative(plan.output)), cleanupError);
+                if (cleanupError) spdlog::error("Cannot remove repair temporary '{}': {}",
+                    utf8(file.temporary), cleanupError.message());
+            }
+            if (file.status == "processing") file.status = "not-attempted";
         }
     }
 

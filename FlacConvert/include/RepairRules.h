@@ -21,6 +21,8 @@ struct RuleInfo
 };
 
 const std::vector<RuleInfo>& Catalog();
+// The ID3v1 removal rule is excluded by default for compatibility with older players.
+std::set<std::string> DefaultRules();
 bool IsKnownRule(const std::string& id);
 bool IsSupportedFile(const std::filesystem::path& path);
 
