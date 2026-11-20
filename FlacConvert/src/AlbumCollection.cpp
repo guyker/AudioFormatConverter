@@ -372,9 +372,14 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     startTimePoint = std::chrono::steady_clock::now();
 
     int albumCount = 0;
+    std::size_t lastProgressLength = 0;
+    const std::string scanningText = "Scanning albums, Please wait... ";
     spdlog::info("Second pass: Collect tracks one level deep...");
     // Second pass: Collect files one level deep
-    if (showProgress) std::cout << "Scanning albums, Please wait... ";
+    if (showProgress) {
+        std::cout << scanningText << std::flush;
+        lastProgressLength = scanningText.size();
+    }
     for (auto& [folderPath, trackList] : albumMap) {
         for (const auto& entry : fs::directory_iterator(folderPath)) {
             if (entry.is_regular_file() && MediaTrack::IsFileAcceptedAudioFile(entry)) {
@@ -390,13 +395,15 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
         if (!trackList.empty()) {
             ++albumCount;
             if (showProgress) {
-                std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
-                std::cout << "Scanning albums, Please wait... " << albumCount;
+                const auto progressText = scanningText + std::to_string(albumCount);
+                PlatformUtils::ClearConsoleLine(lastProgressLength);
+                std::cout << progressText << std::flush;
+                lastProgressLength = progressText.size();
             }
         }
     }
 
-    if (showProgress) std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
+    if (showProgress) PlatformUtils::ClearConsoleLine(lastProgressLength);
     spdlog::info("Scanning albums, Please wait... Completed, {} albums found ", albumCount);
     spdlog::info("Second pass: Completed, found {} albums [{}]", albumCount, CommonUtils::GetDurationinString(startTimePoint, std::chrono::steady_clock::now()));
     startTimePoint = std::chrono::steady_clock::now();

@@ -724,7 +724,7 @@ bool ScopedCurrentDirectory::Restore()
 #endif
         if (!message.empty())
         {
-            std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
+            ClearConsoleLine(message.size());
         }
         return ret;
     }
@@ -739,22 +739,37 @@ bool ScopedCurrentDirectory::Restore()
 #endif
     }
 
-    bool EnableConsoleColors() {
+    bool EnableVirtualTerminal() {
         if (!IsStdoutInteractive()) return false;
 #ifdef _WIN32
-        wchar_t noColor[2]{};
-        if (GetEnvironmentVariableW(L"NO_COLOR", noColor, 2) > 0) return false;
         HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
         DWORD mode = 0;
         if (output == nullptr || output == INVALID_HANDLE_VALUE || !GetConsoleMode(output, &mode)) return false;
         if (mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) return true;
         return SetConsoleMode(output, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0;
 #else
-        const char* noColor = std::getenv("NO_COLOR");
-        if (noColor != nullptr && *noColor != '\0') return false;
-        if (!isatty(STDOUT_FILENO)) return false;
         const char* term = std::getenv("TERM");
         return term == nullptr || std::string(term) != "dumb";
 #endif
+    }
+
+    bool EnableConsoleColors() {
+        if (!IsStdoutInteractive()) return false;
+#ifdef _WIN32
+        wchar_t noColor[2]{};
+        if (GetEnvironmentVariableW(L"NO_COLOR", noColor, 2) > 0) return false;
+#else
+        const char* noColor = std::getenv("NO_COLOR");
+        if (noColor != nullptr && *noColor != '\0') return false;
+#endif
+        return EnableVirtualTerminal();
+    }
+
+    void ClearConsoleLine(std::size_t lastLength) {
+        if (EnableVirtualTerminal()) {
+            std::cout << "\33[2K\r" << std::flush;
+            return;
+        }
+        std::cout << '\r' << std::string(lastLength, ' ') << '\r' << std::flush;
     }
 }

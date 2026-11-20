@@ -49,8 +49,12 @@ namespace PlatformUtils {
 	void OpenDirectory(const std::filesystem::path& path);
 
 	bool IsStdoutInteractive();
+	// True when stdout is an interactive terminal that accepts ANSI/VT control sequences (independent of NO_COLOR).
+	bool EnableVirtualTerminal();
 	// True when stdout is an interactive terminal that accepts ANSI colour (honours NO_COLOR).
 	bool EnableConsoleColors();
+	// Clears the current console line; falls back to overwriting lastLength characters without VT support.
+	void ClearConsoleLine(std::size_t lastLength);
 
 	int waitForKeyPress(std::string message);
 }

@@ -149,15 +149,16 @@ namespace CommonUtils {
             }
             return;
         }
-        render_progress_bar(std::move(progressInfoPtr), progressType, PlatformUtils::EnableConsoleColors());
+        render_progress_bar(std::move(progressInfoPtr), progressType, PlatformUtils::EnableVirtualTerminal());
     }
 
-    void render_progress_bar(std::shared_ptr<ProgressBarInfo> progressInfoPtr, ProgressBarType progressType, bool useColor) {
-        //const char* spinner = "|/-\\";
-        static std::string spinnerDone = std::string(reinterpret_cast<const char*>(u8"\u2714"));
-        static std::string spinner = std::string(reinterpret_cast<const char*>(u8"\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F"));
-        static auto spinnerSize = CommonUtils::utf8_char_count(spinner);
-        static int spinner_index = 0;
+    // Console output stays 7-bit ASCII so it renders with any console font, code page or log viewer.
+    void render_progress_bar(std::shared_ptr<ProgressBarInfo> progressInfoPtr, ProgressBarType progressType,
+        bool useTerminalControl) {
+        static constexpr std::string_view spinner = "|/-\\";
+        static constexpr std::string_view doneMarker = "[done]";
+        static std::size_t spinner_index = 0;
+        static std::size_t lastLineLength = 0;
 
         const int bar_width = progressInfoPtr->bar_size; // Width of the progress bar (characters)
         const int sub_bar_width_total = progressInfoPtr->bar_size; // Width of the progress bar (characters)
@@ -182,14 +183,21 @@ namespace CommonUtils {
             //std::to_string(count) + "/" + std::to_string(size) + ")";
 
 
-        std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
-        
         bool bSubProgress = progressInfoPtr->subProgressInfoPtr != nullptr;
+        if (useTerminalControl) {
+            std::cout << "\33[2K\r";  // Clear entire line and move cursor to start
+            if (bSubProgress) {
+                std::cout << "\33[A\33[2K\r";  // Move up 1 line, clear it, and return to start
+            }
+        }
+        else if (lastLineLength > 0) {
+            std::cout << '\r' << std::string(lastLineLength, ' ') << '\r';
+        }
+        lastLineLength = 0;
+
 		std::string subProgressStr = "";
         if (bSubProgress)
         {
-            std::cout << "\33[A\33[2K\r";  // Move up 1 line, clear it, and return to start
-
             size_t sub_currentCount = 0;
             size_t sub_totalCount = 0;
             if (progressInfoPtr->subProgressInfoPtr != nullptr)
@@ -217,38 +225,36 @@ namespace CommonUtils {
         // Print bar, percentage, and spinner
         if (progressType == ProgressBarType::Complete)
         {
-         //   std::cout << "\r";
-            std::string green_name = useColor
-                ? "\033[32m" + progressInfoPtr->name + "\033[0m" : progressInfoPtr->name;
-            std::string spinnerDoneGreen = useColor
-                ? "\033[32m" + spinnerDone + "\033[0m" : spinnerDone;
-
-            if (bSubProgress) {
-                spdlog::info("{}  Progress: [{}] {}% {}/{} - {}", spinnerDoneGreen, bar, percent, normalized_count, size, green_name);
-            }
-            else
-            {
-                spdlog::info("{}  Progress: [{}] {}% {}/{} - {}", spinnerDoneGreen, bar, percent, normalized_count, size, green_name);
-            }
+            // Logged text also reaches session log files, so it carries no terminal control sequences.
+            std::cout << std::flush;
+            spdlog::info("{} Progress: [{}] {}% {}/{} - {}", doneMarker, bar, percent, normalized_count, size,
+                progressInfoPtr->name);
         }
         else
         {
-            auto spinnerChar = CommonUtils::get_utf8_char_at(spinner, spinner_index);
             std::string progressTotalStr = std::format("Overall Progress: {} [{}] {}% {}/{}{}",
-                spinnerChar,
+                spinner[spinner_index],
                 bar, percent,
                 progressInfoPtr->count,
                 progressInfoPtr->size,
                 avarageDuration);
 
-            std::cout << progressTotalStr;
-
-			if (bSubProgress)
-			{
-                std::cout << std::endl << subProgressStr << std::flush;
+            if (!bSubProgress) {
+                std::cout << progressTotalStr;
+                lastLineLength = progressTotalStr.size();
             }
+            else if (useTerminalControl) {
+                std::cout << progressTotalStr << '\n' << subProgressStr;
+            }
+            else {
+                // Without cursor movement both bars share one rewritable line.
+                const auto line = progressTotalStr + " | " + subProgressStr;
+                std::cout << line;
+                lastLineLength = line.size();
+            }
+            std::cout << std::flush;
 
-            spinner_index = (spinner_index + 1) % spinnerSize;
+            spinner_index = (spinner_index + 1) % spinner.size();
         }
     }
 

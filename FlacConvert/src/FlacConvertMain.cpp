@@ -3050,7 +3050,6 @@ int RunLegacyMenu()
     auto appSettingPtr = AppSettingsJson::AppSetting();
     if (appSettingPtr == nullptr)
     {
-        //std::cout << CommonUtils::getSymbolConstexpr("stop_sign") << "Failed to load Configuration File" << std::endl;
         spdlog::error("Failed to load Configuration File");
 
         return -1;

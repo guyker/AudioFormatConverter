@@ -18,6 +18,9 @@ applyTo: "FlacConvert/src/**,FlacConvert/include/**"
   temporary paths and recoverable replacement; failed conversion or replacement must leave the original recoverable.
 - For CLI paths, check process exit status and handle Windows Unicode paths and argument quoting without interpreting
   filenames as shell syntax. Report failures explicitly.
+- Keep program-authored console and log text (progress bars, spinners, markers) 7-bit ASCII; user data such as paths
+  and tags stays UTF-8. Emit VT/ANSI sequences only after `PlatformUtils::EnableVirtualTerminal`/`EnableConsoleColors`
+  succeeds (else `PlatformUtils::ClearConsoleLine`), and never inside spdlog messages, which also reach log files.
 - Validate only with generated fixtures or disposable copies, never the user's library. For lossless re-encoding
   without signal changes, compare decoded PCM/sample counts and required metadata, not compressed-file hashes.
   For intentional signal changes, check requested properties and defined tolerances.

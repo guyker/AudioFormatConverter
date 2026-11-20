@@ -2,6 +2,7 @@
 #include "MediaTrack.h"
 #include "ffmpeg.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -171,6 +172,12 @@ int main(int argc, char** argv) {
         subProgress->count = 0;
         require(render_progress(10, 5, 20, subProgress).find("Current Batch:      [                    ] 0%")
             != std::string::npos, "Empty sub-progress failed");
+        for (int frame = 0; frame < 8; ++frame) {
+            const auto text = render_progress(10, 5, 20, subProgress);
+            require(std::ranges::all_of(text, [](char c) { return static_cast<unsigned char>(c) < 0x80; }),
+                "Progress output contains non-ASCII characters");
+            require(text.find('\x1b') == std::string::npos, "Progress emitted VT sequences without terminal control");
+        }
         check_log_callback_context();
         check_unscoped_log_callback_context();
         check_audio_comparison_without_analysis();
