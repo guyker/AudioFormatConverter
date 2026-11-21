@@ -205,7 +205,9 @@ files, including unchanged companions, not merely staged files. Progress is per 
 a known total add a rough ETA from the phase's average rate after five seconds. Interactive progress updates one line every second; redirected output
 receives periodic five-second snapshots instead. Phase boundaries are logged in both modes. Preparation remains read-only.
 
-Output is a separate `FIXED/<library-name>` tree. Only folders containing a safe repair are copied, each with its
+Output is a separate `FIXED/<library-name>` tree. In the menu, a library's repair output may not overlap another active
+library's source or another library's repair output (for example, two libraries with the same `mediaName`); either
+fails before any repair is installed. Only folders containing a safe repair are copied, each with its
 subfolders (a nested repaired folder is copied once, as part of its nearest repaired ancestor); every regular
 file in those folders is retained, and unrelated files are copied byte-for-byte. The changed FLAC is written to a
 unique temporary, then verified (`RepairRules::Verify`) against the plan: exact size, head and tail bytes equal to
@@ -222,7 +224,11 @@ CLI returns non-zero when there are findings requiring manual review or when an 
 ### Scan to JSON (menu 2, `scan`)
 
 `ScanFolderAndCreateJSON`: discover albums (including files directly under the library root) in batches of
-`AlbumsSplitThreshold` (`AlbumCollection::LoadAlbumsCo`), reuse prior records for unchanged `(path, size, full-precision mtime)`
+`AlbumsSplitThreshold` (`AlbumCollection::LoadAlbumsCo`). Discovery does not follow directory symlinks or junctions
+and does not descend below `RecursionDirectorySearchDepth`; each skipped folder is logged, counted in the menu preview
+and recorded as a warning diagnostic (`scan_linked_folder_skipped` / `scan_depth_limit_skipped`, with `affectedPath`)
+in `scan-report.json`, and the scan continues. Discovery then
+reuses prior records for unchanged `(path, size, full-precision mtime)`
 when `Incremental=true` (unless CLI `--full-rescan` is specified), recompute album-level findings from current tracks,
 read remaining accepted formats from `CatalogExtensions` with `TagLibReader`, then read container chapters through
 the linked FFmpeg libraries
@@ -287,7 +293,8 @@ pairing uses a deterministic augmenting-path bipartite matcher: it maximizes mat
 searching alternatives in preference order (MD5, unique track number, unique title, closer compatible durations).
 Albums whose
 canonical folder path repeats (overlapping libraries) are aliases: only the first is compared, and a content difference
-is warned. Candidate pairs come from indexes on normalized album name (UTF-8 case/accent/punctuation folding, NFC/NFD
+is warned. Alias content is compared per track by file name and full catalog record (or legacy size and probe data);
+the library-relative path is ignored because overlapping roots record the same file differently. Candidate pairs come from indexes on normalized album name (UTF-8 case/accent/punctuation folding, NFC/NFD
 equal, optional edition-text stripping), MusicBrainz release ID, stored FLAC MD5 (buckets above 64 albums skipped and
 warned) and, with fuzzy names, artist; each unordered pair is evaluated once (`EvaluatePair`). The album name is the
 most common track tag (folder name fallback). Tracks pair by MD5, unique disc/track number, unique title, then closest
@@ -419,6 +426,11 @@ database integration fixtures cover the corresponding output paths.
 `AppSettingsJson::LoadForCommandLine` order: `--config` → directory persisted in `AppSettingsJsonPersistent.txt`
 (current directory) → `./config.json` → built-in defaults (`AppSettingsJson::GetDefaultSettings`, no libraries). The
 legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config directory and offer to create one.
+Both resolve a found file through `AppSettingsJson::LoadWithDefaults`: built-in defaults without the sample libraries,
+overlaid by the file and validated, so an absent or empty `OutDirectory` uses the platform default in both paths.
+`MediaDirectoryList` entries must be objects; `isActive` must be boolean and `mediaPath` a string when present; an
+active entry requires a non-empty `mediaPath` (an empty path would resolve to the working directory). Violations
+fail configuration loading.
 
 | Key | Default | Used by |
 |---|---|---|
@@ -435,13 +447,13 @@ legacy menu uses `AppSettingsJson::AppSetting`, which can prompt for a config di
 | `ExtraAudioQualityMetrics` | false | Deprecated; true warns and is ignored; use the `analysis` scan tier |
 | `MinMatchingTracksForDuplicate`, `SizeMatchPercentageThreshold` (duration %), `DuplicateDurationToleranceSeconds` | 1, 1, 2.0 | Duplicate track duration tolerance is the larger of the two |
 | `DuplicateFuzzyNames`, `DuplicateStripEditionText`, `DuplicatePartialMatches`, `DuplicatePartialMinCoverage` | false, false, false, 80 | Opt-in duplicate matching |
-| `RecursionDirectorySearchDepth` | 10 | Discovery |
+| `RecursionDirectorySearchDepth` | 10 | Discovery: folders deeper than this below the library root (root children are depth 1) are neither cataloged nor traversed |
 | `AlbumsSplitThreshold` | 2000 (>0) | JSON batch size |
 | `JsonBatchTargetBytes` | 0 (disabled) | Hard output JSON byte limit; oversized albums split into track fragments |
 | `FLACSettings.ffmpeg_exe_name` | `ffmpeg` | Conversion executable; the other `FLACSettings` strings are not used at runtime |
 | `MetadataSidecars.Format` | `binary` (`binary`\|`json`) | Sidecar encoding for conversions |
 | `MetadataSidecars.ConvertToFlac`, `MetadataSidecars.ConvertToMp3` | `disabled` (`disabled`\|`optional`\|`required`) | Per-target sidecar policy; invalid values fail loading |
-| `MediaDirectoryList[]` | – | `{ isActive, mediaPath, mediaName }`; `mediaName` must be a single directory name |
+| `MediaDirectoryList[]` | – | `{ isActive, mediaPath, mediaName }`; `mediaName` must be a single directory name; active entries require a non-empty `mediaPath` |
 
 `DatabaseFileName`, `resultPath` and `dbPath` are not used for output naming.
 
@@ -502,8 +514,9 @@ as usable audio metadata.
 - Decode stage (`integrity`/`analysis` tiers): a separate bounded `BoundedTaskRunner` pass after the album's TagLib
   reads, capped by `DecodeWorkers` (0 = 1 worker on single-core hosts, else `min(4, hardware_concurrency/2)`).
   Decode failures are recorded in the record without discarding tags (`AlbumCollection::ImportMetadata`).
-- Duplicate comparison: one `std::async` task per track, joined before the comparison is used; re-probes use libav
-  and are not bounded by `DecodeWorkers` or `MetadataScanMaxThreads`.
+- Duplicate comparison: each grouped album's track re-probes run through `BoundedTaskRunner::ForEach`, capped by
+  `MetadataScanMaxThreads` (0 = hardware concurrency, fallback 4), and finish before the comparison is used;
+  re-probes use libav and are not bounded by `DecodeWorkers`.
 - `FFmpeg::ffmpeg_log_callback` is process-wide and appends to a mutex-protected buffer.
 - `AppSettingsJson::AppSetting` is a lazily created process-wide instance read from worker threads; initialise it
   before starting tasks.

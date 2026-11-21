@@ -1662,7 +1662,7 @@ class ConversionTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
         result = self.legacy(libraries, "2\n\nRUN\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assert_summary(result, "Completed", 1, "album JSON files")
+        self.assert_summary(result, "Completed", 1, "JSON batch files")
         self.assertEqual(result.stdout.count("First pass: Find all folders"), 1)
         self.assertRegex(result.stdout, r"Scan discovery: \d+ entries \(total unknown\), \d+ folders, .* \[done\]")
         self.assertRegex(result.stdout, r"Scan track collection: (\d+)/\1 folders \(100%\), 1 albums, .* \[done\]")
@@ -2062,7 +2062,7 @@ class ConversionTests(unittest.TestCase):
         with deny_delete(second_json):
             result = self.legacy(libraries, "2\n\nRUN\n")
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assert_summary(result, "Partially completed", 1, "album JSON files", failed=1)
+        self.assert_summary(result, "Partially completed", 1, "JSON batch files", failed=1)
         self.assertEqual(second_json.read_bytes(), before)
         self.assertTrue((self.output / "First" / "media_out_First_1.json").exists())
 
@@ -2599,6 +2599,48 @@ class ConversionTests(unittest.TestCase):
             result = self.legacy(libraries)
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertFalse(self.output.exists())
+
+    def test_manual_repair_rejects_libraries_sharing_one_output(self):
+        second = self.work / "second"
+        second.mkdir()
+        (second / "two.flac").write_bytes(self.fixture.read_bytes())
+        libraries = [{"isActive": True, "mediaPath": str(self.source), "mediaName": "Same"},
+                     {"isActive": True, "mediaPath": str(second), "mediaName": "Same"}]
+        result = self.legacy(libraries, "7\n\n\nRUN\n")
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("collides with another library's repair output", result.stdout + result.stderr)
+        self.assertFalse((self.output / "FIXED").exists())
+
+    def write_menu_config(self, settings):
+        (self.work / "config.json").write_text(json.dumps(settings), encoding="utf-8")
+        (self.work / "AppSettingsJsonPersistent.txt").write_text(
+            "UTF8:" + str(self.work), encoding="utf-8")
+
+    def test_menu_configuration_uses_command_line_defaults_and_validates_libraries(self):
+        settings = json.loads(self.config.read_text(encoding="utf-8"))
+        settings.pop("OutDirectory", None)
+        settings["MediaDirectoryList"] = []
+        self.write_menu_config(settings)
+        result = subprocess.run([str(ARGS.converter)], input="0\n", cwd=self.work, capture_output=True,
+                                text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        default_output = "C:\\tmp" if os.name == "nt" else tempfile.gettempdir()
+        self.assertIn(f"Output root (OutDirectory): {default_output}", result.stdout)
+
+        for library in ({"isActive": True}, {"isActive": True, "mediaPath": ""},
+                        {"isActive": True, "mediaPath": 5}, {"isActive": "yes", "mediaPath": str(self.source)}):
+            with self.subTest(library=library):
+                settings["MediaDirectoryList"] = [library]
+                self.write_menu_config(settings)
+                result = subprocess.run([str(ARGS.converter)], input="N\n", cwd=self.work,
+                                        capture_output=True, text=True, encoding="utf-8", errors="replace")
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("Failed to load configuration file", result.stdout + result.stderr)
+        settings["MediaDirectoryList"] = [{"isActive": False}]
+        self.write_menu_config(settings)
+        result = subprocess.run([str(ARGS.converter)], input="0\n", cwd=self.work, capture_output=True,
+                                text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_manual_mp3_default_library_name_and_no_active_libraries(self):
         result = self.legacy([{"isActive": False, "mediaPath": str(self.source)}])

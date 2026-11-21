@@ -45,6 +45,7 @@ extern "C" {
 }
 
 #include "AlbumCollection.h"
+#include "BoundedTaskRunner.h"
 #include "CommandLine.h"
 #include "FolderConvert.h"
 #include "AudioRepair.h"
@@ -1617,12 +1618,19 @@ int RepairConfiguredLibraries(const std::vector<MediaDirectoryElement>& librarie
     for (std::size_t i = 0; i < plans.size(); ++i) {
         for (std::size_t j = 0; j < plans.size(); ++j) {
             if (i == j) continue;
-            std::error_code leftError, rightError;
+            std::error_code leftError, rightError, otherTargetError;
             const auto target = fs::weakly_canonical(plans[i].output, leftError);
             const auto otherSource = fs::weakly_canonical(plans[j].input, rightError);
+            const auto otherTarget = fs::weakly_canonical(plans[j].output, otherTargetError);
             if (leftError || rightError ||
                 isSameOrChildPath(target, otherSource) || isSameOrChildPath(otherSource, target)) {
                 spdlog::error("Repair output overlaps an active source library: '{}'.",
+                    pathToUtf8(plans[i].output));
+                return 1;
+            }
+            if (otherTargetError ||
+                isSameOrChildPath(target, otherTarget) || isSameOrChildPath(otherTarget, target)) {
+                spdlog::error("Repair output collides with another library's repair output: '{}'.",
                     pathToUtf8(plans[i].output));
                 return 1;
             }
@@ -1662,7 +1670,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
     ManualOperationSummary* summary = nullptr, bool fullRescan = false)
 {
     if (summary) {
-        summary->unit = "album JSON files";
+        summary->unit = "JSON batch files";
     }
     const auto reportPreflight = [&](const fs::path& source, const fs::path& target,
         const std::string& message, const fs::path& affected, const std::error_code& error = {}) {
@@ -1683,6 +1691,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
         writeFallbackScanReport(report, mediaDirectoryList);
     };
     std::vector<std::vector<MediaAlbumListPtr>> preparedAlbums;
+    std::vector<ScanDiscoveryCounts> preparedDiscovery;
     if (preview) {
         if (mediaDirectoryList.empty()) {
             spdlog::error("No active media libraries configured for scanning.");
@@ -1752,10 +1761,11 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             std::vector<MediaAlbumListPtr> batches;
             std::size_t albumCount = 0;
             std::size_t tracks = 0;
+            ScanDiscoveryCounts discovered;
             AlbumCollection collection;
             try {
                 for (auto albums : collection.LoadAlbumsCo(
-                    source, false, AppSettingsJson::AppSetting()->AlbumsSplitThreshold)) {
+                    source, false, AppSettingsJson::AppSetting()->AlbumsSplitThreshold, &discovered)) {
                     albumCount += albums->size();
                     for (const auto& album : *albums) {
                         tracks += album.trackList.size();
@@ -1774,6 +1784,9 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                 << "  Diagnostics: " << pathToUtf8(target / "scan-report.json") << '\n'
                 << "  Albums: " << albumCount << "; tracks: " << tracks
                 << "; metadata batches: " << batches.size() << '\n'
+                << "  Skipped folders: " << discovered.skippedLinkedFolders.size()
+                << " directory link(s); " << discovered.skippedDepthFolders.size()
+                << " beyond RecursionDirectorySearchDepth\n"
                 << "  JSON output count is determined during serialization.\n"
                 << "  Existing generated JSON files to replace: " << previous << '\n'
                 << "  Byte-exact FLAC metadata archives: "
@@ -1788,6 +1801,7 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                 return 1;
             }
             preparedAlbums.push_back(std::move(batches));
+            preparedDiscovery.push_back(std::move(discovered));
         }
         const auto confirmation = ConfirmPreview();
         if (confirmation != MenuConfirmation::Run) {
@@ -2080,6 +2094,10 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
                 }
             };
             if (preview) {
+                scanReport.discovery.skippedLinkedFolders =
+                    std::move(preparedDiscovery[libraryIndex].skippedLinkedFolders);
+                scanReport.discovery.skippedDepthFolders =
+                    std::move(preparedDiscovery[libraryIndex].skippedDepthFolders);
                 for (const auto& albums : preparedAlbums[libraryIndex]) {
                     scanReport.discovery.albums += albums->size();
                     for (const auto& album : *albums) {
@@ -2127,6 +2145,24 @@ int ScanFolderAndCreateJSON(std::vector<MediaDirectoryElement> mediaDirectoryLis
             writeFailureReport(nullptr);
             cleanupStaging();
             return 1;
+        }
+        for (const auto& folder : scanReport.discovery.skippedLinkedFolders) {
+            scanReport.diagnostics.push_back({
+                std::nullopt, std::nullopt,
+                { "discovery", "filesystem", DiagnosticCode::ScanLinkedFolderSkipped, DiagnosticSeverity::Warning,
+                    "Directory link or junction was not followed; its contents were not scanned." },
+                pathToUtf8(folder)
+            });
+        }
+        for (const auto& folder : scanReport.discovery.skippedDepthFolders) {
+            scanReport.diagnostics.push_back({
+                std::nullopt, std::nullopt,
+                { "discovery", "filesystem", DiagnosticCode::ScanDepthLimitSkipped, DiagnosticSeverity::Warning,
+                    "Folder exceeds RecursionDirectorySearchDepth " +
+                        std::to_string(settings->RecursionDirectorySearchDepth) +
+                        "; it and its subfolders were not scanned." },
+                pathToUtf8(folder)
+            });
         }
         if (count == 0) {
             spdlog::error("No albums found; preserving existing output at '{}'.", pathToUtf8(targetDirectory));
@@ -2571,7 +2607,7 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
             else probed.otherEntries.push_back(current.path().filename());
         }
         const auto& tracks = album.trackList;
-        std::vector<MediaLoadingFuture> futures(tracks.size());
+        std::vector<std::size_t> probeIndices;
         std::vector<std::uintmax_t> sizes(tracks.size());
         probed.tracks.resize(tracks.size());
         for (std::size_t i = 0; i < tracks.size(); ++i) {
@@ -2597,12 +2633,21 @@ int ScanFolderProcessJSONAndFindDuplicates(const std::vector<fs::path>& jsonFile
                         pathToUtf8(path));
                 }
             }
-            futures[i] = std::async(std::launch::async, MediaTrack::ReadMetadataInfoFromFile,
-                path, bIncludeAudioQualityMetrics);
+            probeIndices.push_back(i);
         }
-        for (std::size_t i = 0; i < tracks.size(); ++i) {
-            if (!futures[i].valid()) continue;
-            auto result = futures[i].get();
+        // Bounded like scan metadata reads: one thread per track exhausts resources on large albums.
+        const unsigned int hardwareConcurrency = std::thread::hardware_concurrency();
+        const std::size_t probeWorkers = settings->MetadataScanMaxThreads > 0
+            ? static_cast<std::size_t>(settings->MetadataScanMaxThreads)
+            : (hardwareConcurrency == 0 ? 4 : hardwareConcurrency);
+        std::vector<MetadataReadResult> results(probeIndices.size());
+        BoundedTaskRunner::ForEach(probeIndices.size(), probeWorkers, [&](std::size_t index) {
+            results[index] = MediaTrack::ReadMetadataInfoFromFile(
+                album.path.path() / tracks[probeIndices[index]].trackPath, bIncludeAudioQualityMetrics);
+        });
+        for (std::size_t index = 0; index < probeIndices.size(); ++index) {
+            const auto i = probeIndices[index];
+            auto& result = results[index];
             if (result.error || !std::ranges::any_of(result.mediaInfo.streams,
                 [](const Stream& stream) { return stream.codec_type == "audio"; })) {
                 throw std::runtime_error("Duplicate comparison could not read '" +

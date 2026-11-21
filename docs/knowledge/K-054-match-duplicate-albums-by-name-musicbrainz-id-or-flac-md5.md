@@ -6,7 +6,7 @@ area: [FlacConvert]
 status: active
 supersedes: [K-046]
 created: 2026-11-19
-reviewed: 2026-11-19
+reviewed: 2026-11-21
 cites:
   - path: FlacConvert/src/DuplicateMatcher.cpp
     symbol: "DuplicateMatcher::EvaluatePair"

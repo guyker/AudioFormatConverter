@@ -345,18 +345,31 @@ CommonUtils::Generator<MediaAlbumListPtr> AlbumCollection::LoadAlbumsCo(std::fil
     {
         // First pass: discover folders (the count of entries is unknown until the walk completes)
         RunLogging::PhaseProgress discovery("Scan discovery", std::nullopt, "entries", "folders");
-        for (const auto& entry : fs::recursive_directory_iterator(albumCollectionDirPath)) {
+        const int maxDepth = AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth;
+        for (auto it = fs::recursive_directory_iterator(albumCollectionDirPath);
+            it != fs::recursive_directory_iterator(); ++it) {
+            const auto& entry = *it;
             discovery.Advance();
-            auto relativePath = fs::relative(entry.path(), albumCollectionDirPath);
-            auto depth = std::distance(relativePath.begin(), relativePath.end());
-            if (depth > AppSettingsJson::AppSetting()->RecursionDirectorySearchDepth) {
-                spdlog::error("Recursion rirectory search depth reached, depth: {}", depth);
+            if (!entry.is_directory()) {
                 continue;
             }
-            if (entry.is_directory()) {
-                albumMap[entry.path()];
-                discovery.AdvanceSecondary();
+            // Directory symlinks and junctions may lead outside the library; only real directories are scanned.
+            if (entry.symlink_status().type() != fs::file_type::directory) {
+                spdlog::warn("Skipping linked folder: '{}'.", CommonUtils::path_to_utf8(entry.path()));
+                if (counts) counts->skippedLinkedFolders.push_back(entry.path());
+                it.disable_recursion_pending();
+                continue;
             }
+            // Library-root children have depth 1; deeper folders are neither cataloged nor traversed.
+            if (it.depth() + 1 > maxDepth) {
+                spdlog::warn("Skipping folder beyond RecursionDirectorySearchDepth {}: '{}'.",
+                    maxDepth, CommonUtils::path_to_utf8(entry.path()));
+                if (counts) counts->skippedDepthFolders.push_back(entry.path());
+                it.disable_recursion_pending();
+                continue;
+            }
+            albumMap[entry.path()];
+            discovery.AdvanceSecondary();
         }
         discovery.Finish();
     }

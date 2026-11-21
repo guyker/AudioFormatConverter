@@ -90,7 +90,7 @@ Option `2` asks whether to export separate byte-exact native FLAC metadata archi
 operation. The preview states that previous manifest-owned archives are retired after a successful scan.
 Finished manual actions report `Completed`, `Partially completed` or `Failed` (`Stopped by user` for an early duplicate-review stop), elapsed execution time,
 output locations, completed work and copied files. Counts reflect successfully installed audio,
-installed album JSON files (not optional error reports), committed JSON database batches, or fully
+installed JSON batch files (not optional error reports), committed JSON database batches, or fully
 processed duplicate pairs; they are not preview estimates. A failure stops at the first error and
 does not count unattempted work as failed or imply whole-operation rollback. Preflight failures state
 that no action started; cancellation and Back/Exit do not print a success summary.

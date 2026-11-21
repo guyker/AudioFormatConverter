@@ -15,7 +15,8 @@ preserved and metadata shrinkage is absorbed into padding when possible.
 
 Sources are never modified and audio bytes are copied unchanged, never decoded or re-encoded. Repaired files are written to
 `<output-root>/FIXED/<library-name>` (`--output-dir`, else `OutDirectory` for the CLI); only folders with a repair are
-copied, retaining all other files unchanged.
+copied, retaining all other files unchanged. In menu option 7, repair outputs of different active libraries may not
+overlap each other or another library's source; the run fails before installing anything.
 `repair-report.json` records findings, file installation status, and whether audio or metadata changed. Existing
 destinations are rejected unless `--overwrite` is specified. The CLI returns non-zero for manual-review findings or
 operation failures.

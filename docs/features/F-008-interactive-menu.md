@@ -10,7 +10,9 @@ Conflicts block the run before installing output. After a started or failed oper
 completed or Failed with confirmed counts, and the program exits. Duplicate review also reports `Stopped by user`
 when ended early. `0` or EOF at the menu exits; `?` shows help.
 Option 7 validates and repairs recognized FLAC/MP3 metadata issues into `OutDirectory/FIXED/<mediaName>` without
-modifying sources; it copies only folders with safe repairs and requires `RUN` after preview. Redundant MP3 ID3v1
+modifying sources; it copies only folders with safe repairs and requires `RUN` after preview. A repair output that
+overlaps another active library's source or another library's repair output (for example, duplicate `mediaName`
+values) blocks the run before any repair is installed. Redundant MP3 ID3v1
 removal is offered per run and defaults to NO. See F-011 for the
 supported repair and manual-review cases.
 After the initial `RUN`, option 3 pauses per duplicate group, with a numbered evidence/metadata recap beside the
@@ -18,7 +20,9 @@ choice prompt; an optional whole-folder move to `deleted` requires
 its own path preview and exact `MOVE` confirmation (F-005). Enter continues the review rather than canceling it.
 Before the option 2 preview, a per-run YES/NO prompt selects byte-exact FLAC metadata archives; Enter keeps the
 configured default (normally NO), and BACK/EXIT/EOF cancels before the scan. The preview shows the selected policy
-and warns that prior manifest-owned archives are retired after success (F-004).
+and warns that prior manifest-owned archives are retired after success (F-004). The preview also counts folders that
+will be skipped as directory links or beyond `RecursionDirectorySearchDepth`; the completion summary counts installed
+JSON batch files (fragmented albums can produce more than one file per album).
 An exception is a scan preview preflight or discovery failure: it attempts to write a diagnostic report to a safe
 system temporary directory and logs its location; it does not install a catalog.
 
@@ -36,6 +40,7 @@ system temporary directory and logs its location; it does not install a catalog.
 - [ ] `BACK` returns to the menu; EOF on stdin exits cleanly.
 - [ ] Option 2 can enable or disable FLAC archives before the preview without changing the saved configuration.
 - [ ] Option 7 previews FLAC/MP3 repair findings and requires `RUN` before writing repaired copies.
+- [ ] Option 7 rejects two active libraries whose repair outputs collide without creating `FIXED` output.
 - [ ] A conflict in one library blocks all libraries.
 - [ ] Summary counts match files actually installed.
 

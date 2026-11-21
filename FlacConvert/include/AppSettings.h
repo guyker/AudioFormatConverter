@@ -187,6 +187,9 @@ struct AppSettingsJson
 	static std::shared_ptr<AppSettingsJson> LoadForCommandLine(
 		const std::optional<std::filesystem::path>& explicitConfigPath,
 		std::string& errorMessage);
+	// Built-in defaults without sample libraries, overlaid by configPath (when not empty) and validated.
+	static std::shared_ptr<AppSettingsJson> LoadWithDefaults(
+		const std::filesystem::path& configPath, std::string& errorMessage);
 
 	static AppSettingsJson GetDefaultSettings()
 	{

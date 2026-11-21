@@ -10,8 +10,10 @@ ID, or a stored FLAC MD5. Tracks are paired by MD5, disc/track number, title, th
 size). Pairing maximizes the number of matched tracks; its deterministic search order prefers stronger evidence and
 closer durations. Each match is graded exact, strong, probable or partial with its evidence, and matches are grouped so three
 copies form one group. Different artists are rejected unless MusicBrainz or MD5 agree. The same physical folder loaded
-twice is compared once. Fuzzy names, edition-text stripping and partial matches (unequal track counts, minimum
-coverage) are opt-in. Matched tracks are then re-probed and stream-property/tag comparisons logged per pair. Added and
+twice is compared once; if its catalog content differs between the two loads (track names or full scanned records,
+ignoring the library-relative path), a warning is printed. Fuzzy names, edition-text stripping and partial matches (unequal track counts, minimum
+coverage) are opt-in. Matched tracks are then re-probed, with concurrent reads bounded by `MetadataScanMaxThreads`
+(0 = hardware concurrency), and stream-property/tag comparisons logged per pair. Added and
 missing tracks are reported, not substituted into the comparison. For v2 records, changes in size or available
 modification time are flagged, but do not prove file identity; legacy records do not have this check. Candidate
 selection reflects the scan, not subsequent changes. The CLI remains read-only.

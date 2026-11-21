@@ -207,6 +207,16 @@ void aliasesAndGroups()
     for (const auto& pair : result.pairs) {
         require(pair.first != 2 && pair.second != 2, "Alias was compared");
     }
+    require(!result.aliases[0].contentDiffers, "Identical alias reported as different");
+    auto retagged = a;
+    retagged.trackList.front().catalogRecord->tags["TITLE"] = { "Changed" };
+    auto relocated = a;
+    for (auto& track : relocated.trackList) track.catalogRecord->relativePath = "other-root/" +
+        track.trackPath.string();
+    const auto equalSize = FindDuplicates({ a, retagged, relocated }, { "a", "a", "a" }, {});
+    require(equalSize.aliases.size() == 2 && equalSize.aliases[0].contentDiffers,
+        "Equal-size tag difference not reported for alias");
+    require(!equalSize.aliases[1].contentDiffers, "Library-relative path reported as alias content difference");
     bool threw = false;
     try { FindDuplicates({ a, b }, { "a" }, {}); }
     catch (const std::invalid_argument&) { threw = true; }

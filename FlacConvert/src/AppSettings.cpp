@@ -129,14 +129,14 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::AppSetting() {
 
     bool isAppSettingLoaded = fs::exists(configPath);
     if (isAppSettingLoaded) {
-        auto appSettingPtr = std::make_shared<AppSettingsJson>();
-        isAppSettingLoaded = appSettingPtr->loadFromFile(configPath);
+        std::string errorMessage;
+        auto appSettingPtr = LoadWithDefaults(configPath, errorMessage);
+        isAppSettingLoaded = appSettingPtr != nullptr;
         if (isAppSettingLoaded) {
             AppSettingsInstance = appSettingPtr;
         }
         else {
-            std::cerr << "Error: Failed to parse configuration file: "
-                << CommonUtils::path_to_utf8(configPath) << std::endl;
+            std::cerr << "Error: " << errorMessage << std::endl;
         }
     }
     else {
@@ -194,13 +194,23 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::LoadForCommandLine(
         }
     }
 
+    auto settings = LoadWithDefaults(configPath, errorMessage);
+    if (settings) {
+        AppSettingsInstance = settings;
+    }
+    return settings;
+}
+
+// Built-in defaults (without the sample libraries) overlaid by the configuration file, if any.
+// Shared by the command line and the interactive menu so both resolve settings identically.
+std::shared_ptr<AppSettingsJson> AppSettingsJson::LoadWithDefaults(
+    const fs::path& configPath, std::string& errorMessage)
+{
     auto settings = std::make_shared<AppSettingsJson>(GetDefaultSettings());
+    settings->MediaDirectoryList.clear();
     if (!configPath.empty() && !settings->loadFromFile(configPath)) {
         errorMessage = "Failed to load configuration file: " + CommonUtils::path_to_utf8(configPath);
         return nullptr;
-    }
-    if (configPath.empty()) {
-        settings->MediaDirectoryList.clear();
     }
 
     if (settings->OutDirectory.empty()) {
@@ -214,8 +224,6 @@ std::shared_ptr<AppSettingsJson> AppSettingsJson::LoadForCommandLine(
         errorMessage = "AlbumsSplitThreshold must be greater than zero.";
         return nullptr;
     }
-
-    AppSettingsInstance = settings;
     return settings;
 }
 
@@ -496,11 +504,24 @@ bool AppSettingsJson::loadFromFile(const std::filesystem::path& filename) {
                 return false;
             }
             MediaDirectoryElement media{};
-            if (mediaObj.HasMember("isActive") && mediaObj["isActive"].IsBool()) {
+            if (mediaObj.HasMember("isActive")) {
+                if (!mediaObj["isActive"].IsBool()) {
+                    spdlog::error("MediaDirectoryList isActive must be a boolean.");
+                    return false;
+                }
                 media.isActive = mediaObj["isActive"].GetBool();
             }
-            if (mediaObj.HasMember("mediaPath") && mediaObj["mediaPath"].IsString()) {
+            if (mediaObj.HasMember("mediaPath")) {
+                if (!mediaObj["mediaPath"].IsString()) {
+                    spdlog::error("MediaDirectoryList mediaPath must be a string.");
+                    return false;
+                }
                 media.mediaPath = mediaObj["mediaPath"].GetString();
+            }
+            if (media.isActive && media.mediaPath.empty()) {
+                // An empty path would resolve to the process working directory.
+                spdlog::error("Active MediaDirectoryList entries require a non-empty mediaPath.");
+                return false;
             }
             if (mediaObj.HasMember("mediaName") && mediaObj["mediaName"].IsString()) {
                 media.mediaName = mediaObj["mediaName"].GetString();

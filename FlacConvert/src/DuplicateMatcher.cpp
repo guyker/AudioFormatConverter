@@ -1,6 +1,8 @@
 #include "DuplicateMatcher.h"
 
 #include "CommonUtils.h"
+#include "MediaRecordJson.h"
+#include "MediaTrack.h"
 
 #include <algorithm>
 #include <cctype>
@@ -325,13 +327,32 @@ std::size_t levenshtein(const std::string& first, const std::string& second)
     return previous[second.size()];
 }
 
-std::uint64_t albumBytes(const MediaAlbum& album)
+// Sorted per-file catalog content of one loaded folder. relativePath is excluded because overlapping libraries
+// legitimately record the same file relative to different roots.
+std::vector<std::pair<std::string, std::string>> albumContent(const MediaAlbum& album)
 {
-    std::uint64_t total = 0;
+    std::vector<std::pair<std::string, std::string>> content;
+    content.reserve(album.trackList.size());
     for (const auto& track : album.trackList) {
-        total += track.catalogRecord ? track.catalogRecord->sizeBytes : track.fs_fileSize;
+        std::string value;
+        try {
+            if (track.catalogRecord) {
+                auto record = *track.catalogRecord;
+                record.relativePath.clear();
+                value = "record:" + SerializeMediaRecord(record);
+            }
+            else {
+                value = "legacy:" + std::to_string(track.fs_fileSize) + ':' +
+                    MediaTrack::toJsonString(track.formatInfo);
+            }
+        }
+        catch (const std::exception& error) {
+            value = std::string("unserializable:") + error.what();
+        }
+        content.emplace_back(CommonUtils::path_to_utf8(track.trackPath), std::move(value));
     }
-    return total;
+    std::ranges::sort(content);
+    return content;
 }
 
 struct UnionFind
@@ -662,8 +683,7 @@ DuplicateMatcher::Result DuplicateMatcher::FindDuplicates(const std::vector<Medi
             if (!inserted) {
                 const auto& kept = albums[found->second];
                 result.aliases.push_back({ index, found->second,
-                    kept.trackList.size() != albums[index].trackList.size() ||
-                        albumBytes(kept) != albumBytes(albums[index]) });
+                    albumContent(kept) != albumContent(albums[index]) });
                 active[index] = false;
                 ++stats.aliasesExcluded;
                 continue;

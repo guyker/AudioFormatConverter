@@ -5,7 +5,7 @@ title: "Use platform-appropriate default output directories"
 area: [FlacConvert]
 status: active
 created: 2026-10-09
-reviewed: 2026-11-19
+reviewed: 2026-11-21
 cites:
   - path: FlacConvert/include/AppSettings.h
     symbol: "AppSettingsJson::DefaultOutDirectory"

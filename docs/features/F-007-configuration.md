@@ -14,7 +14,10 @@ both CLI and menu; CLI `--log-level` overrides it without changing console verbo
 (`disabled`|`optional`|`required`, default `disabled`); other values fail loading. The sample config uses
 JSON comments to explain these options. `disabled` never writes a sidecar; `optional` writes by default and can
 be disabled for a run; `required` always writes and rejects disable requests. The menu may prompt for a config
-directory and offer to create a default file.
+directory and offer to create a default file. The menu and CLI apply the same built-in defaults and validation to a
+found file (`AppSettingsJson::LoadWithDefaults`), so an absent or empty `OutDirectory` uses the platform default
+(K-007) in both. In `MediaDirectoryList`, `isActive` must be boolean and `mediaPath` a string when present, and active
+entries require a non-empty `mediaPath`; otherwise loading fails.
 `UseAsyncMetadataReads` controls parallel TagLib reads during scan; the previous `UseAsyncFFmpegCalls` key remains
 accepted as an alias when the new key is absent. `CatalogExtensions` defaults to `.flac` and `.mp3`; additional supported TagLib formats can be
 enabled explicitly. `UseFFmpegLibraryAPI` is deprecated, ignored with a warning, and omitted when configuration is
@@ -24,7 +27,8 @@ archives independently of conversion `MetadataSidecars`; menu and CLI choices ca
 size limit. Large albums split into track fragments; a track that cannot fit fails the scan.
 
 ## Entry points
-- `AppSettings.cpp#AppSettingsJson::LoadForCommandLine` (CLI), `AppSettings.cpp#AppSettingsJson::AppSetting` (menu)
+- `AppSettings.cpp#AppSettingsJson::LoadForCommandLine` (CLI), `AppSettings.cpp#AppSettingsJson::AppSetting` (menu),
+  both through `AppSettings.cpp#AppSettingsJson::LoadWithDefaults`
 - `AppSettings.cpp#AppSettingsJson::GetDefaultSettings`, `include/AppSettings.h#MediaDirectoryElement`
 
 ## Design and knowledge
@@ -37,6 +41,9 @@ size limit. Large albums split into track fragments; a track that cannot fit fai
 - [ ] `AlbumsSplitThreshold: 0` is rejected.
 - [ ] Negative or non-integer `JsonBatchTargetBytes` is rejected.
 - [ ] `MediaDirectoryList` must contain objects, and a closed input stream exits the configuration prompt.
+- [ ] An active `MediaDirectoryList` entry with a missing, empty or non-string `mediaPath`, or a non-boolean
+      `isActive`, fails loading; an inactive entry without a path is accepted.
+- [ ] A menu config without `OutDirectory` uses the same platform default as the CLI.
 - [ ] `MetadataScanMaxThreads: -1` is rejected; `0` selects automatic concurrency.
 - [ ] `CatalogExtensions` accepts only supported extensions and matching is case-insensitive.
 - [ ] `ScanFlacMetadataArchives` defaults to `false`, round-trips through config, and rejects non-boolean values.

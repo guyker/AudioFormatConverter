@@ -1296,6 +1296,42 @@ def main():
         if any(hashlib.sha256(path.read_bytes()).hexdigest() != digest
                for path, digest in changed_tracks.items()):
             raise AssertionError("Duplicate comparison changed a source track")
+
+        bounded_library = root / "bounded-library"
+        deep_folders = [bounded_library / "a", bounded_library / "a" / "b",
+                        bounded_library / "a" / "b" / "c"]
+        outside_folder = root / "outside-library"
+        for folder in deep_folders + [outside_folder]:
+            folder.mkdir(parents=True)
+            shutil.copyfile(albums[1] / "a.flac", folder / "track.flac")
+        linked_folder = bounded_library / "linked"
+        if os.name == "nt":
+            subprocess.run([os.environ["ComSpec"], "/c", "mklink", "/J", str(linked_folder),
+                            str(outside_folder)], check=True, capture_output=True)
+        else:
+            linked_folder.symlink_to(outside_folder, target_is_directory=True)
+        bounded_config = root / "bounded-config.json"
+        bounded_config.write_text(json.dumps({"RecursionDirectorySearchDepth": 2}), encoding="utf-8")
+        bounded_output = root / "bounded-output"
+        subprocess.run([converter, "scan", str(bounded_library), "--output-dir", str(bounded_output),
+                        "--config", str(bounded_config)], check=True, capture_output=True)
+        bounded_json = bounded_output / bounded_library.name
+        scanned_folders = {Path(album["Album Path"]).resolve()
+                           for path in bounded_json.glob("media_out_*.json")
+                           for album in json.loads(path.read_text(encoding="utf-8"))}
+        if scanned_folders != {deep_folders[0].resolve(), deep_folders[1].resolve()}:
+            raise AssertionError(f"Depth limit or linked folder was not honoured: {scanned_folders}")
+        bounded_report_path = bounded_json / "scan-report.json"
+        validate_report(bounded_report_path)
+        bounded_report = json.loads(bounded_report_path.read_text(encoding="utf-8"))
+        skipped = {(item["code"], Path(item["affectedPath"]).name)
+                   for item in bounded_report["diagnostics"]
+                   if item["code"] in ("scan_linked_folder_skipped", "scan_depth_limit_skipped")}
+        if skipped != {("scan_linked_folder_skipped", "linked"), ("scan_depth_limit_skipped", "c")}:
+            raise AssertionError(f"Skipped folders were not reported: {bounded_report['diagnostics']}")
+        linked_folder.rmdir() if os.name == "nt" else linked_folder.unlink()
+        if not (outside_folder / "track.flac").is_file():
+            raise AssertionError("Linked folder target was modified")
         if any(hashlib.sha256(track.read_bytes()).hexdigest() != source_hash
                for track, source_hash in source_hashes.items()):
             raise AssertionError("A scan changed one or more source files")

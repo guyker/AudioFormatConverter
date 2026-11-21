@@ -51,6 +51,9 @@ struct ScanDiscoveryCounts
 {
 	size_t albums{ 0 };
 	size_t tracks{ 0 };
+	// Folders deliberately not traversed: directory links/junctions and folders beyond RecursionDirectorySearchDepth.
+	std::vector<std::filesystem::path> skippedLinkedFolders;
+	std::vector<std::filesystem::path> skippedDepthFolders;
 };
 
 class AlbumCollection
